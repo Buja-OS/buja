@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Buja</title>
+<meta name="description" content="Jobs, people, movement, homes, trade and answers, for Abuja.">
+<meta name="theme-color" content="#FAFAF7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101014" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Buja">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/icons/icon-512.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/css/app.css">
+<script>
+  // Apply the saved theme before first paint so there is no flash.
+  (function(){try{var t=localStorage.getItem('buja.theme')||'system';var d=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';}catch(e){}})();
+</script>
+</head>
+<body>
+<div id="app" class="app" aria-live="polite"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

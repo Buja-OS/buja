@@ -1,0 +1,22 @@
+# Render Blueprint. Render can read this to create the service with the right settings.
+services:
+  - type: web
+    name: buja
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: DB_DSN
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASS
+        sync: false
+      - key: DB_SSL
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: APP_ORIGIN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        value: ""
