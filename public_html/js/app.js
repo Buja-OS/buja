@@ -4,6 +4,7 @@ import { api, detectApi } from './api.js';
 import { h, toast, mark, markAuto, topbar, tabbar, field, showErrors, bindEyes, clearOnInput, busy, avatar, icon } from './ui.js';
 import { registerWork } from './work.js';
 import { registerMessages } from './messages.js';
+import { registerMatch } from './match.js';
 
 const DISTRICTS = ['Asokoro', 'Maitama', 'Wuse', 'Wuse 2', 'Garki', 'Central Area', 'Jabi', 'Utako', 'Gwarinpa', 'Life Camp', 'Kado', 'Katampe', 'Guzape', 'Durumi', 'Apo', 'Lokogoma', 'Galadimawa', 'Lugbe', 'Kubwa', 'Jahi', 'Nyanya', 'Karu', 'Jikwoyi', 'Kuje', 'Gwagwalada'];
 const app = document.getElementById('app');
@@ -173,7 +174,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
   const u = state.user; const hour = new Date().getHours(); const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const modules = [
     ['/work', 'briefcase', 'var(--green-tint)', 'var(--green-dark)', 'Work', u.kind === 'company' ? 'Your vacancies and applicants' : 'Jobs across Abuja'],
-    ['/match', 'heart', 'var(--orange-tint)', 'var(--orange-dark)', 'Match', 'People near you'],
+    ['/match', 'heart', 'var(--orange-tint)', 'var(--orange-dark)', 'Match', u.kind === 'company' ? 'Residents only' : 'People near you'],
     ['/waka', 'route', 'rgba(126,217,87,.14)', '#7ED957', 'Waka', 'Routes and fares', true],
     ['/homes', 'house-chimney', '#E7EEF8', '#1F4E9C', 'Homes', 'Rent direct, no agent fee'],
     ['/declutter', 'tags', '#F3E8F8', '#7A3E96', 'Declutter', 'Buy and sell nearby'],
@@ -203,7 +204,6 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
 } });
 
 for (const [p, ic, name, blurb, phase] of [
-  ['/match', 'heart', 'Match', 'Verified profiles, neighbourhood radius, matches and chat.', 3],
   ['/waka', 'route', 'Waka', 'Live map, vehicles on route and crowd-confirmed fares.', 4],
   ['/homes', 'house-chimney', 'Homes', 'Rent and buy direct from verified landlords.', 5],
   ['/declutter', 'tags', 'Declutter', 'Buy and sell nearby with escrow.', 6],
@@ -230,6 +230,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
     ${state.user.verified ? '' : `<div class="card row" style="padding:12px 14px;border-color:var(--orange)">${icon('triangle-exclamation')}<div class="grow"><div style="font-size:14px;font-weight:600">Confirm your email</div><div class="small muted">Check your inbox for the link from Buja.</div></div><button class="btn btn-sm btn-outline" data-resend>Resend</button></div>`}
     <div class="card list">
       <div class="item"><div class="mi">${icon('user')}</div><div class="grow"><div class="t">Account</div><div class="s">${h(u.email)}${u.phone ? ' · ' + h(u.phone) : ''}</div></div></div>
+      ${u.kind === 'company' ? '' : `<a class="item" href="#/match/edit"><div class="mi">${icon('heart')}</div><div class="grow"><div class="t">My Match profile</div><div class="s">Photos, bio, who you see</div></div>${icon('chevron-right')}</a>`}
       <a class="item" href="#${u.kind === 'company' ? '/work/company' : '/work/profile'}"><div class="mi">${icon('briefcase')}</div><div class="grow"><div class="t">${u.kind === 'company' ? 'Company and vacancies' : 'My CV and applications'}</div><div class="s">Work</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/settings"><div class="mi">${icon('gear')}</div><div class="grow"><div class="t">Settings</div><div class="s">Appearance, notifications, privacy</div></div>${icon('chevron-right')}</a>
       <button class="item" data-logout><div class="mi">${icon('right-from-bracket')}</div><div class="grow"><div class="t">Sign out</div><div class="s">On this device</div></div></button>
@@ -279,6 +280,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
+registerMatch({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
 const push = registerMessages({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
 
 route('/404', {}, async () => `${topbar('Not found', '/home')}<div class="placeholder"><div class="h-md">That page does not exist</div><a class="btn btn-ink" href="#/home" style="width:auto">Go home</a></div>`);

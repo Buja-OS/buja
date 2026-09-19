@@ -1,4 +1,4 @@
-# Buja, Phase 2b
+# Buja, Phase 3
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -63,6 +63,15 @@ All non-GET calls require the header `X-Buja-Client: pwa`. Errors are JSON: `{ e
 - Notification preferences per module in Settings, push toggle with a test notification, unverified-email banner with resend, forgot and reset password screens.
 - New: `api/src/WebPush.php`, `Notify.php`, `Mail.php`, `api/controllers/MessagesController.php`, `PushController.php`, `AccountController.php`, `js/messages.js`, `migrations/003_messages_push.sql`.
 
+## Phase 3: Match
+
+- Profile: four-step setup (basics with an 18+ date-of-birth gate, photos, about, who you see), then editable from Me. Up to six photos, resized on the phone to 1200px JPEG before upload, capped at 700 KB and 2400px on the server, stored in the database for now.
+- Discovery: candidates filtered by gender, mutual seeking, age range, optional "my district and nearby" using an FCT adjacency map in `api/src/MatchRules.php`, excluding anyone already swiped or blocked. Ranked by a transparent score: shared interests, same faith, proximity, same view on kids. Shared interests are highlighted on the card.
+- Like, pass, super like (one a day on the free plan). Mutual like creates a match and a `match` thread in the shared Inbox, with a push notification and the It's a match overlay.
+- Full profile with photo gallery, prompts and basics; block and report (report blocks too). Blocked users cannot see each other's photos, profiles or messages.
+- Matches grid; Liked you with the newest like shown in full and the rest locked for the coming Buja Plus.
+- New: `api/src/MatchRules.php`, `api/controllers/MatchController.php`, `js/match.js`, `migrations/004_match.sql`.
+
 ## What is next
 
-Phase 3: Match. Then Waka, Homes, Declutter, Ask. CVs to object storage and the desktop company layout come with Homes.
+Phase 4: Waka (live map, fares, routes). Then Homes, Declutter, Ask. Selfie verification, Buja Plus with Paystack, and object storage for photos and CVs follow once all six modules exist.

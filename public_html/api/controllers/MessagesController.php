@@ -31,8 +31,9 @@ final class MessagesController
         $st = Db::pdo()->prepare($sql); $st->execute([$u['id'], $u['id'], $u['id'], $u['id'], $u['id']]);
         $rows = array_map(fn($t) => [
             'id' => (int) $t['id'], 'kind' => $t['kind'], 'unread' => (int) $t['unread'], 'lastAt' => $t['last_message_at'],
-            'title' => $u['kind'] === 'company' ? $t['other_name'] : ($t['company_name'] ?? $t['other_name']),
-            'subtitle' => $t['job_title'] ? ($u['kind'] === 'company' ? 'Applied for ' . $t['job_title'] : $t['job_title']) : '',
+            'title' => $t['kind'] === 'match' ? explode(' ', $t['other_name'])[0] : ($u['kind'] === 'company' ? $t['other_name'] : ($t['company_name'] ?? $t['other_name'])),
+            'subtitle' => $t['kind'] === 'match' ? 'Match' : ($t['job_title'] ? ($u['kind'] === 'company' ? 'Applied for ' . $t['job_title'] : $t['job_title']) : ''),
+            'otherId' => (int) (($t['user_a'] == $u['id']) ? $t['user_b'] : $t['user_a']),
             'preview' => $t['last_type'] === 'interview' ? 'Interview invitation' : ($t['last_body'] ?? ''),
             'jobId' => $t['job_id'] ? (int) $t['job_id'] : null,
         ], $st->fetchAll());
@@ -60,7 +61,8 @@ final class MessagesController
                 if ($a) $ctx = ['applicationId' => (int) $a['id'], 'status' => $a['status'], 'match' => (int) $a['match_score'], 'jobId' => (int) $a['job_id'], 'jobTitle' => $a['title'], 'company' => $a['company']];
             }
             $out['other'] = ['id' => (int) $o['id'], 'name' => $o['name'], 'kind' => $o['kind']];
-            $out['title'] = $u['kind'] === 'company' ? $o['name'] : ($ctx['company'] ?? $o['name']);
+            $out['kind'] = $t['kind'];
+            $out['title'] = $t['kind'] === 'match' ? explode(' ', $o['name'])[0] : ($u['kind'] === 'company' ? $o['name'] : ($ctx['company'] ?? $o['name']));
             $out['context'] = $ctx; $out['canSchedule'] = $u['kind'] === 'company' && $ctx !== null;
         }
         Http::json($out);
@@ -71,11 +73,13 @@ final class MessagesController
     {
         $u = Auth::require(); $t = $this->threadFor($id, $u);
         RateLimit::hit('msg', 120, 3600);
+        $o = $this->other($t, $u);
+        if (Db::one('SELECT 1 AS x FROM blocks WHERE (blocker = ? AND blocked = ?) OR (blocker = ? AND blocked = ?)', [$u['id'], $o, $o, $u['id']])) Http::json(['error' => 'blocked', 'message' => 'You cannot message this person.'], 403);
         $body = trim((string) (Http::body()['body'] ?? '')); if ($body === '' || mb_strlen($body) > 2000) Http::json(['error' => 'validation', 'fields' => ['body' => 'Write something, up to 2000 characters.']], 422);
         Db::run('INSERT INTO messages (thread_id, sender_id, type, body, created_at) VALUES (?,?,?,?,?)', [$id, $u['id'], 'text', $body, Db::now()]);
         $mid = Db::lastId();
         Db::run('UPDATE threads SET last_message_at = ? WHERE id = ?', [Db::now(), $id]);
-        Notify::user($this->other($t, $u), 'work', $u['kind'] === 'company' ? ($this->companyName($u) . ' sent you a message') : $u['name'] . ' sent you a message', mb_substr($body, 0, 120), '/#/inbox/' . $id);
+        Notify::user($o, $t['kind'] === 'match' ? 'match' : 'work', $t['kind'] === 'match' ? explode(' ', $u['name'])[0] . ' sent you a message' : ($u['kind'] === 'company' ? ($this->companyName($u) . ' sent you a message') : $u['name'] . ' sent you a message'), mb_substr($body, 0, 120), '/#/inbox/' . $id);
         Http::json(['message' => $this->shapeMessage(Db::one('SELECT * FROM messages WHERE id = ?', [$mid]), (int) $u['id'])], 201);
     }
 

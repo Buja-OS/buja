@@ -72,6 +72,19 @@ export const api = {
   forgot:          (email) => request('POST', '/auth/forgot', { email }),
   reset:           (token, password) => request('POST', '/auth/reset', { token, password }),
   resendVerify:    () => request('POST', '/auth/resend-verification'),
+  // Match
+  matchMe:         () => request('GET', '/match/me'),
+  matchUpdate:     (b) => request('PATCH', '/match/me', b),
+  addPhoto:        (file) => { const fd = new FormData(); fd.append('photo', file); return upload('/match/photos', fd); },
+  deletePhoto:     (id) => request('DELETE', '/match/photos/' + id),
+  reorderPhotos:   (order) => request('PATCH', '/match/photos', { order }),
+  discover:        () => request('GET', '/match/discover'),
+  matchProfile:    (id) => request('GET', '/match/profile/' + id),
+  swipe:           (to, action) => request('POST', '/match/swipe', { to, action }),
+  matches:         () => request('GET', '/match/matches'),
+  likes:           () => request('GET', '/match/likes'),
+  block:           (user) => request('POST', '/match/block', { user }),
+  report:          (user, reason) => request('POST', '/match/report', { user, reason }),
 };
 
 /* Detect the API once at boot. If /api/health is not there, switch to mock mode and say so. */
@@ -127,7 +140,7 @@ async function mockRequest(method, path, body) {
     return { user: pub(u), next: u.district ? 'home' : 'onboarding' };
   }
   if (path === '/auth/logout') { d.session = null; msave(d); return { ok: true }; }
-  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
+  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
   if (path === '/me' && method === 'PATCH') {
     const u = me(); if (!u) throw { error: 'unauthenticated', message: 'Please sign in.' };
     Object.assign(u, body); msave(d); return { user: pub(u) };

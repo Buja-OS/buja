@@ -52,3 +52,18 @@ $router->post('/company/jobs',               [CompanyController::class, 'createJ
 $router->patch('/company/jobs/{id}',         [CompanyController::class, 'updateJob']);
 $router->get('/company/jobs/{id}/applications', [CompanyController::class, 'applications']);
 $router->patch('/company/applications/{id}', [CompanyController::class, 'updateApplication']);
+
+// Match
+$router->get('/match/me',                    [MatchController::class, 'me']);
+$router->patch('/match/me',                  [MatchController::class, 'update']);
+$router->post('/match/photos',               [MatchController::class, 'addPhoto']);
+$router->patch('/match/photos',              [MatchController::class, 'reorder']);
+$router->delete('/match/photos/{id}',        [MatchController::class, 'deletePhoto']);
+$router->get('/match/photo/{id}',            [MatchController::class, 'photo']);
+$router->get('/match/discover',              [MatchController::class, 'discover']);
+$router->get('/match/profile/{id}',          [MatchController::class, 'show']);
+$router->post('/match/swipe',                [MatchController::class, 'swipe']);
+$router->get('/match/matches',               [MatchController::class, 'matches']);
+$router->get('/match/likes',                 [MatchController::class, 'likes']);
+$router->post('/match/block',                [MatchController::class, 'block']);
+$router->post('/match/report',               [MatchController::class, 'report']);

@@ -40,6 +40,7 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
     const c = t.context;
     return `
     ${topbar(t.title, '/inbox', t.canSchedule ? `<button class="iconbtn" id="sched" aria-label="Schedule interview" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('calendar-check')}</button>` : '')}
+    ${t.kind === 'match' ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${avatar(t.other.name, 28, color(t.other.name))}<span class="grow">You matched on Buja</span><a href="#/match/profile/${t.other.id}" style="color:var(--orange-dark);font-weight:600">Profile</a></div>` : ''}
     ${c ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${avatar(t.other.name, 28, color(t.other.name))}<span class="grow">${state.user.kind === 'company' ? `${h(t.other.name)} · applied for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong> · ${c.match}% match` : `Recruiting for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong>`}</span><a href="#/work/${state.user.kind === 'company' ? 'company/job/' + c.jobId : 'job/' + c.jobId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
     <main id="msgs" class="stack" style="padding:8px 16px 0;gap:12px;flex:1" data-last="${t.messages.length ? t.messages[t.messages.length - 1].id : 0}">${t.messages.map(bubble).join('')}</main>
     <div id="sheet"></div>
