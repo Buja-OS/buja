@@ -112,3 +112,10 @@ $router->delete('/declutter/{id}/save',      [DeclutterController::class, 'unsav
 $router->post('/declutter/{id}/chat',        [DeclutterController::class, 'chat']);
 $router->post('/threads/{id}/offer',         [DeclutterController::class, 'offer']);
 $router->post('/messages/{id}/offer-response', [DeclutterController::class, 'respondOffer']);
+
+// Ask
+$router->post('/ask',                        [AskController::class, 'ask']);
+$router->get('/spots',                       [AskController::class, 'index']);
+$router->post('/spots',                      [AskController::class, 'create']);
+$router->get('/spots/{id}',                  [AskController::class, 'show']);
+$router->post('/spots/{id}/rate',            [AskController::class, 'rate']);

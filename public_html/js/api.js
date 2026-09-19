@@ -124,6 +124,12 @@ export const api = {
   dDeletePhoto:    (id) => request('DELETE', '/declutter/photos/' + id),
   offer:           (threadId, amount) => request('POST', '/threads/' + threadId + '/offer', { amount }),
   respondOffer:    (messageId, action) => request('POST', '/messages/' + messageId + '/offer-response', { action }),
+  // Ask
+  ask:             (question) => request('POST', '/ask', { question }),
+  spots:           (q) => request('GET', '/spots' + qs({ q })),
+  spot:            (id) => request('GET', '/spots/' + id),
+  rateSpot:        (id, stars, comment) => request('POST', '/spots/' + id + '/rate', { stars, comment }),
+  addSpot:         (b) => request('POST', '/spots', b),
 };
 
 /* Detect the API once at boot. If /api/health is not there, switch to mock mode and say so. */
@@ -179,7 +185,7 @@ async function mockRequest(method, path, body) {
     return { user: pub(u), next: u.district ? 'home' : 'onboarding' };
   }
   if (path === '/auth/logout') { d.session = null; msave(d); return { ok: true }; }
-  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
+  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter') || path.startsWith('/ask') || path.startsWith('/spots')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
   if (path === '/me' && method === 'PATCH') {
     const u = me(); if (!u) throw { error: 'unauthenticated', message: 'Please sign in.' };
     Object.assign(u, body); msave(d); return { user: pub(u) };

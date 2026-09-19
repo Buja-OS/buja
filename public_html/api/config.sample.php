@@ -42,6 +42,11 @@ return [
     // openrouteservice.org free key, used once to fetch road paths for routes.
     'ors_api_key' => $env('ORS_API_KEY', ''),
 
+    // Ask Buja: Anthropic API key (console.anthropic.com). Without it Ask still works with keyword matching.
+    'anthropic_api_key' => $env('ANTHROPIC_API_KEY', ''),
+    'ask_model' => $env('ASK_MODEL', 'claude-haiku-4-5-20251001'),
+    'ask_daily_limit' => (int) $env('ASK_DAILY_LIMIT', '40'),
+
     // Only true when testing on http://localhost.
     'insecure_cookies' => filter_var($env('INSECURE_COOKIES', 'false'), FILTER_VALIDATE_BOOL),
 ];

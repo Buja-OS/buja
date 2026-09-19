@@ -1,4 +1,4 @@
-# Buja, Phase 6
+# Buja, Phase 7: all six modules
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -101,6 +101,13 @@ Note on tiles: OpenStreetMap's public tile server is fine for testing and early 
 - Chat opens a `declutter` thread in the shared Inbox. Buyers make offers as cards (refused below 30% of asking); the seller accepts or declines and an automatic reply reminds both to pay only on handover. My listings shows chats and offers waiting.
 - New: `api/controllers/DeclutterController.php`, `js/declutter.js`, `migrations/007_declutter.sql`.
 
+## Phase 7: Ask Buja
+
+- A directory of places (`spots`) seeded with 20 well-known Abuja spots and grown by residents: name, category, district, area, tags, price level and typical spend, description, hours. Community-added places show as such until the Buja team verifies them. Ratings with a one-line comment; pages show the average, count and recent reviews.
+- Ask: with `ANTHROPIC_API_KEY` set, the question and the whole directory (compacted) go to the model (`ASK_MODEL`, default Claude Haiku 4.5) with a system prompt that only allows recommending places by id from the directory, returning JSON: a two-sentence answer, one to four spots with a short reason, two follow-ups. Without a key, or if the model fails, a keyword matcher over categories, tags, names, districts and price words answers from the same directory, and the app says so. Either way, nothing is invented.
+- Every place card has Waka there, which opens the planner with the destination district pre-filled. Home's Ask bar sends the question straight in. Questions are logged with the returned ids so gaps in the directory are visible. Daily limit per user (`ASK_DAILY_LIMIT`, default 40).
+- New: `api/controllers/AskController.php`, `js/ask.js`, `migrations/008_ask.sql`.
+
 ## What is next
 
-Phase 7: Ask Buja (the AI guide, grounded on Buja's own places and ratings). Then trust and money: selfie verification, verified landlord and seller badges, Buja Plus and escrow with Paystack, object storage for photos and CVs.
+All six modules are live. Next is the trust and money phase across the whole app: selfie verification for Match, verified landlord and seller badges, Buja Plus with Paystack, Declutter escrow, and moving photos and CVs from the database to Cloudflare R2. After that, growth work: Waka rider GPS and driver mode, Protomaps tiles, admin panel for verifying places and landlords, and moving off Render's free plan.

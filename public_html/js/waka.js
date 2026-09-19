@@ -77,7 +77,8 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
     <div id="picker"></div>`;
   }, {
     mount(el) {
-      let from = null, to = null; const pick = picker(el, () => {});
+      let from = null, to = null;
+      const toq = q().get('toq'); if (toq) api.wakaPlaces(toq).then(({ places }) => { const p = places.find((x) => x.district === toq) || places[0]; if (p) { to = p; set(); } });
       const set = () => { el.querySelector('#fromName').textContent = from ? from.name : 'Where from?'; el.querySelector('#fromName').style.color = from ? 'var(--ink)' : ''; el.querySelector('#toName').textContent = to ? to.name : 'Where to?'; el.querySelector('#toName').style.color = to ? 'var(--ink)' : ''; el.querySelector('#plan').disabled = !(from && to && from.id !== to.id); };
       el.querySelector('#from').addEventListener('click', () => picker(el, (p) => { from = p; set(); })('Where from?'));
       el.querySelector('#to').addEventListener('click', () => picker(el, (p) => { to = p; set(); })('Where to?'));

@@ -8,6 +8,7 @@ import { registerMatch } from './match.js';
 import { registerWaka } from './waka.js';
 import { registerHomes } from './homes.js';
 import { registerDeclutter } from './declutter.js';
+import { registerAsk } from './ask.js';
 
 const DISTRICTS = ['Asokoro', 'Maitama', 'Wuse', 'Wuse 2', 'Garki', 'Central Area', 'Jabi', 'Utako', 'Gwarinpa', 'Life Camp', 'Kado', 'Katampe', 'Guzape', 'Durumi', 'Apo', 'Lokogoma', 'Galadimawa', 'Lugbe', 'Kubwa', 'Jahi', 'Nyanya', 'Karu', 'Jikwoyi', 'Kuje', 'Gwagwalada'];
 const app = document.getElementById('app');
@@ -191,12 +192,13 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
   </header>
   <main class="pad stack" style="gap:16px;padding-top:4px">
     <div><div class="h-lg">${greet}, ${h(u.name.split(' ')[0])}</div><div class="muted small" style="margin-top:3px;display:flex;align-items:center;gap:6px">${icon('location-dot')} ${h(u.district || 'Abuja')}${api.isMock() ? ' · preview mode' : ''}</div></div>
-    <a class="card askbar" href="#/ask">${icon('wand-magic-sparkles')}<span class="grow">Ask Buja anything about Abuja</span>${icon('microphone')}</a>
+    <form class="card askbar" id="homeask" style="padding-right:8px">${icon('wand-magic-sparkles')}<label for="hq" style="position:absolute;left:-9999px">Ask Buja</label><input id="hq" placeholder="Ask Buja anything about Abuja" autocomplete="off" style="flex:1;border:none;background:transparent;outline:none;font-size:14px;color:var(--ink)"><button class="iconbtn" type="submit" aria-label="Ask" style="width:36px;height:36px;border:none;background:var(--orange);color:#fff;font-size:14px">${icon('paper-plane')}</button></form>
     <div class="grid2">${modules.map(([href, ic, bg, fg, t, s, dark]) => `<a class="card mod ${dark ? 'dark' : ''}" href="#${href}"><div class="mi" style="background:${bg};color:${fg}">${icon(ic)}</div><div><div class="t">${t}</div><div class="s">${s}</div></div></a>`).join('')}</div>
     <div class="section">TODAY</div>
     <div id="today" class="stack" style="gap:10px"><div class="card" style="padding:14px 16px"><div class="row">${icon('circle-info')}<div class="grow"><div style="font-size:14px;font-weight:600">Nothing yet</div><div class="small muted">Interviews, inspections and fare changes will show up here.</div></div></div></div></div>
   </main>`;
 }, { async mount(el) {
+  el.querySelector('#homeask')?.addEventListener('submit', (e) => { e.preventDefault(); const v = el.querySelector('#hq').value.trim(); go('/ask' + (v ? '?q=' + encodeURIComponent(v) : '')); });
   try {
     const t = await api.today(); state.unread = t.unread; setBadge(t.unread);
     const box = el.querySelector('#today'); const items = [];
@@ -206,17 +208,6 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
   } catch {}
 } });
 
-for (const [p, ic, name, blurb, phase] of [
-  ['/ask', 'wand-magic-sparkles', 'Ask', 'Your AI guide to the city.', 7],
-]) {
-  route(p, { auth: true, tabs: name === 'Ask' ? 'Ask' : name === 'Inbox' ? 'Inbox' : '' }, async () => `
-    ${topbar(name, '/home')}
-    <div class="placeholder">
-      <div class="mi card">${icon(ic)}</div>
-      <div class="h-md">${name} arrives in Phase ${phase}</div>
-      <div class="muted small" style="max-width:280px;line-height:1.5">${blurb}</div>
-    </div>`);
-}
 
 route('/me', { auth: true, tabs: 'Me' }, async () => {
   const u = state.user;
@@ -283,6 +274,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
+registerAsk({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
 registerDeclutter({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
 registerHomes({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
 registerWaka({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
