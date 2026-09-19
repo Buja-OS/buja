@@ -6,6 +6,7 @@ import { registerWork } from './work.js';
 import { registerMessages } from './messages.js';
 import { registerMatch } from './match.js';
 import { registerWaka } from './waka.js';
+import { registerHomes } from './homes.js';
 
 const DISTRICTS = ['Asokoro', 'Maitama', 'Wuse', 'Wuse 2', 'Garki', 'Central Area', 'Jabi', 'Utako', 'Gwarinpa', 'Life Camp', 'Kado', 'Katampe', 'Guzape', 'Durumi', 'Apo', 'Lokogoma', 'Galadimawa', 'Lugbe', 'Kubwa', 'Jahi', 'Nyanya', 'Karu', 'Jikwoyi', 'Kuje', 'Gwagwalada'];
 const app = document.getElementById('app');
@@ -177,7 +178,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/work', 'briefcase', 'var(--green-tint)', 'var(--green-dark)', 'Work', u.kind === 'company' ? 'Your vacancies and applicants' : 'Jobs across Abuja'],
     ['/match', 'heart', 'var(--orange-tint)', 'var(--orange-dark)', 'Match', u.kind === 'company' ? 'Residents only' : 'People near you'],
     ['/waka', 'route', 'rgba(126,217,87,.14)', '#7ED957', 'Waka', 'Routes, fares, riders now', true],
-    ['/homes', 'house-chimney', '#E7EEF8', '#1F4E9C', 'Homes', 'Rent direct, no agent fee'],
+    ['/homes', 'house-chimney', '#E7EEF8', '#1F4E9C', 'Homes', u.kind === 'landlord' ? 'Your listings and enquiries' : 'Rent direct, no agent fee'],
     ['/declutter', 'tags', '#F3E8F8', '#7A3E96', 'Declutter', 'Buy and sell nearby'],
     ['/ask', 'wand-magic-sparkles', 'var(--orange-tint)', 'var(--orange-dark)', 'Ask', 'Best amala, lounges, spots'],
   ];
@@ -205,7 +206,6 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
 } });
 
 for (const [p, ic, name, blurb, phase] of [
-  ['/homes', 'house-chimney', 'Homes', 'Rent and buy direct from verified landlords.', 5],
   ['/declutter', 'tags', 'Declutter', 'Buy and sell nearby with escrow.', 6],
   ['/ask', 'wand-magic-sparkles', 'Ask', 'Your AI guide to the city.', 7],
 ]) {
@@ -231,6 +231,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
     <div class="card list">
       <div class="item"><div class="mi">${icon('user')}</div><div class="grow"><div class="t">Account</div><div class="s">${h(u.email)}${u.phone ? ' · ' + h(u.phone) : ''}</div></div></div>
       ${u.kind === 'company' ? '' : `<a class="item" href="#/match/edit"><div class="mi">${icon('heart')}</div><div class="grow"><div class="t">My Match profile</div><div class="s">Photos, bio, who you see</div></div>${icon('chevron-right')}</a>`}
+      <a class="item" href="#${u.kind === 'landlord' ? '/homes/landlord' : '/homes/saved'}"><div class="mi">${icon('house-chimney')}</div><div class="grow"><div class="t">${u.kind === 'landlord' ? 'My properties' : 'Saved homes'}</div><div class="s">Homes</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/waka"><div class="mi">${icon('route')}</div><div class="grow"><div class="t">Saved routes</div><div class="s">Waka</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#${u.kind === 'company' ? '/work/company' : '/work/profile'}"><div class="mi">${icon('briefcase')}</div><div class="grow"><div class="t">${u.kind === 'company' ? 'Company and vacancies' : 'My CV and applications'}</div><div class="s">Work</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/settings"><div class="mi">${icon('gear')}</div><div class="grow"><div class="t">Settings</div><div class="s">Appearance, notifications, privacy</div></div>${icon('chevron-right')}</a>
@@ -281,6 +282,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
+registerHomes({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
 registerWaka({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
 registerMatch({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
 const push = registerMessages({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });

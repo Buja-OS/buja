@@ -19,17 +19,17 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
 
   /* ---------- Thread ---------- */
   function bubble(m) {
-    if (m.type === 'interview') {
-      const s = m.meta.status; const mine = m.mine;
+    if (m.type === 'interview' || m.type === 'inspection') {
+      const s = m.meta.status; const mine = m.mine; const label = m.type === 'inspection' ? 'Inspection request' : 'Interview invitation';
       return `<div class="card" style="align-self:${mine ? 'flex-end' : 'flex-start'};max-width:300px;overflow:hidden" data-invite="${m.id}">
-        <div class="row" style="padding:12px 14px;background:var(--green-tint);color:var(--green-dark);gap:10px;font-size:13px;font-weight:700">${icon('calendar-check')} Interview invitation ${s === 'confirmed' ? '· Confirmed' : s === 'suggested' ? '· Time suggested' : ''}</div>
+        <div class="row" style="padding:12px 14px;background:var(--green-tint);color:var(--green-dark);gap:10px;font-size:13px;font-weight:700">${icon('calendar-check')} ${label} ${s === 'confirmed' ? '· Confirmed' : s === 'suggested' ? '· Time suggested' : ''}</div>
         <div class="stack" style="padding:14px;gap:8px;font-size:14px">
           <div class="row" style="gap:10px">${icon('clock')}<strong>${h(pretty(m.meta.at))}</strong></div>
           <div class="row" style="gap:10px">${icon('location-dot')}<span>${h(m.meta.place)}</span></div>
           ${m.meta.with ? `<div class="row" style="gap:10px">${icon('users')}<span>With ${h(m.meta.with)}</span></div>` : ''}
           ${m.meta.note ? `<div class="small muted" style="line-height:1.5">${h(m.meta.note)}</div>` : ''}
           ${!mine && s === 'pending' ? `<div class="row" style="gap:8px;margin-top:6px"><button class="btn btn-sm btn-ink" style="flex:1" data-respond="confirm">Confirm</button><button class="btn btn-sm btn-outline" style="flex:1" data-respond="suggest">Suggest time</button></div>` : ''}
-          ${mine && s === 'pending' ? `<div class="small muted">Waiting for a reply</div>` : ''}
+          ${mine && s === 'pending' ? `<div class="small muted">Waiting for ${m.type === 'inspection' ? 'the landlord' : 'a reply'}</div>` : ''}
         </div></div>`;
     }
     return `<div style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px;padding:12px 14px;border-radius:${m.mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px'};font-size:14px;line-height:1.5;${m.mine ? 'background:var(--ink);color:var(--surface)' : 'background:var(--card);border:1px solid var(--line)'};white-space:pre-line">${h(m.body)}<div class="small" style="opacity:.6;margin-top:4px;text-align:right">${when(m.createdAt)}</div></div>`;
@@ -39,9 +39,10 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
     const t = await api.thread(id);
     const c = t.context;
     return `
-    ${topbar(t.title, '/inbox', t.canSchedule ? `<button class="iconbtn" id="sched" aria-label="Schedule interview" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('calendar-check')}</button>` : '')}
+    ${topbar(t.title, '/inbox', t.canSchedule ? `<button class="iconbtn" id="sched" aria-label="Schedule interview" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('calendar-check')}</button>` : t.canRequestInspection ? `<button class="iconbtn" id="inspect" aria-label="Request inspection" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('calendar-check')}</button>` : '')}
+    ${t.kind === 'homes' && c ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${icon('house-chimney')}<span class="grow">${c.isOwner ? `${h(t.other.name)} · enquiring about <strong style="color:var(--ink)">${h(c.title)}</strong>` : `<strong style="color:var(--ink)">${h(c.title)}</strong> · ${h(c.district)}`}</span><a href="#/homes/${c.propertyId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
     ${t.kind === 'match' ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${avatar(t.other.name, 28, color(t.other.name))}<span class="grow">You matched on Buja</span><a href="#/match/profile/${t.other.id}" style="color:var(--orange-dark);font-weight:600">Profile</a></div>` : ''}
-    ${c ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${avatar(t.other.name, 28, color(t.other.name))}<span class="grow">${state.user.kind === 'company' ? `${h(t.other.name)} · applied for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong> · ${c.match}% match` : `Recruiting for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong>`}</span><a href="#/work/${state.user.kind === 'company' ? 'company/job/' + c.jobId : 'job/' + c.jobId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
+    ${c && t.kind !== 'homes' ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${avatar(t.other.name, 28, color(t.other.name))}<span class="grow">${state.user.kind === 'company' ? `${h(t.other.name)} · applied for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong> · ${c.match}% match` : `Recruiting for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong>`}</span><a href="#/work/${state.user.kind === 'company' ? 'company/job/' + c.jobId : 'job/' + c.jobId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
     <main id="msgs" class="stack" style="padding:8px 16px 0;gap:12px;flex:1" data-last="${t.messages.length ? t.messages[t.messages.length - 1].id : 0}">${t.messages.map(bubble).join('')}</main>
     <div id="sheet"></div>
     <form id="compose" class="row" style="gap:10px;padding:10px 16px calc(10px + var(--safe-b));background:var(--card);border-top:1px solid var(--line);position:sticky;bottom:0">
@@ -73,6 +74,24 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
         try { const r = await api.sendMessage(id, v); box.insertAdjacentHTML('beforeend', bubble(r.message)); last = r.message.id; scroll(); } catch (err) { i.value = v; failed(el, err); }
       });
       if (new URLSearchParams(location.hash.split('?')[1] || '').get('schedule') === '1') setTimeout(() => el.querySelector('#sched')?.click(), 50);
+      if (new URLSearchParams(location.hash.split('?')[1] || '').get('inspect') === '1') setTimeout(() => el.querySelector('#inspect')?.click(), 50);
+      el.querySelector('#inspect')?.addEventListener('click', () => {
+        const d = new Date(Date.now() + 2 * 86400000); const def = d.toISOString().slice(0, 10);
+        el.querySelector('#sheet').innerHTML = `<form id="ins" class="card stack" style="margin:8px 16px 12px;padding:16px;gap:12px">
+          <div class="row"><div class="grow h-sm">Request an inspection</div><button type="button" class="iconbtn" id="closeins" aria-label="Close" style="width:36px;height:36px">${icon('xmark')}</button></div>
+          <div class="row" style="gap:10px"><div class="field" style="flex:1"><label for="date">Date</label><input class="input" id="date" type="date" value="${def}" min="${new Date().toISOString().slice(0, 10)}"></div><div class="field" style="flex:1"><label for="time">Time</label><input class="input" id="time" type="time" value="14:00"></div></div>
+          <div class="error" data-error="at"></div>
+          ${field({ id: 'note', label: 'Anything the landlord should know (optional)', placeholder: 'I can only do afternoons' })}
+          <button class="btn btn-primary" type="submit">${icon('paper-plane')} Send request</button>
+          <div class="small muted">The landlord confirms or suggests another time. You both get it on your Today list.</div></form>`;
+        clearOnInput(el.querySelector('#sheet')); scroll();
+        el.querySelector('#closeins').addEventListener('click', () => { el.querySelector('#sheet').innerHTML = ''; });
+        el.querySelector('#ins').addEventListener('submit', async (e) => {
+          e.preventDefault(); const f = e.target; const btn = f.querySelector('[type=submit]'); showErrors(el, {}); busy(btn, true);
+          const localAt = new Date(f.date.value + 'T' + f.time.value); const at = new Date(localAt.getTime() - localAt.getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' ');
+          try { await api.requestInspection(id, { at, note: f.note.value }); toast('Request sent'); if (location.hash === '#/inbox/' + id) location.reload(); else location.hash = '#/inbox/' + id; } catch (err) { busy(btn, false); failed(el, err); }
+        });
+      });
       el.querySelector('#sched')?.addEventListener('click', () => {
         const d = new Date(Date.now() + 3 * 86400000); const def = d.toISOString().slice(0, 10);
         el.querySelector('#sheet').innerHTML = `

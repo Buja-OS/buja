@@ -77,13 +77,15 @@ final class AccountController
     public function today(): void
     {
         $u = Auth::require();
-        $st = Db::pdo()->prepare("SELECT m.id, m.meta, t.id AS thread_id, t.application_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.type = 'interview' AND (t.user_a = ? OR t.user_b = ?) ORDER BY m.id DESC LIMIT 20");
+        $st = Db::pdo()->prepare("SELECT m.id, m.type, m.meta, t.id AS thread_id, t.application_id, t.property_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.type IN ('interview','inspection') AND (t.user_a = ? OR t.user_b = ?) ORDER BY m.id DESC LIMIT 20");
         $st->execute([$u['id'], $u['id']]);
         $items = [];
         foreach ($st->fetchAll() as $m) {
             $meta = json_decode($m['meta'], true);
             if (($meta['status'] ?? '') !== 'confirmed' || strtotime($meta['at']) < time() - 3600) continue;
+            if ($m['type'] === 'inspection') { $pr = Db::one('SELECT title, owner_id FROM properties WHERE id = ?', [$m['property_id']]); if (!$pr) continue; $items[] = ['kind' => 'inspection', 'title' => 'Inspection: ' . $pr['title'], 'sub' => date('D j M · H:i', strtotime($meta['at'])) . ((int) $pr['owner_id'] === (int) $u['id'] ? ' · with the enquirer' : ' · landlord confirmed'), 'url' => '/inbox/' . $m['thread_id'], 'at' => $meta['at']]; continue; }
             $a = Db::one('SELECT j.title, c.name, us.name AS applicant FROM applications a JOIN jobs j ON j.id = a.job_id JOIN companies c ON c.id = j.company_id JOIN users us ON us.id = a.user_id WHERE a.id = ?', [$m['application_id']]);
+            if (!$a) continue;
             $items[] = ['kind' => 'interview', 'title' => $u['kind'] === 'company' ? 'Interview: ' . $a['applicant'] : 'Interview with ' . $a['name'], 'sub' => date('D j M · H:i', strtotime($meta['at'])) . ' · ' . $meta['place'], 'url' => '/inbox/' . $m['thread_id'], 'at' => $meta['at']];
         }
         usort($items, fn($x, $y) => strcmp($x['at'], $y['at']));

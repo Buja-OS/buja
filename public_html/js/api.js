@@ -95,6 +95,21 @@ export const api = {
   wakaSaved:       () => request('GET', '/waka/saved'),
   wakaSave:        (from, to, label) => request('POST', '/waka/saved', { from, to, label }),
   wakaUnsave:      (id) => request('DELETE', '/waka/saved/' + id),
+  // Homes
+  homes:           (f) => request('GET', '/homes' + qs(f)),
+  home:            (id) => request('GET', '/homes/' + id),
+  homesSaved:      () => request('GET', '/homes/saved'),
+  homesSave:       (id) => request('POST', '/homes/' + id + '/save'),
+  homesUnsave:     (id) => request('DELETE', '/homes/' + id + '/save'),
+  enquire:         (id) => request('POST', '/homes/' + id + '/enquire'),
+  requestInspection: (threadId, b) => request('POST', '/threads/' + threadId + '/inspection', b),
+  landlordMe:      () => request('GET', '/landlord/me'),
+  landlordSave:    (b) => request('POST', '/landlord/me', b),
+  landlordProperties: () => request('GET', '/landlord/properties'),
+  createHome:      (b) => request('POST', '/homes', b),
+  updateHome:      (id, b) => request('PATCH', '/homes/' + id, b),
+  addHomePhoto:    (id, file) => { const fd = new FormData(); fd.append('photo', file); return upload('/homes/' + id + '/photos', fd); },
+  deleteHomePhoto: (id) => request('DELETE', '/homes/photos/' + id),
 };
 
 /* Detect the API once at boot. If /api/health is not there, switch to mock mode and say so. */
@@ -150,7 +165,7 @@ async function mockRequest(method, path, body) {
     return { user: pub(u), next: u.district ? 'home' : 'onboarding' };
   }
   if (path === '/auth/logout') { d.session = null; msave(d); return { ok: true }; }
-  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
+  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
   if (path === '/me' && method === 'PATCH') {
     const u = me(); if (!u) throw { error: 'unauthenticated', message: 'Please sign in.' };
     Object.assign(u, body); msave(d); return { user: pub(u) };

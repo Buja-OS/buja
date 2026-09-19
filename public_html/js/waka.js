@@ -27,7 +27,8 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
     const bounds = [];
     legs.forEach((leg) => {
       const pts = leg.path.map((p) => [p.lat, p.lng]); bounds.push(...pts);
-      L.polyline(pts, { color: leg.color || '#7ED957', weight: 6, opacity: .9, lineJoin: 'round' }).addTo(map);
+      const line = leg.geometry && leg.geometry.length > 1 ? leg.geometry : pts;
+      L.polyline(line, { color: leg.color || '#7ED957', weight: 6, opacity: .9, lineJoin: 'round' }).addTo(map);
       leg.path.forEach((p, i) => { const end = i === 0 || i === leg.path.length - 1; L.circleMarker([p.lat, p.lng], { radius: end ? 8 : 5, color: '#fff', weight: 2, fillColor: end ? '#1B1B1F' : (leg.color || '#7ED957'), fillOpacity: 1 }).addTo(map).bindTooltip(p.name, { direction: 'top', offset: [0, -8] }); });
       if (leg.ridersNow) { const mid = leg.path[Math.floor(leg.path.length / 2)]; L.marker([mid.lat, mid.lng], { icon: L.divIcon({ className: '', html: `<div style="background:#1B1B1F;color:#fff;border-radius:12px;padding:3px 8px;font:700 11px Inter,sans-serif;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.3)">${leg.ridersNow} rider${leg.ridersNow === 1 ? '' : 's'} now</div>`, iconAnchor: [30, 12] }) }).addTo(map); }
     });
@@ -157,7 +158,7 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
     </main>`;
   }, {
     mount(el, { id }) {
-      api.wakaRoute(id).then(({ route: r }) => drawMap(el, [{ path: r.stops, color: r.color, ridersNow: r.ridersNow }]));
+      api.wakaRoute(id).then(({ route: r }) => drawMap(el, [{ path: r.stops, color: r.color, ridersNow: r.ridersNow, geometry: r.geometry ? r.geometry.flat() : null }]));
       el.querySelector('#ck').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.wakaCheckin(id); toast(`Thanks. ${r.ridersNow} on this route now.`); location.reload(); } catch (err) { busy(b, false); failed(el, err); } });
       bindLegActions(el);
     }

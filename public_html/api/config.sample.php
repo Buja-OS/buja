@@ -37,6 +37,11 @@ return [
     // The sender address Brevo has verified for you.
     'mail_from' => $env('MAIL_FROM', 'hello@buja.ng'),
 
+    // One-time admin actions (for example building Waka road geometry). Any long random string.
+    'admin_key' => $env('ADMIN_KEY', ''),
+    // openrouteservice.org free key, used once to fetch road paths for routes.
+    'ors_api_key' => $env('ORS_API_KEY', ''),
+
     // Only true when testing on http://localhost.
     'insecure_cookies' => filter_var($env('INSECURE_COOKIES', 'false'), FILTER_VALIDATE_BOOL),
 ];

@@ -5,6 +5,33 @@ final class WakaController
 {
     private function place(array $p): array { return ['id' => (int) $p['id'], 'name' => $p['name'], 'district' => $p['district'], 'lat' => (float) $p['lat'], 'lng' => (float) $p['lng'], 'kind' => $p['kind']]; }
 
+    /** GET /waka/admin/geometry?key=ADMIN_KEY : fetch road geometry for every route once from OpenRouteService and store it. */
+    public function buildGeometry(): void
+    {
+        $adminKey = (string) Http::config('admin_key', ''); $ors = (string) Http::config('ors_api_key', '');
+        if ($adminKey === '' || ($_GET['key'] ?? '') !== $adminKey) Http::json(['error' => 'forbidden', 'message' => 'Set ADMIN_KEY in the environment and pass it as ?key='], 403);
+        if ($ors === '') Http::json(['error' => 'config', 'message' => 'Set ORS_API_KEY in the environment first.'], 409);
+        $done = []; $failed = [];
+        foreach (Db::pdo()->query('SELECT * FROM routes WHERE active = 1')->fetchAll() as $r) {
+            if (!empty($_GET['only']) && (int) $_GET['only'] !== (int) $r['id']) continue;
+            $stops = $this->stops((int) $r['id']); if (count($stops) < 2) continue;
+            $profile = $r['mode'] === 'train' ? null : 'driving-car';
+            if ($profile === null) { $segs = []; for ($i = 0; $i < count($stops) - 1; $i++) $segs[] = [[$stops[$i]['lat'], $stops[$i]['lng']], [$stops[$i + 1]['lat'], $stops[$i + 1]['lng']]]; Db::run('UPDATE routes SET geometry = ? WHERE id = ?', [json_encode($segs), $r['id']]); $done[] = $r['name']; continue; }
+            $coords = array_map(fn($s) => [$s['lng'], $s['lat']], $stops);
+            $ch = curl_init('https://api.openrouteservice.org/v2/directions/' . $profile . '/geojson');
+            curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_POSTFIELDS => json_encode(['coordinates' => $coords]), CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: ' . $ors]]);
+            $raw = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+            $g = json_decode((string) $raw, true);
+            $line = $g['features'][0]['geometry']['coordinates'] ?? null; $wp = $g['features'][0]['properties']['way_points'] ?? null;
+            if ($code !== 200 || !$line || !$wp) { $failed[] = $r['name'] . ' (' . $code . ')'; continue; }
+            $segs = [];
+            for ($i = 0; $i < count($wp) - 1; $i++) $segs[] = array_map(fn($c) => [round($c[1], 5), round($c[0], 5)], array_slice($line, $wp[$i], $wp[$i + 1] - $wp[$i] + 1));
+            Db::run('UPDATE routes SET geometry = ? WHERE id = ?', [json_encode($segs), $r['id']]); $done[] = $r['name'];
+            usleep(300000);
+        }
+        Http::json(['done' => $done, 'failed' => $failed]);
+    }
+
     /** GET /waka/places?q= */
     public function places(): void
     {
@@ -22,7 +49,7 @@ final class WakaController
     private function routeShape(array $r, bool $withStops = false): array
     {
         $out = ['id' => (int) $r['id'], 'name' => $r['name'], 'mode' => $r['mode'], 'modeLabel' => WakaRules::MODES[$r['mode']] ?? $r['mode'], 'origin' => (int) $r['origin_place'], 'dest' => (int) $r['dest_place'], 'color' => $r['color'], 'notes' => $r['notes'], 'ridersNow' => WakaRules::ridersNow((int) $r['id'])];
-        if ($withStops) { $out['stops'] = $this->stops((int) $r['id']); $out['fare'] = WakaRules::fare((int) $r['id'], (int) $r['origin_place'], (int) $r['dest_place']); }
+        if ($withStops) { $out['stops'] = $this->stops((int) $r['id']); $out['fare'] = WakaRules::fare((int) $r['id'], (int) $r['origin_place'], (int) $r['dest_place']); $out['geometry'] = !empty($r['geometry']) ? json_decode($r['geometry'], true) : null; }
         return $out;
     }
 
@@ -65,7 +92,9 @@ final class WakaController
             $lo = min($sx['position'], $sy['position']); $hi = max($sx['position'], $sy['position']);
             $path = array_values(array_filter($stopsBy[$r['id']], fn($s) => $s['position'] >= $lo && $s['position'] <= $hi));
             if ($sx['position'] > $sy['position']) $path = array_reverse($path);
-            return ['routeId' => (int) $r['id'], 'routeName' => $r['name'], 'mode' => $r['mode'], 'modeLabel' => WakaRules::MODES[$r['mode']], 'color' => $r['color'], 'from' => $sx, 'to' => $sy, 'km' => round($km, 1), 'minutes' => WakaRules::minutes($km, $r['mode']), 'fare' => $f, 'ridersNow' => WakaRules::ridersNow((int) $r['id']), 'path' => $path, 'say' => 'Tell the driver "' . $sy['name'] . '"'];
+            $geom = null;
+            if (!empty($r['geometry'])) { $segs = json_decode($r['geometry'], true); $lo2 = min($sx['position'], $sy['position']); $hi2 = max($sx['position'], $sy['position']); $pts = []; for ($i = $lo2; $i < $hi2; $i++) foreach ($segs[$i] ?? [] as $pt) $pts[] = $pt; if ($sx['position'] > $sy['position']) $pts = array_reverse($pts); $geom = $pts ?: null; }
+            return ['routeId' => (int) $r['id'], 'routeName' => $r['name'], 'mode' => $r['mode'], 'modeLabel' => WakaRules::MODES[$r['mode']], 'color' => $r['color'], 'from' => $sx, 'to' => $sy, 'km' => round($km, 1), 'minutes' => WakaRules::minutes($km, $r['mode']), 'fare' => $f, 'ridersNow' => WakaRules::ridersNow((int) $r['id']), 'path' => $path, 'geometry' => $geom, 'say' => 'Tell the driver "' . $sy['name'] . '"'];
         };
         $options = [];
         foreach ($routes as $r) { $pa = $pos((int) $r['id'], $from); $pb = $pos((int) $r['id'], $to); if ($pa !== null && $pb !== null && $pa !== $pb) $options[] = ['legs' => [$leg($r, $from, $to)], 'transfers' => 0]; }

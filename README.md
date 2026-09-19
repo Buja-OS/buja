@@ -1,4 +1,4 @@
-# Buja, Phase 4
+# Buja, Phase 5
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -84,6 +84,15 @@ All non-GET calls require the header `X-Buja-Client: pwa`. Errors are JSON: `{ e
 
 Note on tiles: OpenStreetMap's public tile server is fine for testing and early users. Before real traffic, switch the tile URL in `js/waka.js` to a MapTiler or Stadia free key, or self-host Protomaps.
 
+## Phase 5: Homes
+
+- Landlord accounts (chosen at onboarding) set up a landlord profile (person or real estate company), post properties for rent or sale with type, district, area or landmark, price, beds, baths, facilities, description, years upfront, legal and caution fees, and up to 10 photos (compressed on the phone). Status: available, let, sold, hidden.
+- Search: rent or buy; filters for type, max price, bedrooms, districts, must-have facilities, and sort by minutes to Central Area (from district centres in `api/src/HomesRules.php`). Every card says Direct from landlord or Real estate company. Result line counts direct listings.
+- Property page: photos, price, facts, facilities, landlord card with listing count, and for rent a savings strip (10% agent fee avoided) plus the legal and caution fees the landlord stated.
+- Enquiry opens a `homes` thread in the shared Inbox. The enquirer requests an inspection (date, time, note) as a card; the landlord confirms or suggests another time; confirmed inspections appear on both Today lists. Landlord dashboard shows views, enquiries, inspections, saved-by-others.
+- Waka: `/api/waka/admin/geometry?key=ADMIN_KEY` fetches real road paths for all routes once from OpenRouteService (`ORS_API_KEY`) and stores them; the map then draws roads instead of straight lines.
+- New: `api/src/HomesRules.php`, `api/controllers/HomesController.php`, `js/homes.js`, `migrations/006_homes.sql` (also adds `threads.property_id`, `threads.listing_id`, `routes.geometry`, and the `inspection` and `offer` message types).
+
 ## What is next
 
-Phase 5: Homes. Then Declutter, Ask. Selfie verification, Buja Plus with Paystack, and object storage for photos and CVs follow once all six modules exist.
+Phase 6: Declutter. Phase 7: Ask. Then trust and money: selfie verification, verified landlord and seller badges, Buja Plus and escrow with Paystack, object storage for photos and CVs.

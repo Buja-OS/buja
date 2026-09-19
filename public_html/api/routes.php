@@ -23,6 +23,7 @@ $router->get('/inbox',                       [MessagesController::class, 'inbox'
 $router->get('/threads/{id}',                [MessagesController::class, 'show']);
 $router->post('/threads/{id}/messages',      [MessagesController::class, 'send']);
 $router->post('/threads/{id}/interview',     [MessagesController::class, 'invite']);
+$router->post('/threads/{id}/inspection',    [MessagesController::class, 'inspection']);
 $router->post('/messages/{id}/respond',      [MessagesController::class, 'respond']);
 $router->post('/applications/{id}/thread',   [MessagesController::class, 'openForApplication']);
 $router->get('/push/key',                    [PushController::class, 'key']);
@@ -78,3 +79,20 @@ $router->post('/waka/checkin',               [WakaController::class, 'checkin'])
 $router->get('/waka/saved',                  [WakaController::class, 'saved']);
 $router->post('/waka/saved',                 [WakaController::class, 'save']);
 $router->delete('/waka/saved/{id}',          [WakaController::class, 'unsave']);
+
+// Homes
+$router->get('/homes',                       [HomesController::class, 'index']);
+$router->get('/homes/saved',                 [HomesController::class, 'saved']);
+$router->get('/homes/photo/{id}',            [HomesController::class, 'photo']);
+$router->get('/homes/{id}',                  [HomesController::class, 'show']);
+$router->post('/homes',                      [HomesController::class, 'create']);
+$router->patch('/homes/{id}',                [HomesController::class, 'update']);
+$router->post('/homes/{id}/photos',          [HomesController::class, 'addPhoto']);
+$router->delete('/homes/photos/{id}',        [HomesController::class, 'deletePhoto']);
+$router->post('/homes/{id}/save',            [HomesController::class, 'save']);
+$router->delete('/homes/{id}/save',          [HomesController::class, 'unsave']);
+$router->post('/homes/{id}/enquire',         [HomesController::class, 'enquire']);
+$router->get('/landlord/me',                 [HomesController::class, 'landlordMe']);
+$router->post('/landlord/me',                [HomesController::class, 'landlordSave']);
+$router->get('/landlord/properties',         [HomesController::class, 'mine']);
+$router->get('/waka/admin/geometry',         [WakaController::class, 'buildGeometry']);
