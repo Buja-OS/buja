@@ -1,4 +1,4 @@
-# Buja, Phase 1
+# Buja, Phase 2a
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -48,6 +48,12 @@ migrations/001_init.sql   users, sessions, rate_limits
 
 All non-GET calls require the header `X-Buja-Client: pwa`. Errors are JSON: `{ error, message }` or `{ error: "validation", fields: { field: message } }`.
 
+## Phase 2a: Work (jobs board)
+
+- Companies: company profile, post and edit vacancies with weighted requirements (weights total 100), open/close, applicants ranked by match score with status flow new → shortlisted → interview → hired / rejected, CV access limited to applicants who applied to you.
+- Seekers: feed with search and district chips, job detail, CV on file (PDF or Word, 2 MB, stored in the database until Phase 4 moves it to object storage), requirements checklist with live match percentage, apply once per role, saved jobs, profile with headline, years, open-to-work, skills, application statuses.
+- New files: `api/src/Work.php`, `api/controllers/JobsController.php`, `SeekerController.php`, `CompanyController.php`, `js/work.js`, `migrations/002_work.sql`. Router now supports `{id}` parameters; `Http::file()` reads multipart uploads.
+
 ## What is next
 
-Phase 2, Work: jobs, CV upload to object storage, company dashboard, in-app messages, push notifications, email via Brevo (verification, password reset).
+Phase 2b: in-app message threads, interview invitation card, push notifications, email via Brevo (verification, password reset), employer verification.

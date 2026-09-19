@@ -18,6 +18,17 @@ async function request(method, path, body) {
   return data;
 }
 
+async function upload(path, formData) {
+  if (mock) throw { error: 'mock', message: 'This needs the live server.' };
+  let res;
+  try { res = await fetch('/api' + path, { method: 'POST', headers: { 'X-Buja-Client': 'pwa' }, credentials: 'same-origin', body: formData }); }
+  catch { throw { error: 'network', message: navigator.onLine ? 'Could not reach Buja. Please try again.' : 'You are offline.' }; }
+  let data = null; try { data = await res.json(); } catch {}
+  if (!res.ok) throw (data || { error: 'http_' + res.status, message: 'Something went wrong (' + res.status + ').' });
+  return data;
+}
+const qs = (o) => { const p = Object.entries(o || {}).filter(([, v]) => v !== '' && v != null); return p.length ? '?' + new URLSearchParams(p).toString() : ''; };
+
 export const api = {
   health:   () => request('GET', '/health'),
   me:       () => request('GET', '/me'),
@@ -27,6 +38,24 @@ export const api = {
   logout:   () => request('POST', '/auth/logout'),
   updateMe: (b) => request('PATCH', '/me', b),
   isMock:   () => mock,
+  // Work
+  jobs:            (f) => request('GET', '/jobs' + qs(f)),
+  job:             (id) => request('GET', '/jobs/' + id),
+  apply:           (id, b) => request('POST', '/jobs/' + id + '/apply', b),
+  saveJob:         (id) => request('POST', '/jobs/' + id + '/save'),
+  unsaveJob:       (id) => request('DELETE', '/jobs/' + id + '/save'),
+  myApplications:  () => request('GET', '/me/applications'),
+  seeker:          () => request('GET', '/me/seeker'),
+  updateSeeker:    (b) => request('PATCH', '/me/seeker', b),
+  uploadCv:        (file) => { const fd = new FormData(); fd.append('cv', file); return upload('/me/cv', fd); },
+  deleteCv:        () => request('DELETE', '/me/cv'),
+  company:         () => request('GET', '/company'),
+  saveCompany:     (b) => request('POST', '/company', b),
+  companyJobs:     () => request('GET', '/company/jobs'),
+  createJob:       (b) => request('POST', '/company/jobs', b),
+  updateJob:       (id, b) => request('PATCH', '/company/jobs/' + id, b),
+  applicants:      (id, status) => request('GET', '/company/jobs/' + id + '/applications' + qs({ status })),
+  setApplication:  (id, status) => request('PATCH', '/company/applications/' + id, { status }),
 };
 
 /* Detect the API once at boot. If /api/health is not there, switch to mock mode and say so. */
@@ -82,6 +111,7 @@ async function mockRequest(method, path, body) {
     return { user: pub(u), next: u.district ? 'home' : 'onboarding' };
   }
   if (path === '/auth/logout') { d.session = null; msave(d); return { ok: true }; }
+  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
   if (path === '/me' && method === 'PATCH') {
     const u = me(); if (!u) throw { error: 'unauthenticated', message: 'Please sign in.' };
     Object.assign(u, body); msave(d); return { user: pub(u) };

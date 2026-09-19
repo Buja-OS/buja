@@ -2,29 +2,36 @@
 import { state, setState, subscribe, applyTheme } from './store.js';
 import { api, detectApi } from './api.js';
 import { h, toast, mark, markAuto, topbar, tabbar, field, showErrors, bindEyes, clearOnInput, busy, avatar, icon } from './ui.js';
+import { registerWork } from './work.js';
 
 const DISTRICTS = ['Asokoro', 'Maitama', 'Wuse', 'Wuse 2', 'Garki', 'Central Area', 'Jabi', 'Utako', 'Gwarinpa', 'Life Camp', 'Kado', 'Katampe', 'Guzape', 'Durumi', 'Apo', 'Lokogoma', 'Galadimawa', 'Lugbe', 'Kubwa', 'Jahi', 'Nyanya', 'Karu', 'Jikwoyi', 'Kuje', 'Gwagwalada'];
 const app = document.getElementById('app');
 
 /* ---------------- Router ---------------- */
 const routes = {};
-function route(path, opts, render, extra) { routes[path] = { ...opts, ...(extra || {}), render }; }
+function route(path, opts, render, extra) { routes[path] = { ...opts, ...(extra || {}), render, keys: (path.match(/:\w+/g) || []).map((k) => k.slice(1)), rx: new RegExp('^' + path.replace(/:\w+/g, '([^/]+)') + '$') }; }
 function go(path) { location.hash = '#' + path; }
 function current() { return (location.hash.replace(/^#/, '') || '/').split('?')[0]; }
+function match(path) {
+  if (routes[path]) return { r: routes[path], params: {} };
+  for (const r of Object.values(routes)) { const m = r.keys.length && path.match(r.rx); if (m) return { r, params: Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])])) }; }
+  return { r: routes['/404'], params: {} };
+}
 
 async function render() {
   if (!state.booted) return;
   const path = current();
-  const r = routes[path] || routes['/404'];
+  const { r, params } = match(path);
   if (r.auth && !state.user) { go('/welcome'); return; }
   if (r.guest && state.user) { go(state.user.district ? '/home' : '/onboarding'); return; }
   app.innerHTML = '';
   const el = document.createElement('div');
   el.className = 'screen screen-enter' + (r.tabs ? '' : ' no-tabs');
-  el.innerHTML = await r.render();
+  try { el.innerHTML = await r.render(params); }
+  catch (err) { el.innerHTML = `${topbar('', '/home')}<div class="placeholder"><div class="mi card">${icon('triangle-exclamation')}</div><div class="h-md">${h((err && err.message) || 'Something went wrong')}</div><a class="btn btn-ink" href="#/home" style="width:auto">Go home</a></div>`; }
   app.appendChild(el);
   if (r.tabs) app.insertAdjacentHTML('beforeend', tabbar(r.tabs));
-  if (r.mount) r.mount(el);
+  if (r.mount) r.mount(el, params);
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', render);
@@ -164,7 +171,7 @@ route('/onboarding', { auth: true }, async () => {
 route('/home', { auth: true, tabs: 'Home' }, async () => {
   const u = state.user; const hour = new Date().getHours(); const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const modules = [
-    ['/work', 'briefcase', 'var(--green-tint)', 'var(--green-dark)', 'Work', 'Jobs across Abuja'],
+    ['/work', 'briefcase', 'var(--green-tint)', 'var(--green-dark)', 'Work', u.kind === 'company' ? 'Your vacancies and applicants' : 'Jobs across Abuja'],
     ['/match', 'heart', 'var(--orange-tint)', 'var(--orange-dark)', 'Match', 'People near you'],
     ['/waka', 'route', 'rgba(126,217,87,.14)', '#7ED957', 'Waka', 'Routes and fares', true],
     ['/homes', 'house-chimney', '#E7EEF8', '#1F4E9C', 'Homes', 'Rent direct, no agent fee'],
@@ -187,13 +194,12 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
 });
 
 for (const [p, ic, name, blurb, phase] of [
-  ['/work', 'briefcase', 'Work', 'Jobs across Abuja, CVs, interviews and the company dashboard.', 2],
   ['/match', 'heart', 'Match', 'Verified profiles, neighbourhood radius, matches and chat.', 3],
   ['/waka', 'route', 'Waka', 'Live map, vehicles on route and crowd-confirmed fares.', 4],
   ['/homes', 'house-chimney', 'Homes', 'Rent and buy direct from verified landlords.', 5],
   ['/declutter', 'tags', 'Declutter', 'Buy and sell nearby with escrow.', 6],
   ['/ask', 'wand-magic-sparkles', 'Ask', 'Your AI guide to the city.', 7],
-  ['/inbox', 'message', 'Inbox', 'Recruiters, matches, buyers and landlords in one list.', 2],
+  ['/inbox', 'message', 'Inbox', 'Recruiters, matches, buyers and landlords in one list.', '2b'],
 ]) {
   route(p, { auth: true, tabs: name === 'Ask' ? 'Ask' : name === 'Inbox' ? 'Inbox' : '' }, async () => `
     ${topbar(name, '/home')}
@@ -212,6 +218,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
     <div class="card dark row" style="padding:16px;gap:14px">${avatar(u.name, 56)}<div class="grow"><div class="h-md">${h(u.name)}</div><div class="small" style="color:#B5B5BC;margin-top:2px">${h(u.district || 'Abuja')} · ${h(kindLabel(u.kind))}</div><div class="row" style="gap:6px;margin-top:8px">${u.verified ? `<span class="tag green">${icon('circle-check')} Email verified</span>` : `<span class="tag orange">Email not verified</span>`}${u.google ? `<span class="tag" style="background:rgba(255,255,255,.12);color:#fff">Google</span>` : ''}</div></div></div>
     <div class="card list">
       <div class="item"><div class="mi">${icon('user')}</div><div class="grow"><div class="t">Account</div><div class="s">${h(u.email)}${u.phone ? ' · ' + h(u.phone) : ''}</div></div></div>
+      <a class="item" href="#${u.kind === 'company' ? '/work/company' : '/work/profile'}"><div class="mi">${icon('briefcase')}</div><div class="grow"><div class="t">${u.kind === 'company' ? 'Company and vacancies' : 'My CV and applications'}</div><div class="s">Work</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/settings"><div class="mi">${icon('gear')}</div><div class="grow"><div class="t">Settings</div><div class="s">Appearance, notifications, privacy</div></div>${icon('chevron-right')}</a>
       <button class="item" data-logout><div class="mi">${icon('right-from-bracket')}</div><div class="grow"><div class="t">Sign out</div><div class="s">On this device</div></div></button>
     </div>
@@ -246,6 +253,8 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
     el.querySelectorAll('.switch').forEach((s) => s.addEventListener('click', () => { const on = !s.classList.contains('on'); s.classList.toggle('on', on); s.setAttribute('aria-checked', on); }));
   }
 });
+
+registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
 
 route('/404', {}, async () => `${topbar('Not found', '/home')}<div class="placeholder"><div class="h-md">That page does not exist</div><a class="btn btn-ink" href="#/home" style="width:auto">Go home</a></div>`);
 

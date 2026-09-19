@@ -35,10 +35,19 @@ final class Http
     public static function body(): array
     {
         if (self::$body !== null) return self::$body;
+        $ct = $_SERVER['CONTENT_TYPE'] ?? '';
+        if (str_starts_with($ct, 'multipart/form-data')) { self::$body = $_POST; return self::$body; }
         $raw = file_get_contents('php://input') ?: '';
         $data = json_decode($raw, true);
         self::$body = is_array($data) ? $data : [];
         return self::$body;
+    }
+
+    /** Uploaded file by field name, or null. */
+    public static function file(string $field): ?array
+    {
+        $f = $_FILES[$field] ?? null;
+        return ($f && ($f['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) ? $f : null;
     }
 
     /** Every state-changing call must carry this header. Cross-site forms cannot set it, so it blocks CSRF. */

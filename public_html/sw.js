@@ -1,10 +1,10 @@
 /* Buja service worker, phase 1.
    Cache-first for the app shell and static assets, network-only for /api.
    Bump VERSION whenever a shell file changes so users get the update. */
-const VERSION = 'buja-shell-v1';
+const VERSION = 'buja-shell-v2';
 const SHELL = [
   '/', '/index.html', '/manifest.webmanifest', '/offline.html',
-  '/css/app.css', '/js/app.js', '/js/api.js', '/js/ui.js', '/js/store.js', '/js/icons.js',
+  '/css/app.css', '/js/app.js', '/js/api.js', '/js/ui.js', '/js/store.js', '/js/icons.js', '/js/work.js',
   '/assets/icons/mark-dark.svg', '/assets/icons/mark-light.svg', '/assets/icons/favicon.svg'
 ];
 
