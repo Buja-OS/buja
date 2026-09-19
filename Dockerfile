@@ -34,8 +34,11 @@ RUN printf '%s\n' \
  'Header set X-Content-Type-Options "nosniff"' \
  'Header set X-Frame-Options "SAMEORIGIN"' \
  'Header set Referrer-Policy "strict-origin-when-cross-origin"' \
- '<FilesMatch "\.(html|webmanifest)$">' \
+ '<FilesMatch "\.(html|webmanifest|css|js)$">' \
  '  Header set Cache-Control "no-cache"' \
+ '</FilesMatch>' \
+ '<FilesMatch "\.(svg|woff2|png|jpg|webp)$">' \
+ '  Header set Cache-Control "public, max-age=604800"' \
  '</FilesMatch>' \
  '<FilesMatch "^sw\.js$">' \
  '  Header set Cache-Control "no-cache"' \
