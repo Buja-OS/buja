@@ -20,22 +20,22 @@ final class MessagesController
     public function inbox(): void
     {
         $u = Auth::require();
-        $sql = 'SELECT t.*, o.name AS other_name, o.kind AS other_kind, c.name AS company_name, j.title AS job_title, j.id AS job_id, pr.title AS property_title, pr.id AS property_id2, lp.display_name AS landlord_name,
+        $sql = 'SELECT t.*, o.name AS other_name, o.kind AS other_kind, c.name AS company_name, j.title AS job_title, j.id AS job_id, pr.title AS property_title, pr.id AS property_id2, lp.display_name AS landlord_name, li.title AS listing_title,
                        (SELECT body FROM messages m WHERE m.thread_id = t.id ORDER BY m.id DESC LIMIT 1) AS last_body,
                        (SELECT type FROM messages m WHERE m.thread_id = t.id ORDER BY m.id DESC LIMIT 1) AS last_type,
                        (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.sender_id <> ? AND m.id > COALESCE((SELECT last_read_id FROM thread_reads r WHERE r.thread_id = t.id AND r.user_id = ?), 0)) AS unread
                 FROM threads t
                 JOIN users o ON o.id = CASE WHEN t.user_a = ? THEN t.user_b ELSE t.user_a END
                 LEFT JOIN applications a ON a.id = t.application_id LEFT JOIN jobs j ON j.id = a.job_id LEFT JOIN companies c ON c.id = j.company_id
-                LEFT JOIN properties pr ON pr.id = t.property_id LEFT JOIN landlord_profiles lp ON lp.user_id = pr.owner_id
+                LEFT JOIN properties pr ON pr.id = t.property_id LEFT JOIN landlord_profiles lp ON lp.user_id = pr.owner_id LEFT JOIN listings li ON li.id = t.listing_id
                 WHERE t.user_a = ? OR t.user_b = ? ORDER BY t.last_message_at DESC';
         $st = Db::pdo()->prepare($sql); $st->execute([$u['id'], $u['id'], $u['id'], $u['id'], $u['id']]);
         $rows = array_map(fn($t) => [
             'id' => (int) $t['id'], 'kind' => $t['kind'], 'unread' => (int) $t['unread'], 'lastAt' => $t['last_message_at'],
-            'title' => $t['kind'] === 'match' ? explode(' ', $t['other_name'])[0] : ($t['kind'] === 'homes' ? ((int) $t['user_a'] === (int) $u['id'] ? $t['other_name'] : ($t['landlord_name'] ?: $t['other_name'])) : ($u['kind'] === 'company' ? $t['other_name'] : ($t['company_name'] ?? $t['other_name']))),
-            'subtitle' => $t['kind'] === 'match' ? 'Match' : ($t['kind'] === 'homes' ? 'Homes · ' . ($t['property_title'] ?? '') : ($t['job_title'] ? ($u['kind'] === 'company' ? 'Applied for ' . $t['job_title'] : $t['job_title']) : '')),
+            'title' => $t['kind'] === 'match' || $t['kind'] === 'declutter' ? explode(' ', $t['other_name'])[0] : ($t['kind'] === 'homes' ? ((int) $t['user_a'] === (int) $u['id'] ? $t['other_name'] : ($t['landlord_name'] ?: $t['other_name'])) : ($u['kind'] === 'company' ? $t['other_name'] : ($t['company_name'] ?? $t['other_name']))),
+            'subtitle' => $t['kind'] === 'match' ? 'Match' : ($t['kind'] === 'declutter' ? 'Declutter · ' . ($t['listing_title'] ?? '') : ($t['kind'] === 'homes' ? 'Homes · ' . ($t['property_title'] ?? '') : ($t['job_title'] ? ($u['kind'] === 'company' ? 'Applied for ' . $t['job_title'] : $t['job_title']) : ''))),
             'otherId' => (int) (($t['user_a'] == $u['id']) ? $t['user_b'] : $t['user_a']),
-            'preview' => $t['last_type'] === 'interview' ? 'Interview invitation' : ($t['last_type'] === 'inspection' ? 'Inspection request' : ($t['last_body'] ?? '')),
+            'preview' => $t['last_type'] === 'interview' ? 'Interview invitation' : ($t['last_type'] === 'inspection' ? 'Inspection request' : ($t['last_type'] === 'offer' ? 'Offer' : ($t['last_body'] ?? ''))),
             'jobId' => $t['job_id'] ? (int) $t['job_id'] : null,
         ], $st->fetchAll());
         Http::json(['threads' => $rows, 'unread' => array_sum(array_column($rows, 'unread'))]);
@@ -65,10 +65,15 @@ final class MessagesController
                 $pr = Db::one('SELECT p.id, p.title, p.price, p.kind AS pkind, p.district, p.owner_id, lp.display_name FROM properties p LEFT JOIN landlord_profiles lp ON lp.user_id = p.owner_id WHERE p.id = ?', [$t['property_id']]);
                 if ($pr) $ctx = ['propertyId' => (int) $pr['id'], 'title' => $pr['title'], 'price' => (int) $pr['price'], 'kind' => $pr['pkind'], 'district' => $pr['district'], 'landlord' => $pr['display_name'], 'isOwner' => (int) $pr['owner_id'] === (int) $u['id']];
             }
+            if ($t['listing_id']) {
+                $li = Db::one('SELECT id, title, price, status, seller_id FROM listings WHERE id = ?', [$t['listing_id']]);
+                if ($li) $ctx = ['listingId' => (int) $li['id'], 'title' => $li['title'], 'price' => (int) $li['price'], 'status' => $li['status'], 'isSeller' => (int) $li['seller_id'] === (int) $u['id']];
+            }
             $out['other'] = ['id' => (int) $o['id'], 'name' => $o['name'], 'kind' => $o['kind']];
             $out['kind'] = $t['kind'];
+            if ($t['kind'] === 'declutter') { $out['title'] = explode(' ', $o['name'])[0]; $out['context'] = $ctx; $out['canOffer'] = $ctx && !$ctx['isSeller'] && $ctx['status'] === 'active'; }
             if ($t['kind'] === 'homes') { $out['title'] = $ctx && !$ctx['isOwner'] ? ($ctx['landlord'] ?: $o['name']) : $o['name']; $out['context'] = $ctx; $out['canRequestInspection'] = $ctx && !$ctx['isOwner']; }
-            if ($t['kind'] !== 'homes') { $out['title'] = $t['kind'] === 'match' ? explode(' ', $o['name'])[0] : ($u['kind'] === 'company' ? $o['name'] : ($ctx['company'] ?? $o['name'])); $out['context'] = $ctx; $out['canSchedule'] = $u['kind'] === 'company' && $ctx !== null; }
+            if ($t['kind'] !== 'homes' && $t['kind'] !== 'declutter') { $out['title'] = $t['kind'] === 'match' ? explode(' ', $o['name'])[0] : ($u['kind'] === 'company' ? $o['name'] : ($ctx['company'] ?? $o['name'])); $out['context'] = $ctx; $out['canSchedule'] = $u['kind'] === 'company' && $ctx !== null; }
         }
         Http::json($out);
     }

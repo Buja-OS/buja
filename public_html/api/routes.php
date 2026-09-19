@@ -96,3 +96,19 @@ $router->get('/landlord/me',                 [HomesController::class, 'landlordM
 $router->post('/landlord/me',                [HomesController::class, 'landlordSave']);
 $router->get('/landlord/properties',         [HomesController::class, 'mine']);
 $router->get('/waka/admin/geometry',         [WakaController::class, 'buildGeometry']);
+
+// Declutter
+$router->get('/declutter',                   [DeclutterController::class, 'index']);
+$router->get('/declutter/saved',             [DeclutterController::class, 'saved']);
+$router->get('/declutter/mine',              [DeclutterController::class, 'mine']);
+$router->get('/declutter/photo/{id}',        [DeclutterController::class, 'photo']);
+$router->get('/declutter/{id}',              [DeclutterController::class, 'show']);
+$router->post('/declutter',                  [DeclutterController::class, 'create']);
+$router->patch('/declutter/{id}',            [DeclutterController::class, 'update']);
+$router->post('/declutter/{id}/photos',      [DeclutterController::class, 'addPhoto']);
+$router->delete('/declutter/photos/{id}',    [DeclutterController::class, 'deletePhoto']);
+$router->post('/declutter/{id}/save',        [DeclutterController::class, 'save']);
+$router->delete('/declutter/{id}/save',      [DeclutterController::class, 'unsave']);
+$router->post('/declutter/{id}/chat',        [DeclutterController::class, 'chat']);
+$router->post('/threads/{id}/offer',         [DeclutterController::class, 'offer']);
+$router->post('/messages/{id}/offer-response', [DeclutterController::class, 'respondOffer']);

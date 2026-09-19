@@ -110,6 +110,20 @@ export const api = {
   updateHome:      (id, b) => request('PATCH', '/homes/' + id, b),
   addHomePhoto:    (id, file) => { const fd = new FormData(); fd.append('photo', file); return upload('/homes/' + id + '/photos', fd); },
   deleteHomePhoto: (id) => request('DELETE', '/homes/photos/' + id),
+  // Declutter
+  declutter:       (f) => request('GET', '/declutter' + qs(f)),
+  dItem:           (id) => request('GET', '/declutter/' + id),
+  dSaved:          () => request('GET', '/declutter/saved'),
+  dMine:           () => request('GET', '/declutter/mine'),
+  dSave:           (id) => request('POST', '/declutter/' + id + '/save'),
+  dUnsave:         (id) => request('DELETE', '/declutter/' + id + '/save'),
+  dChat:           (id) => request('POST', '/declutter/' + id + '/chat'),
+  dCreate:         (b) => request('POST', '/declutter', b),
+  dUpdate:         (id, b) => request('PATCH', '/declutter/' + id, b),
+  dAddPhoto:       (id, file) => { const fd = new FormData(); fd.append('photo', file); return upload('/declutter/' + id + '/photos', fd); },
+  dDeletePhoto:    (id) => request('DELETE', '/declutter/photos/' + id),
+  offer:           (threadId, amount) => request('POST', '/threads/' + threadId + '/offer', { amount }),
+  respondOffer:    (messageId, action) => request('POST', '/messages/' + messageId + '/offer-response', { action }),
 };
 
 /* Detect the API once at boot. If /api/health is not there, switch to mock mode and say so. */
@@ -165,7 +179,7 @@ async function mockRequest(method, path, body) {
     return { user: pub(u), next: u.district ? 'home' : 'onboarding' };
   }
   if (path === '/auth/logout') { d.session = null; msave(d); return { ok: true }; }
-  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
+  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
   if (path === '/me' && method === 'PATCH') {
     const u = me(); if (!u) throw { error: 'unauthenticated', message: 'Please sign in.' };
     Object.assign(u, body); msave(d); return { user: pub(u) };

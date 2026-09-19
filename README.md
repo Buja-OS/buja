@@ -1,4 +1,4 @@
-# Buja, Phase 5
+# Buja, Phase 6
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -93,6 +93,14 @@ Note on tiles: OpenStreetMap's public tile server is fine for testing and early 
 - Waka: `/api/waka/admin/geometry?key=ADMIN_KEY` fetches real road paths for all routes once from OpenRouteService (`ORS_API_KEY`) and stores them; the map then draws roads instead of straight lines.
 - New: `api/src/HomesRules.php`, `api/controllers/HomesController.php`, `js/homes.js`, `migrations/006_homes.sql` (also adds `threads.property_id`, `threads.listing_id`, `routes.geometry`, and the `inspection` and `offer` message types).
 
+## Phase 6: Declutter
+
+- Any resident lists an item: title, category (13 Abuja-relevant categories), condition, price with negotiable or fixed, district only, handover (pickup, delivery, either), description, up to 8 photos compressed on the phone, and an opt-in to Buja escrow when payments launch. Mark sold, hide, relist.
+- Feed: search, category chips, sorted by Near me (own district, then neighbouring districts from the Match adjacency map, then the rest), Newest, or Cheapest. Saved items.
+- Item page: photos, condition and handover chips, seller card (first name and initial, phone-verified, sold and listed counts, district, member since), safety line above the actions.
+- Chat opens a `declutter` thread in the shared Inbox. Buyers make offers as cards (refused below 30% of asking); the seller accepts or declines and an automatic reply reminds both to pay only on handover. My listings shows chats and offers waiting.
+- New: `api/controllers/DeclutterController.php`, `js/declutter.js`, `migrations/007_declutter.sql`.
+
 ## What is next
 
-Phase 6: Declutter. Phase 7: Ask. Then trust and money: selfie verification, verified landlord and seller badges, Buja Plus and escrow with Paystack, object storage for photos and CVs.
+Phase 7: Ask Buja (the AI guide, grounded on Buja's own places and ratings). Then trust and money: selfie verification, verified landlord and seller badges, Buja Plus and escrow with Paystack, object storage for photos and CVs.

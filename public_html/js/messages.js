@@ -32,6 +32,14 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
           ${mine && s === 'pending' ? `<div class="small muted">Waiting for ${m.type === 'inspection' ? 'the landlord' : 'a reply'}</div>` : ''}
         </div></div>`;
     }
+    if (m.type === 'offer') {
+      const s = m.meta.status; const mine = m.mine;
+      return `<div class="card" style="align-self:${mine ? 'flex-end' : 'flex-start'};max-width:280px;overflow:hidden" data-offer="${m.id}">
+        <div class="row" style="padding:10px 14px;background:${s === 'accepted' ? 'var(--green-tint)' : s === 'declined' ? 'var(--surface)' : 'var(--orange-tint)'};color:${s === 'accepted' ? 'var(--green-dark)' : s === 'declined' ? 'var(--ink-3)' : 'var(--orange-dark)'};gap:10px;font-size:13px;font-weight:700">${icon('naira-sign')} Offer ${s === 'accepted' ? '· Accepted' : s === 'declined' ? '· Declined' : ''}</div>
+        <div class="stack" style="padding:14px;gap:6px"><div style="font-size:24px;font-weight:700">₦${Number(m.meta.amount).toLocaleString('en-NG')}</div><div class="small muted">Asking ₦${Number(m.meta.asking).toLocaleString('en-NG')}</div>
+        ${!mine && s === 'pending' ? `<div class="row" style="gap:8px;margin-top:6px"><button class="btn btn-sm btn-ink" style="flex:1" data-offer-act="accept">Accept</button><button class="btn btn-sm btn-outline" style="flex:1" data-offer-act="decline">Decline</button></div>` : ''}
+        ${mine && s === 'pending' ? `<div class="small muted">Waiting for the seller</div>` : ''}</div></div>`;
+    }
     return `<div style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px;padding:12px 14px;border-radius:${m.mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px'};font-size:14px;line-height:1.5;${m.mine ? 'background:var(--ink);color:var(--surface)' : 'background:var(--card);border:1px solid var(--line)'};white-space:pre-line">${h(m.body)}<div class="small" style="opacity:.6;margin-top:4px;text-align:right">${when(m.createdAt)}</div></div>`;
   }
 
@@ -39,10 +47,11 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
     const t = await api.thread(id);
     const c = t.context;
     return `
-    ${topbar(t.title, '/inbox', t.canSchedule ? `<button class="iconbtn" id="sched" aria-label="Schedule interview" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('calendar-check')}</button>` : t.canRequestInspection ? `<button class="iconbtn" id="inspect" aria-label="Request inspection" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('calendar-check')}</button>` : '')}
+    ${topbar(t.title, '/inbox', t.canSchedule ? `<button class="iconbtn" id="sched" aria-label="Schedule interview" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('calendar-check')}</button>` : t.canRequestInspection ? `<button class="iconbtn" id="inspect" aria-label="Request inspection" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('calendar-check')}</button>` : t.canOffer ? `<button class="iconbtn" id="mkoffer" aria-label="Make an offer" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('naira-sign')}</button>` : '')}
+    ${t.kind === 'declutter' && c ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${icon('tags')}<span class="grow">${c.isSeller ? `${h(t.other.name)} · about your <strong style="color:var(--ink)">${h(c.title)}</strong>` : `<strong style="color:var(--ink)">${h(c.title)}</strong> · ₦${Number(c.price).toLocaleString('en-NG')}`}${c.status !== 'active' ? ' · <strong>' + c.status + '</strong>' : ''}</span><a href="#/declutter/${c.listingId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
     ${t.kind === 'homes' && c ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${icon('house-chimney')}<span class="grow">${c.isOwner ? `${h(t.other.name)} · enquiring about <strong style="color:var(--ink)">${h(c.title)}</strong>` : `<strong style="color:var(--ink)">${h(c.title)}</strong> · ${h(c.district)}`}</span><a href="#/homes/${c.propertyId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
     ${t.kind === 'match' ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${avatar(t.other.name, 28, color(t.other.name))}<span class="grow">You matched on Buja</span><a href="#/match/profile/${t.other.id}" style="color:var(--orange-dark);font-weight:600">Profile</a></div>` : ''}
-    ${c && t.kind !== 'homes' ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${avatar(t.other.name, 28, color(t.other.name))}<span class="grow">${state.user.kind === 'company' ? `${h(t.other.name)} · applied for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong> · ${c.match}% match` : `Recruiting for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong>`}</span><a href="#/work/${state.user.kind === 'company' ? 'company/job/' + c.jobId : 'job/' + c.jobId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
+    ${c && t.kind !== 'homes' && t.kind !== 'declutter' ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${avatar(t.other.name, 28, color(t.other.name))}<span class="grow">${state.user.kind === 'company' ? `${h(t.other.name)} · applied for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong> · ${c.match}% match` : `Recruiting for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong>`}</span><a href="#/work/${state.user.kind === 'company' ? 'company/job/' + c.jobId : 'job/' + c.jobId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
     <main id="msgs" class="stack" style="padding:8px 16px 0;gap:12px;flex:1" data-last="${t.messages.length ? t.messages[t.messages.length - 1].id : 0}">${t.messages.map(bubble).join('')}</main>
     <div id="sheet"></div>
     <form id="compose" class="row" style="gap:10px;padding:10px 16px calc(10px + var(--safe-b));background:var(--card);border-top:1px solid var(--line);position:sticky;bottom:0">
@@ -55,6 +64,8 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
       const box = el.querySelector('#msgs'); let last = +box.dataset.last || 0;
       const scroll = () => window.scrollTo(0, document.body.scrollHeight);
       scroll();
+      const bindOffers = () => el.querySelectorAll('[data-offer-act]').forEach((b) => { if (b.dataset.bound) return; b.dataset.bound = 1; b.addEventListener('click', async () => { const mid = b.closest('[data-offer]').dataset.offer; busy(b, true); try { await api.respondOffer(mid, b.dataset.offerAct); toast(b.dataset.offerAct === 'accept' ? 'Offer accepted' : 'Offer declined'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } }); });
+      bindOffers();
       const bindResponds = () => el.querySelectorAll('[data-respond]').forEach((b) => { if (b.dataset.bound) return; b.dataset.bound = 1; b.addEventListener('click', async () => {
         const mid = b.closest('[data-invite]').dataset.invite; const action = b.dataset.respond;
         let note = '';
@@ -65,7 +76,7 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
       bindResponds();
       const poll = async () => {
         if (document.hidden) return;
-        try { const t = await api.thread(id, last); if (t.messages.length) { box.insertAdjacentHTML('beforeend', t.messages.map(bubble).join('')); last = t.messages[t.messages.length - 1].id; bindResponds(); scroll(); } } catch {}
+        try { const t = await api.thread(id, last); if (t.messages.length) { box.insertAdjacentHTML('beforeend', t.messages.map(bubble).join('')); last = t.messages[t.messages.length - 1].id; bindResponds(); bindOffers(); scroll(); } } catch {}
       };
       const timer = setInterval(poll, 5000);
       window.addEventListener('hashchange', () => clearInterval(timer), { once: true });
@@ -75,6 +86,15 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
       });
       if (new URLSearchParams(location.hash.split('?')[1] || '').get('schedule') === '1') setTimeout(() => el.querySelector('#sched')?.click(), 50);
       if (new URLSearchParams(location.hash.split('?')[1] || '').get('inspect') === '1') setTimeout(() => el.querySelector('#inspect')?.click(), 50);
+      if (new URLSearchParams(location.hash.split('?')[1] || '').get('offer') === '1') setTimeout(() => el.querySelector('#mkoffer')?.click(), 50);
+      el.querySelector('#mkoffer')?.addEventListener('click', () => {
+        el.querySelector('#sheet').innerHTML = `<form id="off" class="card stack" style="margin:8px 16px 12px;padding:16px;gap:12px"><div class="row"><div class="grow h-sm">Make an offer</div><button type="button" class="iconbtn" id="closeoff" aria-label="Close" style="width:36px;height:36px">${icon('xmark')}</button></div>
+          <div class="field"><label for="amount">Your offer (₦)</label><input class="input" id="amount" inputmode="numeric" placeholder="380,000"><div class="error" data-error="amount"></div></div>
+          <button class="btn btn-primary" type="submit">${icon('naira-sign')} Send offer</button><div class="small muted">The seller accepts or declines. No money moves here; pay only when you have the item.</div></form>`;
+        clearOnInput(el.querySelector('#sheet')); scroll(); el.querySelector('#amount').focus();
+        el.querySelector('#closeoff').addEventListener('click', () => { el.querySelector('#sheet').innerHTML = ''; });
+        el.querySelector('#off').addEventListener('submit', async (e) => { e.preventDefault(); const btn = e.target.querySelector('[type=submit]'); showErrors(el, {}); busy(btn, true); try { await api.offer(id, el.querySelector('#amount').value); toast('Offer sent'); if (location.hash === '#/inbox/' + id) location.reload(); else location.hash = '#/inbox/' + id; } catch (err) { busy(btn, false); failed(el, err); } });
+      });
       el.querySelector('#inspect')?.addEventListener('click', () => {
         const d = new Date(Date.now() + 2 * 86400000); const def = d.toISOString().slice(0, 10);
         el.querySelector('#sheet').innerHTML = `<form id="ins" class="card stack" style="margin:8px 16px 12px;padding:16px;gap:12px">
