@@ -123,25 +123,24 @@ export function registerMatch({ route, go, state, api, ui, DISTRICTS, failed }) 
   }
   route('/match/discover', { auth: true, tabs: '' }, async () => {
     const g = guardCompany(); if (g) return g;
-    let r; try { r = await api.discover(); } catch (err) { if (err.error === 'no_profile' || err.error === 'no_photo') { go('/match/setup'); return ''; } throw err; }
     return `
     <header class="topbar"><a class="iconbtn" href="#/home" aria-label="Home">${icon('arrow-left')}</a><h1>Match</h1>
       <a class="iconbtn" href="#/match/likes" aria-label="Who liked you">${icon('regular/heart')}</a><a class="iconbtn" href="#/match/matches" aria-label="Matches">${icon('message')}</a><a class="iconbtn" href="#/match/edit" aria-label="My profile">${icon('user')}</a></header>
     <main class="stack" style="padding:0 16px;gap:14px;flex:1">
-      <div id="stack" style="flex:1;display:flex;flex-direction:column">${r.cards.length ? card(r.cards[0]) : empty()}</div>
-      <div id="actions" class="row" style="justify-content:center;gap:18px;padding-bottom:6px;${r.cards.length ? '' : 'display:none'}">
+      <div id="stack" style="flex:1;display:flex;flex-direction:column"><div class="card" style="flex:1;border-radius:24px;min-height:420px"></div></div>
+      <div id="actions" class="row" style="justify-content:center;gap:18px;padding-bottom:6px;display:none">
         <button class="iconbtn" data-act="pass" aria-label="Pass" style="width:64px;height:64px;font-size:24px">${icon('xmark')}</button>
         <button class="iconbtn" data-act="superlike" aria-label="Super like" style="width:48px;height:48px;color:#1F4E9C">${icon('star')}</button>
         <button class="iconbtn" data-act="like" aria-label="Like" style="width:64px;height:64px;background:var(--orange);border-color:var(--orange);color:#fff;font-size:26px">${icon('heart')}</button>
       </div>
-      <div class="small muted center" id="superleft">${r.superlikesLeft ? '1 super like left today' : 'Super like used for today'}</div>
+      <div class="small muted center" id="superleft"></div>
     </main>
     <div id="matchoverlay"></div>`;
   }, {
     mount(el) {
       let cards = []; let left = 0;
       const stack = el.querySelector('#stack');
-      const load = async () => { try { const r = await api.discover(); cards = r.cards; left = r.superlikesLeft; show(); } catch (err) { failed(el, err); } };
+      const load = async () => { try { const r = await api.discover(); cards = r.cards; left = r.superlikesLeft; show(); } catch (err) { if (err.error === 'no_profile' || err.error === 'no_photo') { go('/match/setup'); return; } failed(el, err); } };
       const show = () => { if (!cards.length) { stack.innerHTML = empty(); el.querySelector('#actions').style.display = 'none'; return; } stack.innerHTML = card(cards[0]); el.querySelector('#actions').style.display = ''; el.querySelector('#superleft').textContent = left ? '1 super like left today' : 'Super like used for today'; };
       load();
       el.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {

@@ -1,4 +1,4 @@
-# Buja, Phase 3
+# Buja, Phase 4
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -72,6 +72,18 @@ All non-GET calls require the header `X-Buja-Client: pwa`. Errors are JSON: `{ e
 - Matches grid; Liked you with the newest like shown in full and the rest locked for the coming Buja Plus.
 - New: `api/src/MatchRules.php`, `api/controllers/MatchController.php`, `js/match.js`, `migrations/004_match.sql`.
 
+## Phase 4: Waka
+
+- Directory of 34 Abuja parks, junctions and landmarks and 15 routes (bus, keke, one rail line) with ordered stops, seeded in `migrations/005_waka.sql`. Coordinates and starting fares are estimates flagged "est." until riders confirm.
+- Planner: pick any two places; direct routes in either direction, then one-transfer options through a shared stop, each with per-leg fare, distance, time at Abuja speeds, what to tell the driver, and a taxi-drop estimate. Cheapest and fastest tagged.
+- Crowd fares: riders report what they paid; the fare shown is the median of the last 30 days with the report count. Reports must be between two stops of that route.
+- Riders now: "I'm on this route" check-ins count distinct riders in the last 15 minutes, shown on the map and in lists. This is what "live" means until a vehicle-tracking partner exists.
+- Map: Leaflet 1.9 from cdnjs over OpenStreetMap tiles, loaded only when a map is shown, with a text fallback if the library cannot load. Route lines and stop markers; riders-now badge at the midpoint.
+- Saved routes (up to 10) on the Waka home and under Me.
+- New: `api/src/WakaRules.php`, `api/controllers/WakaController.php`, `js/waka.js`, `migrations/005_waka.sql`.
+
+Note on tiles: OpenStreetMap's public tile server is fine for testing and early users. Before real traffic, switch the tile URL in `js/waka.js` to a MapTiler or Stadia free key, or self-host Protomaps.
+
 ## What is next
 
-Phase 4: Waka (live map, fares, routes). Then Homes, Declutter, Ask. Selfie verification, Buja Plus with Paystack, and object storage for photos and CVs follow once all six modules exist.
+Phase 5: Homes. Then Declutter, Ask. Selfie verification, Buja Plus with Paystack, and object storage for photos and CVs follow once all six modules exist.

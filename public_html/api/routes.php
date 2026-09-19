@@ -67,3 +67,14 @@ $router->get('/match/matches',               [MatchController::class, 'matches']
 $router->get('/match/likes',                 [MatchController::class, 'likes']);
 $router->post('/match/block',                [MatchController::class, 'block']);
 $router->post('/match/report',               [MatchController::class, 'report']);
+
+// Waka
+$router->get('/waka/places',                 [WakaController::class, 'places']);
+$router->get('/waka/routes',                 [WakaController::class, 'routes']);
+$router->get('/waka/routes/{id}',            [WakaController::class, 'route']);
+$router->get('/waka/plan',                   [WakaController::class, 'plan']);
+$router->post('/waka/fares',                 [WakaController::class, 'reportFare']);
+$router->post('/waka/checkin',               [WakaController::class, 'checkin']);
+$router->get('/waka/saved',                  [WakaController::class, 'saved']);
+$router->post('/waka/saved',                 [WakaController::class, 'save']);
+$router->delete('/waka/saved/{id}',          [WakaController::class, 'unsave']);
