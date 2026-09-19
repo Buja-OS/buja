@@ -3,6 +3,7 @@ import { state, setState, subscribe, applyTheme } from './store.js';
 import { api, detectApi } from './api.js';
 import { h, toast, mark, markAuto, topbar, tabbar, field, showErrors, bindEyes, clearOnInput, busy, avatar, icon } from './ui.js';
 import { registerWork } from './work.js';
+import { registerMessages } from './messages.js';
 
 const DISTRICTS = ['Asokoro', 'Maitama', 'Wuse', 'Wuse 2', 'Garki', 'Central Area', 'Jabi', 'Utako', 'Gwarinpa', 'Life Camp', 'Kado', 'Katampe', 'Guzape', 'Durumi', 'Apo', 'Lokogoma', 'Galadimawa', 'Lugbe', 'Kubwa', 'Jahi', 'Nyanya', 'Karu', 'Jikwoyi', 'Kuje', 'Gwagwalada'];
 const app = document.getElementById('app');
@@ -18,24 +19,31 @@ function match(path) {
   return { r: routes['/404'], params: {} };
 }
 
+let renderSeq = 0;
 async function render() {
   if (!state.booted) return;
+  const seq = ++renderSeq;
   const path = current();
   const { r, params } = match(path);
   if (r.auth && !state.user) { go('/welcome'); return; }
   if (r.guest && state.user) { go(state.user.district ? '/home' : '/onboarding'); return; }
-  app.innerHTML = '';
   const el = document.createElement('div');
   el.className = 'screen screen-enter' + (r.tabs ? '' : ' no-tabs');
-  try { el.innerHTML = await r.render(params); }
-  catch (err) { el.innerHTML = `${topbar('', '/home')}<div class="placeholder"><div class="mi card">${icon('triangle-exclamation')}</div><div class="h-md">${h((err && err.message) || 'Something went wrong')}</div><a class="btn btn-ink" href="#/home" style="width:auto">Go home</a></div>`; }
+  let html;
+  try { html = await r.render(params); }
+  catch (err) { html = null; if (seq !== renderSeq) return; el.innerHTML = `${topbar('', '/home')}<div class="placeholder"><div class="mi card">${icon('triangle-exclamation')}</div><div class="h-md">${h((err && err.message) || 'Something went wrong')}</div><a class="btn btn-ink" href="#/home" style="width:auto">Go home</a></div>`; }
+  if (seq !== renderSeq) return;
+  if (html !== null) el.innerHTML = html;
+  app.innerHTML = '';
   app.appendChild(el);
-  if (r.tabs) app.insertAdjacentHTML('beforeend', tabbar(r.tabs));
+  if (r.tabs) app.insertAdjacentHTML('beforeend', tabbar(r.tabs, state.unread || 0));
   if (r.mount) r.mount(el, params);
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', render);
-subscribe(() => { /* user or theme changed: re-render only screens that show it */ if (['/home', '/me', '/settings'].includes(current())) render(); });
+let lastKey = '';
+const stateKey = () => JSON.stringify([state.user && [state.user.id, state.user.kind, state.user.district, state.user.name, state.user.verified], state.theme]);
+subscribe(() => { const k = stateKey(); if (k === lastKey) return; lastKey = k; if (['/home', '/me', '/settings'].includes(current())) render(); });
 
 /* ---------------- Screens ---------------- */
 route('/', { guest: true }, async () => { go('/welcome'); return ''; });
@@ -128,13 +136,6 @@ route('/signup', { guest: true }, async () => `
   }
 });
 
-route('/forgot', { guest: true }, async () => `
-  ${topbar('', '/signin')}
-  <main class="pad stack" style="gap:18px">
-    <div><div class="h-xl">Reset your password</div><div class="muted" style="margin-top:4px">Password reset by email arrives in Phase 2 with the email service. For now, sign in with Google or create a new account.</div></div>
-    <a class="btn btn-ink" href="#/signin">Back to sign in</a>
-  </main>`);
-
 route('/onboarding', { auth: true }, async () => {
   const u = state.user;
   return `
@@ -189,9 +190,17 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     <a class="card askbar" href="#/ask">${icon('wand-magic-sparkles')}<span class="grow">Ask Buja anything about Abuja</span>${icon('microphone')}</a>
     <div class="grid2">${modules.map(([href, ic, bg, fg, t, s, dark]) => `<a class="card mod ${dark ? 'dark' : ''}" href="#${href}"><div class="mi" style="background:${bg};color:${fg}">${icon(ic)}</div><div><div class="t">${t}</div><div class="s">${s}</div></div></a>`).join('')}</div>
     <div class="section">TODAY</div>
-    <div class="card" style="padding:14px 16px" ><div class="row">${icon('circle-info')}<div class="grow"><div style="font-size:14px;font-weight:600">Nothing yet</div><div class="small muted">Interviews, inspections and fare changes will show up here.</div></div></div></div>
+    <div id="today" class="stack" style="gap:10px"><div class="card" style="padding:14px 16px"><div class="row">${icon('circle-info')}<div class="grow"><div style="font-size:14px;font-weight:600">Nothing yet</div><div class="small muted">Interviews, inspections and fare changes will show up here.</div></div></div></div></div>
   </main>`;
-});
+}, { async mount(el) {
+  try {
+    const t = await api.today(); state.unread = t.unread; setBadge(t.unread);
+    const box = el.querySelector('#today'); const items = [];
+    if (t.unread) items.push(`<a class="card row" href="#/inbox" style="padding:13px 16px">${icon('message')}<div class="grow"><div style="font-size:14px;font-weight:600">${t.unread} unread message${t.unread === 1 ? '' : 's'}</div><div class="small muted">Open your inbox</div></div>${icon('chevron-right')}</a>`);
+    for (const i of t.items) items.push(`<a class="card row" href="#${i.url}" style="padding:13px 16px">${icon('calendar-check')}<div class="grow"><div style="font-size:14px;font-weight:600">${h(i.title)}</div><div class="small muted">${h(i.sub)}</div></div>${icon('chevron-right')}</a>`);
+    if (items.length) box.innerHTML = items.join('');
+  } catch {}
+} });
 
 for (const [p, ic, name, blurb, phase] of [
   ['/match', 'heart', 'Match', 'Verified profiles, neighbourhood radius, matches and chat.', 3],
@@ -199,7 +208,6 @@ for (const [p, ic, name, blurb, phase] of [
   ['/homes', 'house-chimney', 'Homes', 'Rent and buy direct from verified landlords.', 5],
   ['/declutter', 'tags', 'Declutter', 'Buy and sell nearby with escrow.', 6],
   ['/ask', 'wand-magic-sparkles', 'Ask', 'Your AI guide to the city.', 7],
-  ['/inbox', 'message', 'Inbox', 'Recruiters, matches, buyers and landlords in one list.', '2b'],
 ]) {
   route(p, { auth: true, tabs: name === 'Ask' ? 'Ask' : name === 'Inbox' ? 'Inbox' : '' }, async () => `
     ${topbar(name, '/home')}
@@ -212,10 +220,14 @@ for (const [p, ic, name, blurb, phase] of [
 
 route('/me', { auth: true, tabs: 'Me' }, async () => {
   const u = state.user;
+  const v = new URLSearchParams(location.hash.split('?')[1] || '').get('verified');
+  if (v === '1') { try { const r = await api.me(); setState({ user: r.user }); } catch {} setTimeout(() => toast('Email confirmed'), 100); }
+  if (v === '0') setTimeout(() => toast('That confirmation link has expired. Send a new one.'), 100);
   return `
   ${topbar('Me', '', `<a class="iconbtn" href="#/settings" aria-label="Settings">${icon('gear')}</a>`)}
   <main class="pad stack" style="gap:14px">
     <div class="card dark row" style="padding:16px;gap:14px">${avatar(u.name, 56)}<div class="grow"><div class="h-md">${h(u.name)}</div><div class="small" style="color:#B5B5BC;margin-top:2px">${h(u.district || 'Abuja')} · ${h(kindLabel(u.kind))}</div><div class="row" style="gap:6px;margin-top:8px">${u.verified ? `<span class="tag green">${icon('circle-check')} Email verified</span>` : `<span class="tag orange">Email not verified</span>`}${u.google ? `<span class="tag" style="background:rgba(255,255,255,.12);color:#fff">Google</span>` : ''}</div></div></div>
+    ${state.user.verified ? '' : `<div class="card row" style="padding:12px 14px;border-color:var(--orange)">${icon('triangle-exclamation')}<div class="grow"><div style="font-size:14px;font-weight:600">Confirm your email</div><div class="small muted">Check your inbox for the link from Buja.</div></div><button class="btn btn-sm btn-outline" data-resend>Resend</button></div>`}
     <div class="card list">
       <div class="item"><div class="mi">${icon('user')}</div><div class="grow"><div class="t">Account</div><div class="s">${h(u.email)}${u.phone ? ' · ' + h(u.phone) : ''}</div></div></div>
       <a class="item" href="#${u.kind === 'company' ? '/work/company' : '/work/profile'}"><div class="mi">${icon('briefcase')}</div><div class="grow"><div class="t">${u.kind === 'company' ? 'Company and vacancies' : 'My CV and applications'}</div><div class="s">Work</div></div>${icon('chevron-right')}</a>
@@ -223,7 +235,10 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
       <button class="item" data-logout><div class="mi">${icon('right-from-bracket')}</div><div class="grow"><div class="t">Sign out</div><div class="s">On this device</div></div></button>
     </div>
   </main>`;
-}, { mount(el) { el.querySelector('[data-logout]').addEventListener('click', async () => { await api.logout(); setState({ user: null }); toast('Signed out'); go('/welcome'); }); } });
+}, { mount(el) {
+  el.querySelector('[data-logout]').addEventListener('click', async () => { await api.logout(); setState({ user: null }); toast('Signed out'); go('/welcome'); });
+  el.querySelector('[data-resend]')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { const r = await api.resendVerify(); toast(r.configured ? 'Confirmation email sent' : 'Email is not set up on this server yet'); } catch (err) { failed(el, err); } busy(e.currentTarget, false); });
+} });
 
 route('/settings', { auth: true, tabs: 'Me' }, async () => `
   ${topbar('Settings', '/me')}
@@ -239,10 +254,11 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
       </div>
     </div>
     <div class="stack" style="gap:10px"><div class="section">NOTIFICATIONS</div>
-      <div class="card list">
-        ${['briefcase|Interview invitations|1', 'heart|New matches and messages|1', 'route|Fare changes on saved routes|1', 'bolt|Buja Plus offers|0'].map((s) => { const [ic, t, on] = s.split('|'); return `<div class="item"><div class="mi">${icon(ic)}</div><div class="grow"><div class="t">${t}</div></div><button class="switch ${on === '1' ? 'on' : ''}" role="switch" aria-checked="${on === '1'}" aria-label="${t}"><span></span></button></div>`; }).join('')}
+      <div class="card list" id="notif">
+        <div class="item"><div class="mi">${icon('bell')}</div><div class="grow"><div class="t">Push notifications on this device</div><div class="s" id="pushs">Checking…</div></div><button class="switch" id="pushtoggle" role="switch" aria-checked="false" aria-label="Push notifications"><span></span></button></div>
+        ${[['work', 'briefcase', 'Interviews, messages and applications'], ['match', 'heart', 'New matches and messages'], ['waka', 'route', 'Fare changes on saved routes'], ['offers', 'bolt', 'Buja Plus offers']].map(([k, ic, t]) => `<div class="item"><div class="mi">${icon(ic)}</div><div class="grow"><div class="t">${t}</div></div><button class="switch" data-pref="${k}" role="switch" aria-checked="false" aria-label="${t}"><span></span></button></div>`).join('')}
       </div>
-      <div class="small muted">Push notifications switch on in Phase 2 once the app is on your domain.</div>
+      <div class="small muted" id="pushhint">Push works in Chrome on Android and on iPhone once Buja is added to the Home Screen.</div>
     </div>
     <div class="stack" style="gap:10px"><div class="section">ABOUT</div>
       <div class="card list"><div class="item"><div class="mi">${icon('circle-info')}</div><div class="grow"><div class="t">Buja</div><div class="s">Phase 1 · ${api.isMock() ? 'preview mode, data stays on this device' : 'connected to your API'}</div></div></div></div>
@@ -250,15 +266,25 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
   </main>`, {
   mount(el) {
     el.querySelectorAll('#theme button').forEach((b) => b.addEventListener('click', () => { applyTheme(b.dataset.theme); el.querySelectorAll('#theme button').forEach((x) => x.classList.toggle('on', x === b)); }));
-    el.querySelectorAll('.switch').forEach((s) => s.addEventListener('click', () => { const on = !s.classList.contains('on'); s.classList.toggle('on', on); s.setAttribute('aria-checked', on); }));
+    (async () => {
+      let prefs = { work: true, match: true, waka: true, offers: false }; let pushed = false;
+      try { const t = await api.today(); prefs = t.notifications; pushed = t.pushEnabled; } catch {}
+      el.querySelectorAll('[data-pref]').forEach((s) => { const on = !!prefs[s.dataset.pref]; s.classList.toggle('on', on); s.setAttribute('aria-checked', on); s.addEventListener('click', async () => { const next = !s.classList.contains('on'); s.classList.toggle('on', next); s.setAttribute('aria-checked', next); try { await api.notifications({ [s.dataset.pref]: next }); } catch (err) { s.classList.toggle('on', !next); failed(el, err); } }); });
+      const tg = el.querySelector('#pushtoggle'), st = el.querySelector('#pushs');
+      if (!push.pushSupported() || api.isMock()) { st.textContent = api.isMock() ? 'Needs the live site' : 'Not supported in this browser'; tg.disabled = true; return; }
+      const local = await push.pushState(); tg.classList.toggle('on', local); tg.setAttribute('aria-checked', local); st.textContent = local ? 'On' : (pushed ? 'On for another device' : 'Off');
+      tg.addEventListener('click', async () => { const next = !tg.classList.contains('on'); tg.disabled = true; try { next ? await push.enablePush() : await push.disablePush(); tg.classList.toggle('on', next); tg.setAttribute('aria-checked', next); st.textContent = next ? 'On' : 'Off'; if (next) { toast('Notifications on. Sending a test…'); api.pushTest().catch(() => {}); } } catch (err) { toast(err.message || 'Could not change notifications'); } tg.disabled = false; });
+    })();
   }
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
+const push = registerMessages({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
 
 route('/404', {}, async () => `${topbar('Not found', '/home')}<div class="placeholder"><div class="h-md">That page does not exist</div><a class="btn btn-ink" href="#/home" style="width:auto">Go home</a></div>`);
 
 /* ---------------- Helpers ---------------- */
+function setBadge(n) { const tab = document.querySelector('.tab[aria-label="Inbox"]'); if (!tab) return; tab.querySelector('.tab-badge')?.remove(); if (n) tab.insertAdjacentHTML('beforeend', `<span class="tab-badge">${n}</span>`); }
 const val = (f, id) => (f.querySelector('#' + id) || {}).value || '';
 function kindLabel(k) { return k === 'company' ? 'Hiring' : k === 'landlord' ? 'Landlord' : 'Resident'; }
 
@@ -291,5 +317,6 @@ function mountGoogle(el) {
   setState({ booted: true });
   if (!location.hash) go(state.user ? '/home' : '/welcome');
   render();
+  setInterval(async () => { if (state.user && !document.hidden && !api.isMock()) { try { const t = await api.today(); if (t.unread !== state.unread) { state.unread = t.unread; setBadge(t.unread); } } catch {} } }, 60000);
   if ('serviceWorker' in navigator && !api.isMock() && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();

@@ -32,6 +32,11 @@ return [
     // Public origin, no trailing slash. e.g. https://buja.onrender.com
     'app_origin' => $env('APP_ORIGIN', 'https://yourdomain.com'),
 
+    // Brevo > SMTP & API > API Keys. Leave empty to skip email (verification and password reset then need push or a later phase).
+    'brevo_api_key' => $env('BREVO_API_KEY', ''),
+    // The sender address Brevo has verified for you.
+    'mail_from' => $env('MAIL_FROM', 'hello@buja.ng'),
+
     // Only true when testing on http://localhost.
     'insecure_cookies' => filter_var($env('INSECURE_COOKIES', 'false'), FILTER_VALIDATE_BOOL),
 ];

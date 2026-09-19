@@ -31,6 +31,7 @@ final class AuthController
         $id = Db::lastId();
         Auth::signIn($id);
         $u = Db::one('SELECT * FROM users WHERE id = ?', [$id]);
+        try { AccountController::sendVerification($u); } catch (Throwable $e) { error_log('[buja] verification email failed: ' . $e->getMessage()); }
         Http::json(['user' => Auth::publicUser($u), 'next' => 'onboarding'], 201);
     }
 

@@ -22,10 +22,10 @@ export function topbar(title, back, right) {
   </header>`;
 }
 
-export function tabbar(active) {
+export function tabbar(active, unread = 0) {
   const tabs = [['/home', 'house', 'Home'], ['/ask', 'wand-magic-sparkles', 'Ask'], ['/inbox', 'message', 'Inbox'], ['/me', 'user', 'Me']];
   return `<nav class="tabbar" aria-label="Main">${tabs.map(([href, ic, label]) =>
-    `<a class="tab ${active === label ? 'on' : ''}" href="#${href}" aria-label="${label}" ${active === label ? 'aria-current="page"' : ''}>${icon(ic)}<span>${label}</span></a>`).join('')}</nav>`;
+    `<a class="tab ${active === label ? 'on' : ''}" href="#${href}" aria-label="${label}" ${active === label ? 'aria-current="page"' : ''} style="position:relative">${icon(ic)}<span>${label}</span>${label === 'Inbox' && unread ? `<span class="tab-badge">${unread}</span>` : ''}</a>`).join('')}</nav>`;
 }
 
 export function field({ id, label, type = 'text', placeholder = '', value = '', hint = '', autocomplete = '', inputmode = '' }) {

@@ -60,7 +60,7 @@ export function registerWork({ route, go, state, setState, api, ui, DISTRICTS, f
     const closed = j.status !== 'open' || (j.deadline && j.deadline < new Date().toISOString().slice(0, 10));
     const reqs = j.requirements || [];
     const sheet = isCompany() ? '' : j.application ? `
-      <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:8px"><div class="row"><div class="grow h-sm">Your application</div>${stag(j.application.status)}</div><div class="small muted">Sent ${ago(j.application.createdAt)} · ${j.application.match}% match on their requirements. The company will message you here when there is news.</div><a class="btn btn-outline" href="#/work/profile" style="margin-top:6px">See all my applications</a></div>`
+      <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:8px"><div class="row"><div class="grow h-sm">Your application</div>${stag(j.application.status)}</div><div class="small muted">Sent ${ago(j.application.createdAt)} · ${j.application.match}% match on their requirements.</div><div class="row" style="gap:8px;margin-top:6px"><button class="btn btn-outline" style="flex:1" data-thread="${j.application.id}">${icon('message')} Message ${h(j.company.name)}</button><a class="btn btn-ghost" href="#/work/profile" style="flex:1">My applications</a></div></div>`
     : closed ? `<div class="card" style="padding:16px"><div class="h-sm">This vacancy is closed</div><div class="small muted">Applications are no longer accepted.</div></div>`
     : `
       <form id="apply" class="card" style="padding:16px;display:flex;flex-direction:column;gap:14px;border-radius:24px 24px 0 0;border-bottom:0">
@@ -88,6 +88,7 @@ export function registerWork({ route, go, state, setState, api, ui, DISTRICTS, f
   }, {
     mount(el, { id }) {
       bindSaves(el);
+      el.querySelector('[data-thread]')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { const r = await api.openThread(e.currentTarget.dataset.thread); go('/inbox/' + r.threadId); } catch (err) { busy(e.currentTarget, false); failed(el, err); } });
       const f = el.querySelector('#apply'); if (!f) return;
       const boxes = [...f.querySelectorAll('input[name=met]')]; const line = f.querySelector('#matchline');
       const weights = Object.fromEntries(boxes.map((b) => [b.value, +b.closest('label').querySelector('.tag').textContent]));
@@ -276,19 +277,21 @@ export function registerWork({ route, go, state, setState, api, ui, DISTRICTS, f
           ${a.note ? `<div class="small" style="padding:10px 12px;background:var(--surface);border-radius:10px;line-height:1.5">“${h(a.note)}”</div>` : ''}
           <div class="row" style="gap:8px;flex-wrap:wrap">
             ${a.cv ? `<a class="btn btn-sm btn-outline" href="/api/cv/${a.cv.id}" target="_blank" rel="noopener">${icon('file-arrow-up')} CV</a>` : ''}
+            <button class="btn btn-sm btn-outline" data-thread="${a.id}">${icon('message')} Message</button>
             ${stag(a.status)}<div class="grow"></div>
             ${a.status !== 'shortlisted' && a.status !== 'interview' && a.status !== 'hired' ? `<button class="btn btn-sm btn-outline" data-status="shortlisted">Shortlist</button>` : ''}
-            ${a.status !== 'interview' && a.status !== 'hired' ? `<button class="btn btn-sm btn-ink" data-status="interview">${icon('calendar-check')} Interview</button>` : ''}
+            ${a.status !== 'interview' && a.status !== 'hired' ? `<button class="btn btn-sm btn-ink" data-thread="${a.id}" data-schedule="1">${icon('calendar-check')} Interview</button>` : ''}
             ${a.status === 'interview' ? `<button class="btn btn-sm btn-ink" data-status="hired">Mark hired</button>` : ''}
             ${a.status !== 'rejected' && a.status !== 'hired' ? `<button class="btn btn-sm btn-outline" data-status="rejected" style="color:var(--ink-3)">Pass</button>` : ''}
           </div>
           <div class="small muted">${a.applicant.email}${a.applicant.phone ? ' · ' + a.applicant.phone : ''} · applied ${ago(a.createdAt)}</div>
         </div>`).join('') : `<div class="card" style="padding:16px"><div class="h-sm">No applicants ${status ? 'with this status' : 'yet'}</div><div class="small muted">Applicants appear here ranked by how much of your requirements they meet.</div></div>`}</div>
-      <div class="small muted" style="line-height:1.5">Interview scheduling and messaging arrive in Phase 2b. For now, mark the status here and contact the applicant by phone or email.</div>
+      <div class="small muted" style="line-height:1.5">Interview opens the conversation with a scheduling card. Applicants get a push notification and an email, and can confirm or suggest another time.</div>
     </main>`;
   }, {
     mount(el, { id }) {
       el.querySelector('[data-toggle]')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { await api.updateJob(id, { status: b.dataset.toggle }); toast(b.dataset.toggle === 'open' ? 'Vacancy reopened' : 'Vacancy closed'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } });
+      el.querySelectorAll('[data-thread]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.openThread(b.dataset.thread); go('/inbox/' + r.threadId + (b.dataset.schedule ? '?schedule=1' : '')); } catch (err) { busy(b, false); failed(el, err); } }));
       el.querySelectorAll('[data-status]').forEach((b) => b.addEventListener('click', async () => { const card = b.closest('[data-app]'); busy(b, true); try { await api.setApplication(card.dataset.app, b.dataset.status); toast('Updated'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } }));
     }
   });

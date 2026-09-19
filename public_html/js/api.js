@@ -56,6 +56,22 @@ export const api = {
   updateJob:       (id, b) => request('PATCH', '/company/jobs/' + id, b),
   applicants:      (id, status) => request('GET', '/company/jobs/' + id + '/applications' + qs({ status })),
   setApplication:  (id, status) => request('PATCH', '/company/applications/' + id, { status }),
+  // Messages, interviews, push, account
+  inbox:           () => request('GET', '/inbox'),
+  thread:          (id, after) => request('GET', '/threads/' + id + qs({ after })),
+  sendMessage:     (id, body) => request('POST', '/threads/' + id + '/messages', { body }),
+  openThread:      (applicationId) => request('POST', '/applications/' + applicationId + '/thread'),
+  invite:          (threadId, b) => request('POST', '/threads/' + threadId + '/interview', b),
+  respond:         (messageId, b) => request('POST', '/messages/' + messageId + '/respond', b),
+  today:           () => request('GET', '/me/today'),
+  pushKey:         () => request('GET', '/push/key'),
+  pushSubscribe:   (sub) => request('POST', '/push/subscribe', sub),
+  pushUnsubscribe: (endpoint) => request('DELETE', '/push/subscribe', { endpoint }),
+  pushTest:        () => request('POST', '/push/test'),
+  notifications:   (b) => request('PATCH', '/me/notifications', b),
+  forgot:          (email) => request('POST', '/auth/forgot', { email }),
+  reset:           (token, password) => request('POST', '/auth/reset', { token, password }),
+  resendVerify:    () => request('POST', '/auth/resend-verification'),
 };
 
 /* Detect the API once at boot. If /api/health is not there, switch to mock mode and say so. */
@@ -111,7 +127,7 @@ async function mockRequest(method, path, body) {
     return { user: pub(u), next: u.district ? 'home' : 'onboarding' };
   }
   if (path === '/auth/logout') { d.session = null; msave(d); return { ok: true }; }
-  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
+  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
   if (path === '/me' && method === 'PATCH') {
     const u = me(); if (!u) throw { error: 'unauthenticated', message: 'Please sign in.' };
     Object.assign(u, body); msave(d); return { user: pub(u) };

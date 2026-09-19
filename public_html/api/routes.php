@@ -8,9 +8,27 @@ $router->post('/auth/register',              [AuthController::class, 'register']
 $router->post('/auth/login',                 [AuthController::class, 'login']);
 $router->post('/auth/google',                [AuthController::class, 'google']);
 $router->post('/auth/logout',                [AuthController::class, 'logout']);
+$router->post('/auth/forgot',                [AccountController::class, 'forgot']);
+$router->post('/auth/reset',                 [AccountController::class, 'reset']);
+$router->get('/auth/verify',                 [AccountController::class, 'verify']);
+$router->post('/auth/resend-verification',   [AccountController::class, 'resend']);
 
 $router->get('/me',                          [MeController::class, 'show']);
 $router->patch('/me',                        [MeController::class, 'update']);
+$router->patch('/me/notifications',          [AccountController::class, 'notifications']);
+$router->get('/me/today',                    [AccountController::class, 'today']);
+
+// Messages, interviews, push
+$router->get('/inbox',                       [MessagesController::class, 'inbox']);
+$router->get('/threads/{id}',                [MessagesController::class, 'show']);
+$router->post('/threads/{id}/messages',      [MessagesController::class, 'send']);
+$router->post('/threads/{id}/interview',     [MessagesController::class, 'invite']);
+$router->post('/messages/{id}/respond',      [MessagesController::class, 'respond']);
+$router->post('/applications/{id}/thread',   [MessagesController::class, 'openForApplication']);
+$router->get('/push/key',                    [PushController::class, 'key']);
+$router->post('/push/subscribe',             [PushController::class, 'subscribe']);
+$router->delete('/push/subscribe',           [PushController::class, 'unsubscribe']);
+$router->post('/push/test',                  [PushController::class, 'test']);
 
 // Work: seekers
 $router->get('/jobs',                        [JobsController::class, 'index']);
