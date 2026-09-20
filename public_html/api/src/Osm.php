@@ -8,7 +8,10 @@ declare(strict_types=1);
  */
 final class Osm
 {
-    private const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+    private const ENDPOINTS = ['https://overpass.kumi.systems/api/interpreter', 'https://overpass-api.de/api/interpreter'];
+    private const UA = 'BujaApp/1.0 (Abuja city app; contact hello@buja.ng)';
+    /** Plain words to search Nominatim with, when Overpass is unavailable. */
+    private const WORDS = ['food' => 'restaurant', 'lounge' => 'bar', 'nightlife' => 'nightclub', 'relax' => 'park', 'shopping' => 'supermarket', 'kids' => 'playground', 'worship' => 'church', 'hotel' => 'hotel', 'culture' => 'museum', 'services' => 'pharmacy'];
     /** Which OSM tags to ask for, per Buja category. */
     private const TAGS = [
         'food' => ['amenity' => ['restaurant', 'fast_food', 'cafe', 'food_court']],
@@ -32,17 +35,18 @@ final class Osm
             $v = implode('|', $values);
             foreach (['node', 'way'] as $type) $clauses .= sprintf('%s["%s"~"^(%s)$"]["name"](around:%d,%F,%F);', $type, $key, $v, $radiusM, $lat, $lng);
         }
-        $query = '[out:json][timeout:20];(' . $clauses . ');out center ' . ($limit * 3) . ';';
+        // Nobody should wait on a slow map server. Short timeouts, one retry, then a different source.
+        $query = '[out:json][timeout:5];(' . $clauses . ');out center ' . ($limit * 3) . ';';
         $raw = null;
         foreach (self::ENDPOINTS as $url) {
             $ch = curl_init($url);
-            curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 22, CURLOPT_POSTFIELDS => 'data=' . rawurlencode($query), CURLOPT_USERAGENT => 'BujaApp/1.0 (Abuja city app; contact hello@buja.ng)']);
+            curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 6, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_POSTFIELDS => 'data=' . rawurlencode($query), CURLOPT_USERAGENT => self::UA]);
             $body = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
             if ($code === 200 && $body) { $raw = $body; break; }
-            error_log('[buja osm] ' . $url . ' returned ' . $code);
+            error_log('[buja osm] overpass ' . parse_url($url, PHP_URL_HOST) . ' returned ' . $code);
         }
-        if ($raw === null) return [];
-        $els = json_decode($raw, true)['elements'] ?? [];
+        $els = $raw !== null ? (json_decode($raw, true)['elements'] ?? []) : self::viaNominatim($category, $lat, $lng, $radiusM, $limit);
+        if (!$els) return [];
         $out = [];
         foreach ($els as $e) {
             $name = trim((string) ($e['tags']['name'] ?? '')); if ($name === '' || mb_strlen($name) > 70) continue;
@@ -64,6 +68,28 @@ final class Osm
             $row = Db::one('SELECT * FROM spots WHERE id = ?', [Db::lastId()]);
             if ($row) $out[] = $row;
             if (count($out) >= $limit) break;
+        }
+        return $out;
+    }
+
+    /** Second source: Nominatim free-text search, which is lighter than Overpass and usually up. */
+    private static function viaNominatim(string $category, float $lat, float $lng, int $radiusM, int $limit): array
+    {
+        $word = self::WORDS[$category] ?? null; if (!$word) return [];
+        $d = $radiusM / 111000;
+        $url = 'https://nominatim.openstreetmap.org/search?' . http_build_query([
+            'q' => $word, 'format' => 'jsonv2', 'limit' => $limit * 2, 'addressdetails' => 1, 'extratags' => 1,
+            'viewbox' => ($lng - $d) . ',' . ($lat + $d) . ',' . ($lng + $d) . ',' . ($lat - $d), 'bounded' => 1,
+        ]);
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 6, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_USERAGENT => self::UA, CURLOPT_HTTPHEADER => ['Accept-Language: en']]);
+        $body = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+        if ($code !== 200 || !$body) { error_log('[buja osm] nominatim returned ' . $code); return []; }
+        $out = [];
+        foreach ((json_decode($body, true) ?: []) as $r) {
+            $name = trim((string) ($r['name'] ?? '')); if ($name === '') continue;
+            $out[] = ['type' => $r['osm_type'] ?? 'node', 'id' => $r['osm_id'] ?? 0, 'lat' => (float) $r['lat'], 'lon' => (float) $r['lon'],
+                'tags' => array_filter(['name' => $name, 'cuisine' => $r['extratags']['cuisine'] ?? null, 'opening_hours' => $r['extratags']['opening_hours'] ?? null, 'addr:street' => $r['address']['road'] ?? null, 'addr:suburb' => $r['address']['suburb'] ?? null])];
         }
         return $out;
     }

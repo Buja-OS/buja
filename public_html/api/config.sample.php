@@ -46,7 +46,7 @@ return [
     // starting with the one you chose, and Ask falls back to keyword matching if they all fail. All optional.
     'ask_provider' => $env('ASK_PROVIDER', 'gemini'),
     'gemini_api_key' => $env('GEMINI_API_KEY', ''),      // aistudio.google.com, free, no card
-    'gemini_model' => $env('GEMINI_MODEL', 'gemini-2.5-flash'),
+    'gemini_model' => $env('GEMINI_MODEL', 'gemini-3.6-flash'),
     'gemini_endpoint' => $env('GEMINI_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/models'),
     'groq_api_key' => $env('GROQ_API_KEY', ''),          // console.groq.com, free, no card
     'groq_model' => $env('GROQ_MODEL', 'llama-3.3-70b-versatile'),

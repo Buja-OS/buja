@@ -1,4 +1,4 @@
-# Buja, Phase 9g: GPS in Waka, Ask from the map
+# Buja, Phase 9h: Ask fixed (model name, map timeouts)
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -183,6 +183,12 @@ Bugs fixed in this pass: tracking calls that ran between an insert and reading b
 - **Ask answers from the real map.** When Buja's own directory has fewer than four places matching the kind of thing asked about, Buja queries OpenStreetMap through the free Overpass API around the district named in the question, or the user's position, and writes what it finds into the directory: name, category, district resolved from Buja's own surveyed stops, coordinates, hours and cuisine where OSM has them. Those places are marked "found on OpenStreetMap, nobody on Buja has reviewed it yet" and carry a Map link, so residents can rate and correct them and a moderator can remove them. No key, no bill.
 - **Map credit is now a small ⓘ** in the corner rather than a line of text across the map. The licence requires the credit to be reachable, not printed, so tapping it shows it.
 - New: `api/src/Osm.php`, `migrations/015_osm.sql`.
+
+## Phase 9h: two fixes found in the live log
+
+- **Gemini was 404ing on every call.** Google retired `gemini-2.5-flash` for new keys and the error said to use `gemini-3.6-flash`. The default is updated and still overridable with `GEMINI_MODEL`. Provider errors now log the message rather than the first 200 bytes of HTML, so the next one is obvious.
+- **The map lookup could hang for 44 seconds.** Both Overpass servers timed out at 22 seconds each before Buja gave up. Timeouts are now 6 seconds with a 3 second connect limit, Nominatim is a second source when Overpass is down, and a failed lookup for a category near a point is remembered for an hour so nobody waits on the same dead end twice. Measured: a failing lookup now costs under a second on the repeat.
+- New: `migrations/016_appkeys.sql`, a small key/value table the server uses for notes like this.
 
 ## What is next
 

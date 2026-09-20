@@ -75,9 +75,12 @@ final class AskController
         $onTopic = array_values(array_filter($shortlist, fn($s) => $s['category'] === $cat));
         if ($cat && count($onTopic) < 4) {
             [$lat, $lng] = $this->whereIs($u, $q);
-            if ($lat) {
-                try { RateLimit::hit('osm', 60, 3600); $found = Osm::nearby($cat, $lat, $lng); } catch (Throwable $e) { $found = []; }
+            $tried = 'osm:' . $cat . ':' . round($lat, 2) . ',' . round($lng, 2);
+            if ($lat && !Db::one('SELECT 1 AS x FROM app_keys WHERE k = ? AND v > ?', [$tried, gmdate('Y-m-d H:i:s', time() - 3600)])) {
+                $found = [];
+                try { RateLimit::hit('osm', 60, 3600); $found = Osm::nearby($cat, $lat, $lng); } catch (Throwable $e) {}
                 if ($found) { $spots = $this->directory(); $shortlist = $this->relevant($q, $spots, $u); }
+                else { Db::run('DELETE FROM app_keys WHERE k = ?', [$tried]); Db::run('INSERT INTO app_keys (k, v) VALUES (?,?)', [$tried, Db::now()]); }
             }
         }
         $result = null;
@@ -112,7 +115,7 @@ final class AskController
         if ($key === '') return null;
         [$url, $headers, $body] = match ($provider) {
             'gemini' => [
-                rtrim((string) Http::config('gemini_endpoint', 'https://generativelanguage.googleapis.com/v1beta/models'), '/') . '/' . (string) Http::config('gemini_model', 'gemini-2.5-flash') . ':generateContent?key=' . rawurlencode($key),
+                rtrim((string) Http::config('gemini_endpoint', 'https://generativelanguage.googleapis.com/v1beta/models'), '/') . '/' . (string) Http::config('gemini_model', 'gemini-3.6-flash') . ':generateContent?key=' . rawurlencode($key),
                 ['content-type: application/json'],
                 json_encode(['systemInstruction' => ['parts' => [['text' => $system]]], 'contents' => [['role' => 'user', 'parts' => [['text' => $q]]]], 'generationConfig' => ['temperature' => 0.4, 'maxOutputTokens' => 700, 'responseMimeType' => 'application/json']], JSON_UNESCAPED_UNICODE),
             ],
@@ -132,7 +135,11 @@ final class AskController
         $ch = curl_init($url);
         curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25, CURLOPT_POSTFIELDS => $body, CURLOPT_HTTPHEADER => $headers]);
         $raw = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-        if ($code !== 200) { error_log('[buja ask] ' . $provider . ' returned ' . $code . ' ' . substr((string) $raw, 0, 200)); return null; }
+        if ($code !== 200) {
+            $msg = json_decode((string) $raw, true)['error']['message'] ?? substr((string) $raw, 0, 160);
+            error_log('[buja ask] ' . $provider . ' returned ' . $code . ': ' . $msg);
+            return null;
+        }
         $j = json_decode((string) $raw, true);
         $text = match ($provider) {
             'gemini' => $j['candidates'][0]['content']['parts'][0]['text'] ?? '',
