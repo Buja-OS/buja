@@ -13,7 +13,7 @@ final class SocialController
     }
     private function shape(array $p, ?array $u): array
     {
-        return ['id' => (int) $p['id'], 'board' => $p['board'], 'boardLabel' => self::BOARDS[$p['board']] ?? $p['board'], 'title' => $p['title'], 'body' => $p['body'], 'district' => $p['district'], 'replies' => (int) $p['replies'], 'likes' => (int) $p['likes'], 'views' => (int) $p['views'], 'pinned' => (bool) $p['pinned'], 'at' => $p['created_at'], 'lastAt' => $p['last_activity_at'], 'author' => $this->author((int) $p['user_id']),
+        return ['id' => (int) $p['id'], 'board' => $p['board'], 'boardLabel' => self::BOARDS[$p['board']] ?? $p['board'], 'title' => $p['title'], 'body' => $p['body'], 'district' => $p['district'], 'replies' => (int) $p['replies'], 'likes' => (int) $p['likes'], 'views' => (int) $p['views'], 'pinned' => (bool) $p['pinned'], 'at' => $p['created_at'], 'lastAt' => $p['last_activity_at'], 'author' => $this->author((int) $p['user_id']), 'attachment' => UploadsController::shape($p['upload_id'] ? (int) $p['upload_id'] : null),
             'liked' => $u ? Db::one("SELECT 1 AS x FROM social_likes WHERE user_id = ? AND kind = 'post' AND target_id = ?", [$u['id'], $p['id']]) !== null : false,
             'mine' => $u ? (int) $p['user_id'] === (int) $u['id'] : false];
     }
@@ -38,7 +38,7 @@ final class SocialController
         $p = Db::one('SELECT * FROM social_posts WHERE id = ? AND hidden_at IS NULL', [$id]); if (!$p) Http::json(['error' => 'not_found', 'message' => 'That post is gone.'], 404);
         if ((int) $p['user_id'] !== (int) $u['id']) Db::run('UPDATE social_posts SET views = views + 1 WHERE id = ?', [$id]);
         $st = Db::pdo()->prepare('SELECT * FROM social_replies WHERE post_id = ? AND hidden_at IS NULL ORDER BY id ASC LIMIT 200'); $st->execute([$id]);
-        $replies = array_map(fn($r) => ['id' => (int) $r['id'], 'body' => $r['body'], 'likes' => (int) $r['likes'], 'at' => $r['created_at'], 'author' => $this->author((int) $r['user_id']), 'mine' => (int) $r['user_id'] === (int) $u['id'], 'liked' => Db::one("SELECT 1 AS x FROM social_likes WHERE user_id = ? AND kind = 'reply' AND target_id = ?", [$u['id'], $r['id']]) !== null], $st->fetchAll());
+        $replies = array_map(fn($r) => ['id' => (int) $r['id'], 'body' => $r['body'], 'likes' => (int) $r['likes'], 'at' => $r['created_at'], 'attachment' => UploadsController::shape($r['upload_id'] ? (int) $r['upload_id'] : null), 'author' => $this->author((int) $r['user_id']), 'mine' => (int) $r['user_id'] === (int) $u['id'], 'liked' => Db::one("SELECT 1 AS x FROM social_likes WHERE user_id = ? AND kind = 'reply' AND target_id = ?", [$u['id'], $r['id']]) !== null], $st->fetchAll());
         Http::json(['post' => $this->shape($p, $u), 'replies' => $replies]);
     }
 
@@ -52,7 +52,8 @@ final class SocialController
         $body = mb_substr(trim((string) ($b['body'] ?? '')), 0, 4000); if (mb_strlen($body) < 10) $e['body'] = 'Say a bit more.';
         if ($e) Http::json(['error' => 'validation', 'fields' => $e], 422);
         $district = !empty($b['district']) ? mb_substr((string) $b['district'], 0, 60) : null;
-        Db::run('INSERT INTO social_posts (user_id, board, title, body, district, last_activity_at, created_at) VALUES (?,?,?,?,?,?,?)', [$u['id'], $board, $title, $body, $district, Db::now(), Db::now()]);
+        $upload = UploadsController::claim(isset($b['uploadId']) ? (int) $b['uploadId'] : null, $u);
+        Db::run('INSERT INTO social_posts (user_id, board, title, body, district, upload_id, last_activity_at, created_at) VALUES (?,?,?,?,?,?,?,?)', [$u['id'], $board, $title, $body, $district, $upload, Db::now(), Db::now()]);
         $id = Db::lastId();
         Track::hit($u, 'social', 'post');
         Http::json(['post' => $this->shape(Db::one('SELECT * FROM social_posts WHERE id = ?', [$id]), $u)], 201);
@@ -63,8 +64,10 @@ final class SocialController
     {
         $u = Auth::require(); RateLimit::hit('reply', 80, 3600);
         $p = Db::one('SELECT * FROM social_posts WHERE id = ? AND hidden_at IS NULL', [$id]); if (!$p) Http::json(['error' => 'not_found'], 404);
-        $body = mb_substr(trim((string) (Http::body()['body'] ?? '')), 0, 2000); if (mb_strlen($body) < 2) Http::json(['error' => 'validation', 'fields' => ['body' => 'Write a reply.']], 422);
-        Db::run('INSERT INTO social_replies (post_id, user_id, body, created_at) VALUES (?,?,?,?)', [$id, $u['id'], $body, Db::now()]);
+        $rb = Http::body(); $body = mb_substr(trim((string) ($rb['body'] ?? '')), 0, 2000);
+        $upload = UploadsController::claim(isset($rb['uploadId']) ? (int) $rb['uploadId'] : null, $u);
+        if (mb_strlen($body) < 2 && !$upload) Http::json(['error' => 'validation', 'fields' => ['body' => 'Write a reply or attach something.']], 422);
+        Db::run('INSERT INTO social_replies (post_id, user_id, body, upload_id, created_at) VALUES (?,?,?,?,?)', [$id, $u['id'], $body ?: '', $upload, Db::now()]);
         Db::run('UPDATE social_posts SET replies = replies + 1, last_activity_at = ? WHERE id = ?', [Db::now(), $id]);
         Track::hit($u, 'social', 'reply');
         if ((int) $p['user_id'] !== (int) $u['id']) Notify::user((int) $p['user_id'], 'social', explode(' ', $u['name'])[0] . ' replied to your post', mb_substr($body, 0, 120), '/#/social/' . $id);

@@ -59,7 +59,7 @@ export const api = {
   // Messages, interviews, push, account
   inbox:           () => request('GET', '/inbox'),
   thread:          (id, after) => request('GET', '/threads/' + id + qs({ after })),
-  sendMessage:     (id, body) => request('POST', '/threads/' + id + '/messages', { body }),
+  sendMessage:     (id, body, uploadId) => request('POST', '/threads/' + id + '/messages', { body, uploadId }),
   openThread:      (applicationId) => request('POST', '/applications/' + applicationId + '/thread'),
   invite:          (threadId, b) => request('POST', '/threads/' + threadId + '/interview', b),
   respond:         (messageId, b) => request('POST', '/messages/' + messageId + '/respond', b),
@@ -145,6 +145,9 @@ export const api = {
   adminStorageTest: () => request('POST', '/admin/storage/test'),
   adminMigrate:    () => request('POST', '/admin/storage/migrate', { batch: 20 }),
   syncRadio:       () => request('POST', '/admin/radio/sync'),
+  upload:          (file, kind, extra) => { const fd = new FormData(); fd.append('file', file); fd.append('kind', kind); if (extra) Object.entries(extra).forEach(([k, v]) => fd.append(k, v)); return upload('/uploads', fd); },
+  pinLocation:     (b) => request('POST', '/uploads/location', b),
+  setCompanyLogo:  (uploadId) => request('POST', '/company/logo', { uploadId }),
   notifications:   () => request('GET', '/notifications'),
   readNotifications: (b) => request('POST', '/notifications/read', b),
   uploadAvatar:    (file) => { const fd = new FormData(); fd.append('photo', file); return upload('/me/avatar', fd); },
@@ -160,7 +163,7 @@ export const api = {
   social:          (f) => request('GET', '/social' + qs(f)),
   post:            (id) => request('GET', '/social/' + id),
   createPost:      (b) => request('POST', '/social', b),
-  replyPost:       (id, body) => request('POST', '/social/' + id + '/reply', { body }),
+  replyPost:       (id, body, uploadId) => request('POST', '/social/' + id + '/reply', { body, uploadId }),
   likeSocial:      (kind, id) => request('POST', '/social/' + kind + '/' + id + '/like'),
   deletePost:      (id) => request('DELETE', '/social/' + id),
   radio:           () => request('GET', '/radio'),
@@ -221,7 +224,7 @@ async function mockRequest(method, path, body) {
     return { user: pub(u), next: u.district ? 'home' : 'onboarding' };
   }
   if (path === '/auth/logout') { d.session = null; msave(d); return { ok: true }; }
-  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter') || path.startsWith('/ask') || path.startsWith('/spots') || path.startsWith('/pay') || path.startsWith('/verify') || path.startsWith('/admin') || path.startsWith('/notifications') || path.startsWith('/avatar') || path.startsWith('/news') || path.startsWith('/social') || path.startsWith('/radio')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
+  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter') || path.startsWith('/ask') || path.startsWith('/spots') || path.startsWith('/pay') || path.startsWith('/verify') || path.startsWith('/admin') || path.startsWith('/notifications') || path.startsWith('/avatar') || path.startsWith('/news') || path.startsWith('/social') || path.startsWith('/radio') || path.startsWith('/uploads')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
   if (path === '/me' && method === 'PATCH') {
     const u = me(); if (!u) throw { error: 'unauthenticated', message: 'Please sign in.' };
     Object.assign(u, body); msave(d); return { user: pub(u) };

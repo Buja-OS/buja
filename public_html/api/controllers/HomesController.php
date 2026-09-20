@@ -11,7 +11,7 @@ final class HomesController
     private function landlord(int $ownerId): ?array
     {
         $l = Db::one('SELECT lp.*, u.name AS user_name, u.phone FROM landlord_profiles lp JOIN users u ON u.id = lp.user_id WHERE lp.user_id = ?', [$ownerId]);
-        return $l ? ['id' => (int) $l['user_id'], 'name' => $l['display_name'] ?: $l['user_name'], 'isCompany' => (bool) $l['is_company'], 'verified' => $l['verified_at'] !== null, 'about' => $l['about'], 'listings' => (int) (Db::one("SELECT COUNT(*) AS n FROM properties WHERE owner_id = ? AND status <> 'hidden'", [$ownerId])['n'] ?? 0)] : null;
+        return $l ? ['id' => (int) $l['user_id'], 'photo' => $l['photo_upload_id'] ? '/api/uploads/' . (int) $l['photo_upload_id'] : null, 'name' => $l['display_name'] ?: $l['user_name'], 'isCompany' => (bool) $l['is_company'], 'verified' => $l['verified_at'] !== null, 'about' => $l['about'], 'listings' => (int) (Db::one("SELECT COUNT(*) AS n FROM properties WHERE owner_id = ? AND status <> 'hidden'", [$ownerId])['n'] ?? 0)] : null;
     }
     private function shape(array $p, ?array $u = null, bool $full = false): array
     {
@@ -73,14 +73,18 @@ final class HomesController
     {
         $u = Auth::require();
         $l = Db::one('SELECT * FROM landlord_profiles WHERE user_id = ?', [$u['id']]);
-        Http::json(['landlord' => $l ? ['displayName' => $l['display_name'], 'isCompany' => (bool) $l['is_company'], 'about' => $l['about'], 'verified' => $l['verified_at'] !== null] : null, 'types' => HomesRules::TYPES, 'facilities' => HomesRules::FACILITIES]);
+        Http::json(['landlord' => $l ? ['displayName' => $l['display_name'], 'isCompany' => (bool) $l['is_company'], 'about' => $l['about'], 'verified' => $l['verified_at'] !== null, 'photo' => $l['photo_upload_id'] ? '/api/uploads/' . (int) $l['photo_upload_id'] : null] : null, 'types' => HomesRules::TYPES, 'facilities' => HomesRules::FACILITIES]);
     }
     public function landlordSave(): void
     {
         $u = Auth::require();
         if ($u['kind'] !== 'landlord') Http::json(['error' => 'forbidden', 'message' => 'Only landlord accounts can list property.'], 403);
         $b = Http::body(); $name = mb_substr(trim((string) ($b['displayName'] ?? '')), 0, 80); $about = mb_substr(trim((string) ($b['about'] ?? '')), 0, 600); $co = !empty($b['isCompany']) ? 1 : 0;
+        $existing = Db::one('SELECT display_name, is_company, about FROM landlord_profiles WHERE user_id = ?', [$u['id']]);
+        if ($name === '' && $existing) { $name = $existing['display_name']; $about = $about ?: (string) $existing['about']; $co = array_key_exists('isCompany', $b) ? $co : (int) $existing['is_company']; }
         if (mb_strlen($name) < 2) Http::json(['error' => 'validation', 'fields' => ['displayName' => 'Your name, or the company name.']], 422);
+        $photo = isset($b['uploadId']) ? UploadsController::claim((int) $b['uploadId'], $u) : null;
+        if ($photo) Db::run('UPDATE landlord_profiles SET photo_upload_id = ? WHERE user_id = ?', [$photo, $u['id']]);
         if (Db::one('SELECT user_id FROM landlord_profiles WHERE user_id = ?', [$u['id']])) Db::run('UPDATE landlord_profiles SET display_name = ?, is_company = ?, about = ?, updated_at = ? WHERE user_id = ?', [$name, $co, $about, Db::now(), $u['id']]);
         else Db::run('INSERT INTO landlord_profiles (user_id, display_name, is_company, about, created_at, updated_at) VALUES (?,?,?,?,?,?)', [$u['id'], $name, $co, $about, Db::now(), Db::now()]);
         $this->landlordMe();

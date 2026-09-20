@@ -5,7 +5,7 @@ final class CompanyController
 {
     private function shape(array $c): array
     {
-        return ['id' => (int) $c['id'], 'name' => $c['name'], 'district' => $c['district'], 'about' => $c['about'], 'website' => $c['website'], 'verified' => $c['verified_at'] !== null];
+        return ['id' => (int) $c['id'], 'name' => $c['name'], 'district' => $c['district'], 'logo' => $c['logo_upload_id'] ? '/api/uploads/' . (int) $c['logo_upload_id'] : null, 'about' => $c['about'], 'website' => $c['website'], 'verified' => $c['verified_at'] !== null];
     }
 
     /** GET /company : the caller's company profile, or null */
@@ -34,6 +34,15 @@ final class CompanyController
         if ($c) Db::run('UPDATE companies SET name = ?, district = ?, about = ?, website = ?, updated_at = ? WHERE id = ?', [$name, $district, $about, $website ?: null, Db::now(), $c['id']]);
         else   Db::run('INSERT INTO companies (owner_id, name, district, about, website, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', [$u['id'], $name, $district, $about, $website ?: null, Db::now(), Db::now()]);
         Http::json(['company' => $this->shape(Db::one('SELECT * FROM companies WHERE owner_id = ?', [$u['id']]))], $c ? 200 : 201);
+    }
+
+    /** POST /company/logo { uploadId } */
+    public function logo(): void
+    {
+        $u = Auth::require(); $c = Db::one('SELECT id FROM companies WHERE owner_id = ?', [$u['id']]); if (!$c) Http::json(['error' => 'no_company'], 409);
+        $id = UploadsController::claim((int) (Http::body()['uploadId'] ?? 0), $u);
+        Db::run('UPDATE companies SET logo_upload_id = ? WHERE id = ?', [$id, $c['id']]);
+        Http::json(['logo' => $id ? '/api/uploads/' . $id : null]);
     }
 
     /** GET /company/jobs : my vacancies with counters */

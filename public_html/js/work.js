@@ -1,5 +1,6 @@
 // Buja Work module: seeker and company screens. Registered into the app router by app.js.
 export function registerWork({ route, go, state, setState, api, ui, DISTRICTS, failed }) {
+  const shrinkImg = async (f, max = 800) => { const b = await createImageBitmap(f).catch(() => null); if (!b) return f; const s = Math.min(1, max / Math.max(b.width, b.height)); const c = document.createElement('canvas'); c.width = Math.round(b.width * s); c.height = Math.round(b.height * s); c.getContext('2d').drawImage(b, 0, 0, c.width, c.height); const bl = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.86)); return new File([bl], 'logo.jpg', { type: 'image/jpeg' }); };
   const { h, toast, topbar, field, showErrors, clearOnInput, busy, avatar, icon } = ui;
   const naira = (n) => n == null ? '' : '₦' + Number(n).toLocaleString('en-NG');
   const pay = (j) => j.salaryMin == null ? 'Salary not stated' : j.salaryMax && j.salaryMax !== j.salaryMin ? `${naira(j.salaryMin)} – ${naira(j.salaryMax)}` : naira(j.salaryMin);
@@ -15,7 +16,7 @@ export function registerWork({ route, go, state, setState, api, ui, DISTRICTS, f
 
   function jobCard(j, link = true) {
     return `<${link ? `a href="#/work/job/${j.id}"` : 'div'} class="card" style="display:flex;flex-direction:column;gap:12px;padding:16px">
-      <div class="row">${avatar(j.company.name, 44, color(j.company.name))}
+      <div class="row">${j.company.logo ? `<img src="${j.company.logo}" alt="" style="width:44px;height:44px;border-radius:12px;object-fit:cover;flex-shrink:0">` : avatar(j.company.name, 44, color(j.company.name))}
         <div class="grow"><div class="h-sm">${h(j.title)}</div><div class="small muted">${h(j.company.name)}${j.company.verified ? ' ' + icon('circle-check') : ''} · ${ago(j.createdAt)}</div></div>
         <button class="iconbtn" data-save="${j.id}" aria-label="${j.saved ? 'Unsave' : 'Save'}" style="width:40px;height:40px;border:none;background:transparent;color:${j.saved ? 'var(--orange)' : 'var(--ink-4)'}">${icon(j.saved ? 'bookmark' : 'regular/bookmark')}</button>
       </div>
@@ -74,7 +75,7 @@ export function registerWork({ route, go, state, setState, api, ui, DISTRICTS, f
     return `
     ${topbar('', '/work', `<button class="iconbtn" data-save="${j.id}" aria-label="${j.saved ? 'Unsave' : 'Save'}" style="color:${j.saved ? 'var(--orange)' : 'var(--ink)'}">${icon(j.saved ? 'bookmark' : 'regular/bookmark')}</button>`)}
     <main class="pad stack" style="gap:16px">
-      <div class="row" style="gap:14px">${avatar(j.company.name, 56, color(j.company.name))}<div><div class="h-lg" style="font-size:22px">${h(j.title)}</div><div class="muted" style="margin-top:2px">${h(j.company.name)}${j.company.verified ? ' ' + icon('circle-check') : ''} · ${h(j.district)}</div></div></div>
+      <div class="row" style="gap:14px">${j.company.logo ? `<img src="${j.company.logo}" alt="" style="width:56px;height:56px;border-radius:12px;object-fit:cover;flex-shrink:0">` : avatar(j.company.name, 56, color(j.company.name))}<div><div class="h-lg" style="font-size:22px">${h(j.title)}</div><div class="muted" style="margin-top:2px">${h(j.company.name)}${j.company.verified ? ' ' + icon('circle-check') : ''} · ${h(j.district)}</div></div></div>
       <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
         <div class="card" style="padding:12px"><div class="small muted" style="font-weight:600">PAY</div><div style="font-size:13px;font-weight:700;margin-top:4px">${pay(j)}</div></div>
         <div class="card" style="padding:12px"><div class="small muted" style="font-weight:600">TYPE</div><div style="font-size:14px;font-weight:700;margin-top:4px">${TYPES[j.type] || j.type}</div></div>
@@ -180,7 +181,9 @@ export function registerWork({ route, go, state, setState, api, ui, DISTRICTS, f
     return `
     ${topbar(c.name, '/home', `<a class="iconbtn" href="#/work/company/edit" aria-label="Edit company">${icon('gear')}</a>`)}
     <main class="pad stack" style="gap:16px">
-      <div class="small muted row" style="gap:6px">${icon('location-dot')} ${h(c.district)}${c.verified ? ` · <span class="tag green">${icon('circle-check')} Verified employer</span>` : ' · Verification comes in Phase 2b'}</div>
+      <div class="card row" style="padding:14px;gap:14px"><label style="position:relative;cursor:pointer;flex-shrink:0">${c.logo ? `<img src="${c.logo}" alt="" style="width:64px;height:64px;border-radius:14px;object-fit:cover;display:block">` : `<span style="width:64px;height:64px;border-radius:14px;background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--ink-3)">${icon('camera')}</span>`}<span style="position:absolute;right:-4px;bottom:-4px;width:24px;height:24px;border-radius:12px;background:var(--orange);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;border:2px solid var(--card)">${icon('camera')}</span><input type="file" accept="image/*" id="logopick" style="display:none"></label>
+        <div class="grow"><div style="font-size:15px;font-weight:700">${h(c.name)}</div><div class="small muted row" style="gap:6px;margin-top:2px">${icon('location-dot')} ${h(c.district)}</div><div class="small muted" style="margin-top:4px">${c.logo ? 'Your logo shows on every vacancy.' : 'Add a logo. Seekers trust a vacancy with one.'}</div></div>
+        ${c.verified ? `<span class="tag green">${icon('circle-check')} Verified</span>` : ''}</div>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
         ${[['APPLICANTS', sum('applicants'), ''], ['80%+ MATCH', sum('strong'), 'var(--green-dark)'], ['SHORTLISTED', sum('shortlisted'), 'var(--orange-dark)'], ['INTERVIEWS', sum('interviews'), '']].map(([l, v, col]) => `<div class="card" style="padding:14px 16px"><div class="small muted" style="font-weight:600">${l}</div><div style="font-size:28px;font-weight:700;margin-top:4px;color:${col || 'var(--ink)'}">${v}</div></div>`).join('')}
       </div>
@@ -191,6 +194,7 @@ export function registerWork({ route, go, state, setState, api, ui, DISTRICTS, f
   }, {
     mount(el) {
       clearOnInput(el);
+      el.querySelector('#logopick')?.addEventListener('change', async (e) => { const f = e.target.files[0]; if (!f) return; toast('Uploading…'); try { const up = await api.upload(await shrinkImg(f), 'image'); await api.setCompanyLogo(up.upload.id); toast('Logo saved'); location.reload(); } catch (err) { failed(el, err); } });
       el.querySelector('#cf')?.addEventListener('submit', async (e) => {
         e.preventDefault(); const f = e.target; const btn = f.querySelector('[type=submit]'); showErrors(el, {}); busy(btn, true);
         try { await api.saveCompany({ name: f.name.value, district: f.district.value, website: f.website.value, about: f.about.value }); toast('Company saved'); location.reload(); }

@@ -1,6 +1,6 @@
 // Buja messages, interviews and push. Registered into the app router by app.js.
 export function registerMessages({ route, go, state, setState, api, ui, failed }) {
-  const { h, toast, topbar, field, showErrors, clearOnInput, busy, avatar, icon } = ui;
+  const { h, toast, topbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify } = ui;
   const when = (iso) => { const d = new Date(iso.replace(' ', 'T') + 'Z'); const now = new Date(); const same = d.toDateString() === now.toDateString(); return same ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); };
   const pretty = (at) => new Date(at.replace(' ', 'T') + 'Z').toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const colors = ['#1F4E9C', '#2E7D1E', '#8E44AD', '#C0392B', '#0E7C86', '#E8620E'];
@@ -40,7 +40,10 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
         ${!mine && s === 'pending' ? `<div class="row" style="gap:8px;margin-top:6px"><button class="btn btn-sm btn-ink" style="flex:1" data-offer-act="accept">Accept</button><button class="btn btn-sm btn-outline" style="flex:1" data-offer-act="decline">Decline</button></div>` : ''}
         ${mine && s === 'pending' ? `<div class="small muted">Waiting for the seller</div>` : ''}</div></div>`;
     }
-    return `<div style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px;padding:12px 14px;border-radius:${m.mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px'};font-size:14px;line-height:1.5;${m.mine ? 'background:var(--ink);color:var(--surface)' : 'background:var(--card);border:1px solid var(--line)'};white-space:pre-line">${h(m.body)}<div class="small" style="opacity:.6;margin-top:4px;text-align:right">${when(m.createdAt)}</div></div>`;
+    const att = m.attachment ? attachmentHtml(m.attachment, { max: 260 }) : '';
+    const yt = youtubeEmbed(m.body || '');
+    if (att && !m.body) return `<div style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px">${att}<div class="small muted" style="text-align:right;margin-top:3px">${when(m.createdAt)}</div></div>`;
+    return `<div style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px;padding:${att || yt ? '8px 8px 10px' : '12px 14px'};border-radius:${m.mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px'};font-size:14px;line-height:1.5;${m.mine ? 'background:var(--ink);color:var(--surface)' : 'background:var(--card);border:1px solid var(--line)'}">${att ? `<div style="margin-bottom:8px">${att}</div>` : ''}${yt ? `<div style="margin-bottom:8px">${yt}</div>` : ''}<div style="white-space:pre-line;${att || yt ? 'padding:0 6px' : ''}">${linkify(h(m.body || ''))}</div><div class="small" style="opacity:.6;margin-top:4px;text-align:right;${att || yt ? 'padding:0 6px' : ''}">${when(m.createdAt)}</div></div>`;
   }
 
   route('/inbox/:id', { auth: true, tabs: '' }, async ({ id }) => {
@@ -54,10 +57,14 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
     ${c && t.kind !== 'homes' && t.kind !== 'declutter' ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${avatar(t.other.name, 28, color(t.other.name))}<span class="grow">${state.user.kind === 'company' ? `${h(t.other.name)} · applied for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong> · ${c.match}% match` : `Recruiting for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong>`}</span><a href="#/work/${state.user.kind === 'company' ? 'company/job/' + c.jobId : 'job/' + c.jobId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
     <main id="msgs" class="stack" style="padding:8px 16px 0;gap:12px;flex:1" data-last="${t.messages.length ? t.messages[t.messages.length - 1].id : 0}">${t.messages.map(bubble).join('')}</main>
     <div id="sheet"></div>
-    <form id="compose" class="row" style="gap:10px;padding:10px 16px calc(10px + var(--safe-b));background:var(--card);border-top:1px solid var(--line);position:sticky;bottom:0">
+    <div id="attachbar"></div>
+    <form id="compose" class="row" style="gap:8px;padding:10px 16px calc(10px + var(--safe-b));background:var(--card);border-top:1px solid var(--line);position:sticky;bottom:0">
       <label for="body" style="position:absolute;left:-9999px">Message</label>
-      <input class="input" id="body" name="body" placeholder="Message ${h(t.title)}" autocomplete="off" style="height:46px;border-radius:23px;flex:1">
-      <button class="iconbtn" type="submit" aria-label="Send" style="background:var(--orange);border-color:var(--orange);color:#fff;width:46px;height:46px">${icon('paper-plane')}</button>
+      <button type="button" class="iconbtn" id="plus" aria-label="Attach" style="width:42px;height:42px;flex-shrink:0">${icon('plus')}</button>
+      <button type="button" class="iconbtn" id="mic" aria-label="Record a voice note" style="width:42px;height:42px;flex-shrink:0">${icon('microphone')}</button>
+      <input class="input" id="body" name="body" placeholder="Message ${h(t.title)}" autocomplete="off" style="height:46px;border-radius:23px;flex:1;min-width:0">
+      <button class="iconbtn" type="submit" aria-label="Send" style="background:var(--orange);border-color:var(--orange);color:#fff;width:46px;height:46px;flex-shrink:0">${icon('paper-plane')}</button>
+      <input type="file" id="fphoto" accept="image/*" style="display:none"><input type="file" id="fvideo" accept="video/*" style="display:none"><input type="file" id="ffile" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.zip" style="display:none">
     </form>`;
   }, {
     mount(el, { id }) {
@@ -80,9 +87,63 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
       };
       const timer = setInterval(poll, 5000);
       window.addEventListener('hashchange', () => clearInterval(timer), { once: true });
+      /* ---- attachments ---- */
+      let pending = null;
+      const bar = el.querySelector('#attachbar');
+      const showPending = () => { bar.innerHTML = pending ? `<div class="row" style="gap:10px;padding:10px 16px;background:var(--surface);border-top:1px solid var(--line);align-items:center"><div style="flex:1;min-width:0">${attachmentHtml(pending, { max: 160 })}</div><button class="iconbtn" id="dropatt" aria-label="Remove attachment" style="width:34px;height:34px">${icon('xmark')}</button></div>` : ''; bar.querySelector('#dropatt')?.addEventListener('click', () => { pending = null; showPending(); }); scroll(); };
+      async function shrinkImg(file) { const bmp = await createImageBitmap(file).catch(() => null); if (!bmp) return file; const s = Math.min(1, 1600 / Math.max(bmp.width, bmp.height)); const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * s); cv.height = Math.round(bmp.height * s); cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height); const blob = await new Promise((r) => cv.toBlob(r, 'image/jpeg', 0.85)); return new File([blob], 'photo.jpg', { type: 'image/jpeg' }); }
+      const pick = async (input, kind) => { const f = input.files[0]; if (!f) return; input.value = ''; toast('Uploading…'); try { const file = kind === 'image' ? await shrinkImg(f) : f; const r = await api.upload(file, kind); pending = r.upload; showPending(); } catch (err) { failed(el, err); } };
+      el.querySelector('#fphoto').addEventListener('change', (e) => pick(e.target, 'image'));
+      el.querySelector('#fvideo').addEventListener('change', (e) => pick(e.target, 'video'));
+      el.querySelector('#ffile').addEventListener('change', (e) => pick(e.target, 'file'));
+      el.querySelector('#plus').addEventListener('click', () => {
+        el.querySelector('#sheet').innerHTML = `<div class="card list" style="margin:8px 16px 10px">
+          <button class="item" data-att="photo"><div class="mi">${icon('camera')}</div><div class="grow"><div class="t">Photo</div><div class="s">From your camera or gallery</div></div></button>
+          <button class="item" data-att="video"><div class="mi">${icon('bolt')}</div><div class="grow"><div class="t">Video</div><div class="s">Up to 40 MB</div></div></button>
+          <button class="item" data-att="file"><div class="mi">${icon('file-arrow-up')}</div><div class="grow"><div class="t">Document</div><div class="s">PDF, Word, Excel, text</div></div></button>
+          <button class="item" data-att="location"><div class="mi">${icon('location-dot')}</div><div class="grow"><div class="t">My location</div><div class="s">Share where you are now</div></div></button></div>`;
+        el.querySelectorAll('[data-att]').forEach((b) => b.addEventListener('click', async () => {
+          const what = b.dataset.att; el.querySelector('#sheet').innerHTML = '';
+          if (what === 'photo') el.querySelector('#fphoto').click();
+          else if (what === 'video') el.querySelector('#fvideo').click();
+          else if (what === 'file') el.querySelector('#ffile').click();
+          else {
+            if (!navigator.geolocation) { toast('This phone cannot share location.'); return; }
+            toast('Finding you…');
+            navigator.geolocation.getCurrentPosition(async (pos) => { try { const r = await api.pinLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'Shared location' }); pending = r.upload; showPending(); } catch (err) { failed(el, err); } },
+              () => toast('Could not get your location. Check the permission for this site.'), { enableHighAccuracy: true, timeout: 12000 });
+          }
+        }));
+      });
+      /* ---- voice notes ---- */
+      let rec = null, chunks = [], started = 0, recTimer = null;
+      const mic = el.querySelector('#mic');
+      mic.addEventListener('click', async () => {
+        if (rec && rec.state === 'recording') { rec.stop(); return; }
+        if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { toast('This browser cannot record voice notes.'); return; }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          rec = new MediaRecorder(stream); chunks = []; started = Date.now();
+          rec.ondataavailable = (e) => chunks.push(e.data);
+          rec.onstop = async () => {
+            clearInterval(recTimer); stream.getTracks().forEach((t) => t.stop());
+            mic.innerHTML = icon('microphone'); mic.style.background = ''; mic.style.color = '';
+            const secs = Math.round((Date.now() - started) / 1000);
+            if (secs < 1) { toast('Too short'); return; }
+            const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+            toast('Uploading…');
+            try { const r = await api.upload(new File([blob], 'voice.webm', { type: blob.type }), 'audio', { seconds: secs }); pending = r.upload; showPending(); } catch (err) { failed(el, err); }
+          };
+          rec.start();
+          mic.style.background = '#D92D20'; mic.style.color = '#fff';
+          recTimer = setInterval(() => { const s = Math.round((Date.now() - started) / 1000); mic.textContent = s + 's'; if (s >= 180) rec.stop(); }, 500);
+          toast('Recording. Tap again to stop.');
+        } catch { toast('Microphone permission is needed for voice notes.'); }
+      });
       el.querySelector('#compose').addEventListener('submit', async (e) => {
-        e.preventDefault(); const i = el.querySelector('#body'); const v = i.value.trim(); if (!v) return; i.value = '';
-        try { const r = await api.sendMessage(id, v); box.insertAdjacentHTML('beforeend', bubble(r.message)); last = r.message.id; scroll(); } catch (err) { i.value = v; failed(el, err); }
+        e.preventDefault(); const i = el.querySelector('#body'); const v = i.value.trim(); if (!v && !pending) return; i.value = '';
+        const att = pending; pending = null; showPending();
+        try { const r = await api.sendMessage(id, v, att ? att.id : null); box.insertAdjacentHTML('beforeend', bubble(r.message)); last = r.message.id; scroll(); } catch (err) { i.value = v; pending = att; showPending(); failed(el, err); }
       });
       if (new URLSearchParams(location.hash.split('?')[1] || '').get('schedule') === '1') setTimeout(() => el.querySelector('#sched')?.click(), 50);
       if (new URLSearchParams(location.hash.split('?')[1] || '').get('inspect') === '1') setTimeout(() => el.querySelector('#inspect')?.click(), 50);

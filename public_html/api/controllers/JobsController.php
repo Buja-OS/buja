@@ -15,7 +15,7 @@ final class JobsController
         if ($q !== '')        { $where[] = '(j.title LIKE ? OR c.name LIKE ? OR j.description LIKE ?)'; $like = '%' . $q . '%'; array_push($p, $like, $like, $like); }
         if ($district !== '') { $where[] = 'j.district = ?'; $p[] = $district; }
         if ($type !== '' && in_array($type, Work::TYPES, true)) { $where[] = 'j.type = ?'; $p[] = $type; }
-        $sql = 'SELECT j.*, c.id AS c_id, c.name AS c_name, c.district AS c_district, c.verified_at AS c_verified_at,
+        $sql = 'SELECT j.*, c.id AS c_id, c.name AS c_name, c.district AS c_district, c.verified_at AS c_verified_at, c.logo_upload_id AS c_logo,
                        (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id) AS applicants
                 FROM jobs j JOIN companies c ON c.id = j.company_id WHERE ' . implode(' AND ', $where) . '
                 ORDER BY j.created_at DESC LIMIT ' . $per . ' OFFSET ' . (($page - 1) * $per);
@@ -27,7 +27,7 @@ final class JobsController
         }
         $jobs = [];
         foreach ($st->fetchAll() as $r) {
-            $c = ['id' => $r['c_id'], 'name' => $r['c_name'], 'district' => $r['c_district'], 'verified_at' => $r['c_verified_at']];
+            $c = ['id' => $r['c_id'], 'name' => $r['c_name'], 'district' => $r['c_district'], 'verified_at' => $r['c_verified_at'], 'logo_upload_id' => $r['c_logo'] ?? null];
             $jobs[] = Work::job($r, $c, ['applicants' => (int) $r['applicants'], 'saved' => in_array((int) $r['id'], $saved, true), 'applied' => in_array((int) $r['id'], $applied, true)]);
         }
         $count = Db::one('SELECT COUNT(*) AS n FROM jobs j JOIN companies c ON c.id = j.company_id WHERE ' . implode(' AND ', $where), $p);
@@ -110,7 +110,7 @@ final class JobsController
     public function saved(): void
     {
         $u = Auth::require();
-        $st = Db::pdo()->prepare('SELECT j.*, c.id AS c_id, c.name AS c_name, c.district AS c_district, c.verified_at AS c_verified_at FROM saved_jobs s JOIN jobs j ON j.id = s.job_id JOIN companies c ON c.id = j.company_id WHERE s.user_id = ? ORDER BY s.created_at DESC');
+        $st = Db::pdo()->prepare('SELECT j.*, c.id AS c_id, c.name AS c_name, c.district AS c_district, c.verified_at AS c_verified_at, c.logo_upload_id AS c_logo FROM saved_jobs s JOIN jobs j ON j.id = s.job_id JOIN companies c ON c.id = j.company_id WHERE s.user_id = ? ORDER BY s.created_at DESC');
         $st->execute([$u['id']]);
         Http::json(['jobs' => array_map(fn($r) => Work::job($r, ['id' => $r['c_id'], 'name' => $r['c_name'], 'district' => $r['c_district'], 'verified_at' => $r['c_verified_at']], ['saved' => true]), $st->fetchAll())]);
     }

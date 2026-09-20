@@ -13,7 +13,7 @@ final class MessagesController
 
     private function shapeMessage(array $m, int $me): array
     {
-        return ['id' => (int) $m['id'], 'mine' => (int) $m['sender_id'] === $me, 'type' => $m['type'], 'body' => $m['body'], 'meta' => $m['meta'] ? json_decode($m['meta'], true) : null, 'createdAt' => $m['created_at']];
+        return ['id' => (int) $m['id'], 'mine' => (int) $m['sender_id'] === $me, 'type' => $m['type'], 'body' => $m['body'], 'meta' => $m['meta'] ? json_decode($m['meta'], true) : null, 'attachment' => UploadsController::shape($m['upload_id'] ? (int) $m['upload_id'] : null), 'createdAt' => $m['created_at']];
     }
 
     /** GET /inbox */
@@ -35,7 +35,7 @@ final class MessagesController
             'title' => $t['kind'] === 'match' || $t['kind'] === 'declutter' ? explode(' ', $t['other_name'])[0] : ($t['kind'] === 'homes' ? ((int) $t['user_a'] === (int) $u['id'] ? $t['other_name'] : ($t['landlord_name'] ?: $t['other_name'])) : ($u['kind'] === 'company' ? $t['other_name'] : ($t['company_name'] ?? $t['other_name']))),
             'subtitle' => $t['kind'] === 'match' ? 'Match' : ($t['kind'] === 'declutter' ? 'Declutter · ' . ($t['listing_title'] ?? '') : ($t['kind'] === 'homes' ? 'Homes · ' . ($t['property_title'] ?? '') : ($t['job_title'] ? ($u['kind'] === 'company' ? 'Applied for ' . $t['job_title'] : $t['job_title']) : ''))),
             'otherId' => (int) (($t['user_a'] == $u['id']) ? $t['user_b'] : $t['user_a']),
-            'preview' => $t['last_type'] === 'interview' ? 'Interview invitation' : ($t['last_type'] === 'inspection' ? 'Inspection request' : ($t['last_type'] === 'offer' ? 'Offer' : ($t['last_body'] ?? ''))),
+            'preview' => $t['last_type'] === 'interview' ? 'Interview invitation' : ($t['last_type'] === 'inspection' ? 'Inspection request' : ($t['last_type'] === 'offer' ? 'Offer' : ($t['last_type'] === 'media' ? ($t['last_body'] ?: 'Attachment') : ($t['last_body'] ?? '')))),
             'jobId' => $t['job_id'] ? (int) $t['job_id'] : null,
         ], $st->fetchAll());
         Http::json(['threads' => $rows, 'unread' => array_sum(array_column($rows, 'unread'))]);
@@ -85,11 +85,15 @@ final class MessagesController
         RateLimit::hit('msg', 120, 3600);
         $o = $this->other($t, $u);
         if (Db::one('SELECT 1 AS x FROM blocks WHERE (blocker = ? AND blocked = ?) OR (blocker = ? AND blocked = ?)', [$u['id'], $o, $o, $u['id']])) Http::json(['error' => 'blocked', 'message' => 'You cannot message this person.'], 403);
-        $body = trim((string) (Http::body()['body'] ?? '')); if ($body === '' || mb_strlen($body) > 2000) Http::json(['error' => 'validation', 'fields' => ['body' => 'Write something, up to 2000 characters.']], 422);
-        Db::run('INSERT INTO messages (thread_id, sender_id, type, body, created_at) VALUES (?,?,?,?,?)', [$id, $u['id'], 'text', $body, Db::now()]);
+        $b = Http::body();
+        $body = trim((string) ($b['body'] ?? '')); $upload = UploadsController::claim(isset($b['uploadId']) ? (int) $b['uploadId'] : null, $u);
+        if ($body === '' && !$upload) Http::json(['error' => 'validation', 'fields' => ['body' => 'Write something or attach a file.']], 422);
+        if (mb_strlen($body) > 2000) Http::json(['error' => 'validation', 'fields' => ['body' => 'Up to 2000 characters.']], 422);
+        Db::run('INSERT INTO messages (thread_id, sender_id, type, body, upload_id, created_at) VALUES (?,?,?,?,?,?)', [$id, $u['id'], $upload ? 'media' : 'text', $body, $upload, Db::now()]);
         $mid = Db::lastId(); Track::hit($u, 'inbox', 'message');
         Db::run('UPDATE threads SET last_message_at = ? WHERE id = ?', [Db::now(), $id]);
-        Notify::user($o, $t['kind'] === 'match' ? 'match' : 'work', $t['kind'] === 'match' ? explode(' ', $u['name'])[0] . ' sent you a message' : ($u['kind'] === 'company' ? ($this->companyName($u) . ' sent you a message') : $u['name'] . ' sent you a message'), mb_substr($body, 0, 120), '/#/inbox/' . $id);
+        $preview = $body !== '' ? mb_substr($body, 0, 120) : 'Sent an attachment';
+        Notify::user($o, $t['kind'] === 'match' ? 'match' : 'work', $t['kind'] === 'match' ? explode(' ', $u['name'])[0] . ' sent you a message' : ($u['kind'] === 'company' ? ($this->companyName($u) . ' sent you a message') : $u['name'] . ' sent you a message'), $preview, '/#/inbox/' . $id);
         Http::json(['message' => $this->shapeMessage(Db::one('SELECT * FROM messages WHERE id = ?', [$mid]), (int) $u['id'])], 201);
     }
 

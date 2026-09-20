@@ -1,4 +1,4 @@
-# Buja, Phase 9b: real Abuja transport, News, Social, Radio
+# Buja, Phase 9c: media everywhere, radio in-app
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -136,8 +136,18 @@ Note on tiles: OpenStreetMap's public tile server is fine for testing and early 
 - **Radio**: all 24 FCT stations by frequency with genre and station link, an in-app player, and a mini player that keeps going while you read. Streams come from Radio Garden: an admin taps Sync in the admin panel and Buja pulls the live stream for every Abuja station, matching them to the dial by frequency and adding any it does not have. Re-runnable any time the streams change.
 - **Match** suggests people who have joined near you in the last fortnight, once a day at most, never the same person twice.
 
+## Phase 9c: attachments, in-app radio, business photos
+
+- **Radio plays inside Buja.** 21 of the 35 FCT stations now carry a confirmed stream (Cool FM, Wazobia, Nigeria Info, Ray Power, Vision, Kapital, Aso, Beat, Classic, Liberty, Real, Bright, World, Oganiru and more). The player is global: start a station and it keeps playing while you browse Work, Match or chat, with a bar showing what is on and a pause and stop control. Stations with no stream are listed separately and link to their own site.
+- **Attachments everywhere**, on one `uploads` table: photo (5 MB), video (40 MB), voice note recorded in the app with MediaRecorder (12 MB), document (15 MB, PDF, Word, Excel, text, zip) and a pinned location from the phone's GPS, which renders as a card that opens in maps. Images are resized on the phone before upload; files go to R2 when configured. An upload belongs to the person who made it, can be attached once, and is readable only by people in that thread or post.
+- **Social** takes a photo or video per post and per reply, turns any YouTube link into an embedded player, and makes plain links clickable.
+- **Companies and landlords** upload a logo or photo, shown on every vacancy and every property listing.
+- New: `api/controllers/UploadsController.php`, `migrations/012_media.sql`, attachment rendering in `js/ui.js`.
+
+Bugs fixed in this pass: tracking calls that ran between an insert and reading back its id, which had broken posting in Homes, Declutter and Social; a variable in the Waka planner that clobbered the destination and produced a 1,300 km trip; a duplicate timer name that stopped the whole app loading; and the radio player being declared after first use.
+
 ## What is next
 
-Phase 9c: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 9d: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

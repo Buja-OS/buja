@@ -1,7 +1,7 @@
 // Buja app: hash router and Phase 1 screens.
 import { state, setState, subscribe, applyTheme } from './store.js';
 import { api, detectApi } from './api.js';
-import { h, toast, mark, markAuto, topbar, tabbar, field, showErrors, bindEyes, clearOnInput, busy, avatar, icon } from './ui.js';
+import { h, toast, mark, markAuto, topbar, tabbar, field, showErrors, bindEyes, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify } from './ui.js';
 import { registerWork } from './work.js';
 import { registerMessages } from './messages.js';
 import { registerMatch } from './match.js';
@@ -11,6 +11,36 @@ import { registerDeclutter } from './declutter.js';
 import { registerAsk } from './ask.js';
 import { registerTrust } from './trust.js';
 import { registerCity } from './city.js';
+
+/* ---------------- Radio player, global so it keeps playing as you move around ---------------- */
+export const radio = {
+  audio: null, station: null,
+  play(station) {
+    if (this.audio && this.station && this.station.id === station.id) { this.audio.paused ? this.audio.play().catch(() => {}) : this.audio.pause(); this.render(); return; }
+    this.stop();
+    this.audio = new Audio(station.stream); this.audio.preload = 'none'; this.station = station;
+    this.audio.addEventListener('playing', () => this.render());
+    this.audio.addEventListener('pause', () => this.render());
+    this.audio.addEventListener('error', () => { toast(station.name + ' would not play. The station may be offline.'); this.stop(); });
+    this.audio.play().catch(() => { toast(station.name + ' would not play. The station may be offline.'); this.stop(); });
+    this.render();
+  },
+  stop() { if (this.audio) { this.audio.pause(); this.audio.src = ''; } this.audio = null; this.station = null; this.render(); },
+  render() {
+    let bar = document.getElementById('radiobar');
+    if (!this.station) { bar?.remove(); document.body.style.removeProperty('--radio-h'); return; }
+    if (!bar) { bar = document.createElement('div'); bar.id = 'radiobar'; document.body.appendChild(bar); }
+    const playing = this.audio && !this.audio.paused;
+    bar.innerHTML = `<div style="position:fixed;left:0;right:0;bottom:calc(var(--tab-h) + var(--safe-b));max-width:480px;margin:0 auto;background:var(--night);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:12px;z-index:25;box-shadow:0 -6px 20px rgba(0,0,0,.25)">
+      <span style="width:34px;height:34px;border-radius:17px;background:${playing ? 'var(--green)' : 'rgba(255,255,255,.15)'};color:${playing ? '#101014' : '#fff'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;font-weight:700">${this.station.frequency}</span>
+      <a href="#/radio" style="flex:1;min-width:0;color:#fff"><span style="display:block;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(this.station.name)}</span><span class="small" style="color:#B5B5BC">${playing ? 'Playing live' : 'Paused'}</span></a>
+      <button class="iconbtn" id="rtoggle" aria-label="${playing ? 'Pause' : 'Play'}" style="background:rgba(255,255,255,.12);border:none;color:#fff;width:36px;height:36px">${icon(playing ? 'circle-check' : 'bolt')}</button>
+      <button class="iconbtn" id="rclose" aria-label="Stop" style="background:rgba(255,255,255,.12);border:none;color:#fff;width:36px;height:36px">${icon('xmark')}</button></div>`;
+    bar.querySelector('#rtoggle').addEventListener('click', () => { this.audio.paused ? this.audio.play().catch(() => {}) : this.audio.pause(); });
+    bar.querySelector('#rclose').addEventListener('click', () => this.stop());
+  },
+};
+
 
 const DISTRICTS = ['Asokoro', 'Maitama', 'Wuse', 'Wuse 2', 'Garki', 'Central Area', 'Jabi', 'Utako', 'Gwarinpa', 'Life Camp', 'Kado', 'Katampe', 'Guzape', 'Durumi', 'Apo', 'Lokogoma', 'Galadimawa', 'Lugbe', 'Kubwa', 'Jahi', 'Nyanya', 'Karu', 'Jikwoyi', 'Kuje', 'Gwagwalada'];
 const app = document.getElementById('app');
@@ -284,15 +314,15 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
   }
 });
 
-registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
-registerCity({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
-registerTrust({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
-registerAsk({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
-registerDeclutter({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
-registerHomes({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
-registerWaka({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
-registerMatch({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
-const push = registerMessages({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
+registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerCity({ route, go, state, api, radio, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerTrust({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
+registerAsk({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerDeclutter({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerHomes({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerWaka({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
+registerMatch({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+const push = registerMessages({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 
 route('/404', {}, async () => `${topbar('Not found', '/home')}<div class="placeholder"><div class="h-md">That page does not exist</div><a class="btn btn-ink" href="#/home" style="width:auto">Go home</a></div>`);
 

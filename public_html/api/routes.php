@@ -164,3 +164,9 @@ $router->post('/social/reply/{id}/like',     [SocialController::class, 'likeRepl
 $router->get('/radio',                       [RadioController::class, 'index']);
 $router->patch('/radio/{id}',                [RadioController::class, 'update']);
 $router->post('/match/suggest',              [MatchController::class, 'suggest']);
+
+// Attachments
+$router->post('/uploads',                    [UploadsController::class, 'create']);
+$router->post('/uploads/location',           [UploadsController::class, 'location']);
+$router->get('/uploads/{id}',                [UploadsController::class, 'show']);
+$router->post('/company/logo',               [CompanyController::class, 'logo']);

@@ -26,7 +26,7 @@ final class Work
             'salaryMax' => $j['salary_max'] !== null ? (int) $j['salary_max'] : null,
             'description' => $j['description'], 'deadline' => $j['deadline'], 'openings' => (int) $j['openings'],
             'status' => $j['status'], 'createdAt' => $j['created_at'],
-            'company' => ['id' => (int) $c['id'], 'name' => $c['name'], 'district' => $c['district'], 'verified' => $c['verified_at'] !== null],
+            'company' => ['id' => (int) $c['id'], 'logo' => !empty($c['logo_upload_id']) ? '/api/uploads/' . (int) $c['logo_upload_id'] : null, 'name' => $c['name'], 'district' => $c['district'], 'verified' => $c['verified_at'] !== null],
         ];
         return $extra ? $out + $extra : $out;
     }
