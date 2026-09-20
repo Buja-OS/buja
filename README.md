@@ -1,4 +1,4 @@
-# Buja, Phase 9h: Ask fixed (model name, map timeouts)
+# Buja, Phase 9i: Ask knows where you are
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -189,6 +189,15 @@ Bugs fixed in this pass: tracking calls that ran between an insert and reading b
 - **Gemini was 404ing on every call.** Google retired `gemini-2.5-flash` for new keys and the error said to use `gemini-3.6-flash`. The default is updated and still overridable with `GEMINI_MODEL`. Provider errors now log the message rather than the first 200 bytes of HTML, so the next one is obvious.
 - **The map lookup could hang for 44 seconds.** Both Overpass servers timed out at 22 seconds each before Buja gave up. Timeouts are now 6 seconds with a 3 second connect limit, Nominatim is a second source when Overpass is down, and a failed lookup for a category near a point is remembered for an hour so nobody waits on the same dead end twice. Measured: a failing lookup now costs under a second on the repeat.
 - New: `migrations/016_appkeys.sql`, a small key/value table the server uses for notes like this.
+
+## Phase 9i: live position, real distances, map thumbnails
+
+- **Ask uses the phone's position.** Every question carries the current GPS fix if the phone gives one within four seconds, and never waits longer than that. "Near me", "closest" and "nearest" force it to win over anything stored; a district named in the question still wins over both. The fix is also saved so Match distances stay current.
+- **Ranked by how far away things actually are.** Places within a kilometre get full marks, ten kilometres or more gets a penalty, and for any "near me" question the answer is sorted nearest first. Verified from three positions: standing in Maitama gives Wakkis at 0.95 km first; the same question at Jabi reorders the whole list.
+- **Every card carries a real map thumbnail**, the OpenStreetMap tile the place sits on, shifted so the spot is centred with a pin over it. Free, works for any place with coordinates, and honest about being a map rather than a photograph. The place screen shows a large one that opens in maps.
+- Coordinates added for all 22 seeded places (`migrations/017_spot_coords.sql`), so distances and thumbnails work from the first question rather than only for places found on the map.
+
+Bugs fixed: the live position was read from a variable that was never defined, so it was always ignored; and distance was read from the stored position rather than the fix just sent.
 
 ## What is next
 

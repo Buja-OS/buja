@@ -125,7 +125,7 @@ export const api = {
   offer:           (threadId, amount) => request('POST', '/threads/' + threadId + '/offer', { amount }),
   respondOffer:    (messageId, action) => request('POST', '/messages/' + messageId + '/offer-response', { action }),
   // Ask
-  ask:             (question) => request('POST', '/ask', { question }),
+  ask:             (question, history, at) => request('POST', '/ask', { question, history, lat: at ? at.lat : undefined, lng: at ? at.lng : undefined }),
   spots:           (q) => request('GET', '/spots' + qs({ q })),
   spot:            (id) => request('GET', '/spots/' + id),
   rateSpot:        (id, stars, comment) => request('POST', '/spots/' + id + '/rate', { stars, comment }),

@@ -10,13 +10,45 @@ final class AskController
     private function spot(array $s, ?array $u = null): array
     {
         $r = Db::one('SELECT COUNT(*) AS n, AVG(stars) AS avg FROM spot_ratings WHERE spot_id = ?', [$s['id']]);
-        $out = ['id' => (int) $s['id'], 'name' => $s['name'], 'category' => $s['category'], 'categoryLabel' => self::CATEGORIES[$s['category']] ?? $s['category'], 'district' => $s['district'], 'area' => $s['area'], 'tags' => json_decode($s['tags'] ?? '[]', true) ?: [], 'priceLevel' => (int) $s['price_level'], 'priceLabel' => self::PRICE[(int) $s['price_level']] ?? '', 'priceNote' => $s['price_note'], 'description' => $s['description'], 'hours' => $s['hours'], 'verified' => $s['verified_at'] !== null, 'source' => $s['source'] ?? 'buja', 'lat' => $s['lat'] !== null ? (float) $s['lat'] : null, 'lng' => $s['lng'] !== null ? (float) $s['lng'] : null, 'rating' => $r && $r['n'] ? round((float) $r['avg'], 1) : null, 'ratings' => (int) ($r['n'] ?? 0), 'wakaTo' => $s['district']];
+        $out = ['id' => (int) $s['id'], 'name' => $s['name'], 'category' => $s['category'], 'categoryLabel' => self::CATEGORIES[$s['category']] ?? $s['category'], 'district' => $s['district'], 'area' => $s['area'], 'tags' => json_decode($s['tags'] ?? '[]', true) ?: [], 'priceLevel' => (int) $s['price_level'], 'priceLabel' => self::PRICE[(int) $s['price_level']] ?? '', 'priceNote' => $s['price_note'], 'description' => $s['description'], 'hours' => $s['hours'], 'verified' => $s['verified_at'] !== null, 'source' => $s['source'] ?? 'buja', 'lat' => $s['lat'] !== null ? (float) $s['lat'] : null, 'lng' => $s['lng'] !== null ? (float) $s['lng'] : null, 'thumb' => $this->thumb($s), 'away' => $this->away($s, $u), 'rating' => $r && $r['n'] ? round((float) $r['avg'], 1) : null, 'ratings' => (int) ($r['n'] ?? 0), 'wakaTo' => $s['district']];
         if ($u) $out['myRating'] = (int) (Db::one('SELECT stars FROM spot_ratings WHERE spot_id = ? AND user_id = ?', [$s['id'], $u['id']])['stars'] ?? 0);
         return $out;
     }
     private function directory(): array
     {
         return Db::pdo()->query("SELECT * FROM spots WHERE active = 1 ORDER BY id")->fetchAll();
+    }
+
+    /**
+     * A thumbnail for a place: the map tile it sits on, with the exact spot's position inside that tile so
+     * the card can centre it. Free, works for every place with coordinates, and honest about being a map.
+     */
+    private function thumb(array $s): ?array
+    {
+        if ($s['lat'] === null || $s['lng'] === null) return null;
+        $lat = (float) $s['lat']; $lng = (float) $s['lng']; $z = 16; $n = 2 ** $z;
+        $xf = ($lng + 180) / 360 * $n;
+        $yf = (1 - log(tan(deg2rad($lat)) + 1 / cos(deg2rad($lat))) / M_PI) / 2 * $n;
+        return ['url' => 'https://tile.openstreetmap.org/' . $z . '/' . (int) $xf . '/' . (int) $yf . '.png',
+            'fx' => round($xf - floor($xf), 3), 'fy' => round($yf - floor($yf), 3)];
+    }
+
+    /** Where the person asking is: the position their phone just sent, else the last one we stored. */
+    private ?array $me = null;
+    private bool $meLoaded = false;
+
+    /** How far this place is from them, when both positions are known. */
+    private function away(array $s, array $u): ?float
+    {
+        if ($s['lat'] === null) return null;
+        if ($this->me === null && !$this->meLoaded) {
+            $this->meLoaded = true;
+            $r = Db::one('SELECT lat, lng FROM users WHERE id = ?', [$u['id']]);
+            $this->me = ($r && $r['lat'] !== null) ? [(float) $r['lat'], (float) $r['lng']] : null;
+        }
+        if ($this->me === null) return null;
+        $km = WakaRules::km($this->me[0], $this->me[1], (float) $s['lat'], (float) $s['lng']);
+        return $km < 1 ? round($km, 2) : round($km, 1);
     }
 
     /** The category a question is about, or null if it is not about a kind of place. */
@@ -28,11 +60,17 @@ final class AskController
         return null;
     }
 
-    /** Where to search around: a district named in the question, else the user's position, else their district. */
-    private function whereIs(array $u, string $q): array
+    /**
+     * Where to search around. "Near me" and a live position from the phone beat everything; then a district
+     * named in the question; then the last position we stored; then the district on the account.
+     */
+    private function whereIs(array $u, string $q, ?array $live = null): array
     {
         $ql = mb_strtolower($q);
+        $nearMe = str_contains($ql, 'near me') || str_contains($ql, 'close to me') || str_contains($ql, 'around me') || str_contains($ql, 'nearby') || str_contains($ql, 'closest') || str_contains($ql, 'nearest');
+        if ($live && $nearMe) return [$live[0], $live[1]];
         foreach (HomesRules::CENTROID as $name => [$lat, $lng]) if (str_contains($ql, mb_strtolower($name))) return [$lat, $lng];
+        if ($live) return [$live[0], $live[1]];
         $row = Db::one('SELECT lat, lng FROM users WHERE id = ?', [$u['id']]);
         if ($row && $row['lat'] !== null) return [(float) $row['lat'], (float) $row['lng']];
         $c = HomesRules::CENTROID[$u['district'] ?? ''] ?? null;
@@ -40,7 +78,7 @@ final class AskController
     }
 
     /** Narrows the directory to what this question could plausibly be about, so requests stay small however big Buja grows. */
-    private function relevant(string $q, array $spots, array $u, int $max = 40): array
+    private function relevant(string $q, array $spots, array $u, int $max = 40, ?array $live = null): array
     {
         $ql = mb_strtolower($q);
         $cats = [];
@@ -55,6 +93,11 @@ final class AskController
             foreach (preg_split('/\W+/u', mb_strtolower($sp['name'])) as $w) if (mb_strlen($w) > 3 && str_contains($ql, $w)) $score += 8;
             if (str_contains($ql, mb_strtolower($sp['district']))) $score += 5;
             elseif (in_array($sp['district'], $near, true)) $score += 2;
+            // With a real position, close places win: full marks within a kilometre, nothing beyond ten.
+            if ($live && $sp['lat'] !== null) {
+                $km = WakaRules::km($live[0], $live[1], (float) $sp['lat'], (float) $sp['lng']);
+                $score += $km < 1 ? 10 : ($km < 3 ? 7 : ($km < 6 ? 4 : ($km < 10 ? 1 : -3)));
+            }
             $scored[] = [$score, $sp];
         }
         // Nothing matched the words? Send the most popular places rather than nothing, so the model can still be useful.
@@ -66,20 +109,29 @@ final class AskController
     public function ask(): void
     {
         $u = Auth::require(); RateLimit::hit('ask', (int) Http::config('ask_daily_limit', 40), 86400);
-        $q = mb_substr(trim((string) (Http::body()['question'] ?? '')), 0, 300);
+        $b = Http::body();
+        $q = mb_substr(trim((string) ($b['question'] ?? '')), 0, 300);
         if ($q === '') Http::json(['error' => 'validation', 'fields' => ['question' => 'Ask something.']], 422);
+        $live = null;
+        if (!empty($b['lat']) && !empty($b['lng'])) {
+            $la = (float) $b['lat']; $ln = (float) $b['lng'];
+            if ($la > 4 && $la < 14 && $ln > 2 && $ln < 15) {
+                $live = [$la, $ln]; $this->me = $live;
+                Db::run('UPDATE users SET lat = ?, lng = ?, loc_updated_at = ? WHERE id = ?', [round($la, 3), round($ln, 3), Db::now(), $u['id']]);
+            }
+        }
         $spots = $this->directory();
-        $shortlist = $this->relevant($q, $spots, $u);
+        $shortlist = $this->relevant($q, $spots, $u, 40, $live);
         $cat = $this->categoryOf($q);
         // If Buja knows little about what was asked, look it up on the map and keep what it finds.
         $onTopic = array_values(array_filter($shortlist, fn($s) => $s['category'] === $cat));
         if ($cat && count($onTopic) < 4) {
-            [$lat, $lng] = $this->whereIs($u, $q);
+            [$lat, $lng] = $this->whereIs($u, $q, $live);
             $tried = 'osm:' . $cat . ':' . round($lat, 2) . ',' . round($lng, 2);
             if ($lat && !Db::one('SELECT 1 AS x FROM app_keys WHERE k = ? AND v > ?', [$tried, gmdate('Y-m-d H:i:s', time() - 3600)])) {
                 $found = [];
                 try { RateLimit::hit('osm', 60, 3600); $found = Osm::nearby($cat, $lat, $lng); } catch (Throwable $e) {}
-                if ($found) { $spots = $this->directory(); $shortlist = $this->relevant($q, $spots, $u); }
+                if ($found) { $spots = $this->directory(); $shortlist = $this->relevant($q, $spots, $u, 40, $live); }
                 else { Db::run('DELETE FROM app_keys WHERE k = ?', [$tried]); Db::run('INSERT INTO app_keys (k, v) VALUES (?,?)', [$tried, Db::now()]); }
             }
         }
@@ -87,6 +139,10 @@ final class AskController
         foreach ($this->providerChain() as $p) { $result = $this->askModel($p, $q, $shortlist, $u); if ($result !== null) break; }
         if ($result === null) $result = $this->askRules($q, $spots, $u);
         $ids = array_map(fn($s) => $s['id'], $result['spots']);
+        // When someone asks for what is near them, nearest goes first.
+        if ($this->me && str_contains(mb_strtolower($q), 'near') || $this->me && str_contains(mb_strtolower($q), 'closest') || $this->me && str_contains(mb_strtolower($q), 'nearest')) {
+            usort($result['spots'], fn($x, $y) => ($x['away'] ?? 9999) <=> ($y['away'] ?? 9999));
+        }
         Db::run('INSERT INTO ask_log (user_id, question, district, spot_ids, mode, created_at) VALUES (?,?,?,?,?,?)', [$u['id'], $q, $u['district'], json_encode($ids), $result['mode'], Db::now()]); Track::hit($u, 'ask', 'ask');
         Http::json($result);
     }

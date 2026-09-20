@@ -3,14 +3,37 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
   const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon } = ui;
   const stars = (n) => `<span style="color:var(--orange)">${'★'.repeat(Math.round(n || 0))}</span><span style="color:var(--line)">${'★'.repeat(5 - Math.round(n || 0))}</span>`;
   const catIcon = { food: 'bus', lounge: 'wine-glass', relax: 'route', nightlife: 'bolt', shopping: 'tags', kids: 'users', worship: 'circle-check', services: 'gear', hotel: 'house-chimney', culture: 'camera' };
-  const SUGGEST = ['Best amala near me', 'Serene place to relax', 'Cheapest lounge in Jabi', 'Somewhere fancy for a date', 'Where can kids play on Sunday', 'Late-night suya'];
+  /** The phone's position if it answers quickly. Never holds an answer for more than four seconds. */
+  let fix = null;
+  function here() {
+    if (fix && Date.now() - fix.at < 120000) return Promise.resolve(fix);
+    if (!navigator.geolocation) return Promise.resolve(null);
+    return new Promise((res) => {
+      let done = false; const finish = (v) => { if (!done) { done = true; res(v); } };
+      setTimeout(() => finish(null), 4000);
+      navigator.geolocation.getCurrentPosition((p) => { fix = { lat: p.coords.latitude, lng: p.coords.longitude, at: Date.now() }; finish(fix); }, () => finish(null), { enableHighAccuracy: true, timeout: 4000, maximumAge: 120000 });
+    });
+  }
+  const far = (km) => km == null ? '' : km < 1 ? Math.round(km * 1000) + ' m away' : km + ' km away';
+
+  const SUGGEST = ['Good restaurant near me', 'Serene place to relax', 'Serene place to relax', 'Cheapest lounge in Jabi', 'Somewhere fancy for a date', 'Where can kids play on Sunday', 'Late-night suya'];
+
+  /** A real map tile, shifted so the place sits in the middle, with a pin over it. */
+  function thumbHtml(s, size = 56) {
+    if (!s.thumb) return `<div style="width:${size}px;height:${size}px;border-radius:12px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon(catIcon[s.category] || 'location-dot')}</div>`;
+    const x = Math.round(size / 2 - s.thumb.fx * 256), y = Math.round(size / 2 - s.thumb.fy * 256);
+    return `<div style="width:${size}px;height:${size}px;border-radius:12px;flex-shrink:0;position:relative;overflow:hidden;background:#E8EDE4">
+      <img src="${s.thumb.url}" alt="" loading="lazy" style="position:absolute;left:${x}px;top:${y}px;width:256px;height:256px;max-width:none">
+      <span style="position:absolute;left:50%;top:50%;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:6px;background:var(--orange);border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
+    </div>`;
+  }
 
   function spotCard(s) {
     return `<a class="card row" href="#/ask/place/${s.id}" style="padding:12px;gap:12px;align-items:flex-start">
-      <div style="width:44px;height:44px;border-radius:12px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon(catIcon[s.category] || 'location-dot')}</div>
+      ${thumbHtml(s)}
       <div class="grow" style="min-width:0">
         <div class="row" style="justify-content:space-between;gap:8px"><span style="font-size:14px;font-weight:700">${h(s.name)}</span>${s.rating ? `<span class="small" style="font-weight:700;white-space:nowrap">${icon('star')} ${s.rating}</span>` : `<span class="small muted" style="white-space:nowrap">no ratings</span>`}</div>
-        <div class="small muted" style="margin-top:2px">${h(s.district)}${s.area ? ' · ' + h(s.area) : ''} · ${s.priceLabel}${s.priceNote ? ' · ' + h(s.priceNote) : ''}</div>
+        <div class="small muted" style="margin-top:2px">${s.away != null ? `<strong style="color:var(--ink)">${far(s.away)}</strong> · ` : ''}${h(s.district)}${s.area ? ' · ' + h(s.area) : ''} · ${s.priceLabel}${s.source === 'osm' ? ' · from the map' : ''}</div>
         ${s.why ? `<div class="small" style="margin-top:4px;color:var(--ink-2)">${h(s.why)}</div>` : ''}
         <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">${s.hours ? `<span class="tag" style="background:var(--surface);color:var(--ink-2)">${icon('clock')} ${h(s.hours)}</span>` : ''}<span class="tag" style="background:var(--night);color:#fff" data-waka="${h(s.wakaTo)}">${icon('route')} Waka there</span></div>
       </div></a>`;
@@ -34,11 +57,11 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
       const send = async (q) => {
         q = q.trim(); if (!q) return; input.value = '';
         chat.insertAdjacentHTML('beforeend', `<div style="align-self:flex-end;max-width:280px;padding:12px 14px;background:var(--ink);color:var(--surface);border-radius:16px 16px 4px 16px;font-size:14px;line-height:1.5">${h(q)}</div>`);
-        const think = document.createElement('div'); think.className = 'row'; think.style.cssText = 'gap:10px;align-items:flex-start'; think.innerHTML = `<div style="width:30px;height:30px;border-radius:9px;background:var(--night);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#7ED957">${icon('wand-magic-sparkles')}</div><div class="card small muted" style="padding:10px 14px;border-radius:4px 16px 16px 16px">Looking through Buja's places…</div>`;
+        const think = document.createElement('div'); think.className = 'row'; think.style.cssText = 'gap:10px;align-items:flex-start'; think.innerHTML = `<div style="width:30px;height:30px;border-radius:9px;background:var(--night);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#7ED957">${icon('wand-magic-sparkles')}</div><div class="card small muted" style="padding:10px 14px;border-radius:4px 16px 16px 16px">Finding places near you…</div>`;
         chat.appendChild(think); scroll();
         try {
-          const r = await api.ask(q);
-          think.innerHTML = `<div style="width:30px;height:30px;border-radius:9px;background:var(--night);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#7ED957">${icon('wand-magic-sparkles')}</div><div class="grow stack" style="gap:10px"><div class="card" style="padding:12px 14px;font-size:14px;line-height:1.5;border-radius:4px 16px 16px 16px">${h(r.answer)}</div>${r.spots.map(spotCard).join('')}${r.mode === 'rules' ? `<div class="small muted row" style="gap:6px">${icon('circle-info')} Keyword match. Add an AI key to get natural answers.</div>` : `<div class="small muted row" style="gap:6px">${icon('circle-info')} Ranked from places and ratings on Buja. Tell us if one is wrong.</div>`}${r.followups.length ? `<div class="row" style="gap:8px;flex-wrap:wrap">${r.followups.map((f) => `<button class="chip" data-q="${h(f)}">${h(f)}</button>`).join('')}</div>` : ''}</div>`;
+          const r = await api.ask(q, null, await here());
+          think.innerHTML = `<div style="width:30px;height:30px;border-radius:9px;background:var(--night);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#7ED957">${icon('wand-magic-sparkles')}</div><div class="grow stack" style="gap:10px"><div class="card" style="padding:12px 14px;font-size:14px;line-height:1.5;border-radius:4px 16px 16px 16px">${h(r.answer)}</div>${r.spots.map(spotCard).join('')}${r.mode === 'rules' ? `<div class="small muted row" style="gap:6px">${icon('circle-info')} Answered by keyword match, not AI.</div>` : `<div class="small muted row" style="gap:6px">${icon('circle-info')} Only places on Buja are ever suggested. Tell us if one is wrong.</div>`}${r.followups.length ? `<div class="row" style="gap:8px;flex-wrap:wrap">${r.followups.map((f) => `<button class="chip" data-q="${h(f)}">${h(f)}</button>`).join('')}</div>` : ''}</div>`;
           bindWaka(think);
         } catch (err) { think.querySelector('.card').textContent = (err && err.message) || 'Something went wrong. Try again.'; }
         scroll();
@@ -55,6 +78,10 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
     const { spot: s, reviews } = await api.spot(id);
     return `${topbar(s.name, '/ask')}
     <main class="pad stack" style="gap:14px">
+      ${s.thumb ? `<a href="https://www.google.com/maps?q=${s.lat},${s.lng}" target="_blank" rel="noopener" style="display:block;height:150px;border-radius:16px;overflow:hidden;position:relative;background:#E8EDE4">
+        <img src="${s.thumb.url}" alt="" style="position:absolute;left:calc(50% - ${Math.round(s.thumb.fx * 256)}px);top:calc(50% - ${Math.round(s.thumb.fy * 256)}px);width:256px;height:256px;max-width:none">
+        <span style="position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:8px;background:var(--orange);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></span>
+        <span style="position:absolute;right:10px;bottom:10px;background:rgba(255,255,255,.9);border-radius:8px;padding:4px 8px;font-size:11px;font-weight:600;color:var(--ink)">Open in maps</span></a>` : ''}
       <div class="small muted row" style="gap:6px;flex-wrap:wrap">${icon(catIcon[s.category] || 'location-dot')} ${s.categoryLabel} · ${h(s.district)}${s.area ? ' · ' + h(s.area) : ''} · ${s.priceLabel}${s.priceNote ? ' · ' + h(s.priceNote) : ''}${s.verified ? ` · <span class="tag green">${icon('circle-check')} Verified</span>` : ' · community added'}</div>
       <div class="card row" style="padding:14px 16px;gap:14px"><div><div style="font-size:30px;font-weight:700">${s.rating ?? '–'}</div><div class="small muted">${s.ratings} rating${s.ratings === 1 ? '' : 's'}</div></div><div class="grow">${stars(s.rating)}<div class="small muted" style="margin-top:4px">${s.hours ? icon('clock') + ' ' + h(s.hours) : 'Hours not listed'}</div></div></div>
       <p style="margin:0;font-size:14px;line-height:1.55;color:var(--ink-2)">${h(s.description)}</p>
