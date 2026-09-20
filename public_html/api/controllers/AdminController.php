@@ -161,6 +161,47 @@ final class AdminController
         Http::json(['ok' => true]);
     }
 
+    /**
+     * POST /admin/radio/sync : pulls Abuja's station list from Radio Garden and attaches a playable
+     * stream to each station we already list, adding any we are missing. Safe to run again any time.
+     */
+    public function syncRadio(): void
+    {
+        $this->admin();
+        $place = (string) (Http::body()['place'] ?? 'Z1N4bsO2'); // radio.garden place id for Abuja
+        if (!preg_match('/^[A-Za-z0-9_-]{4,20}$/', $place)) Http::json(['error' => 'validation', 'message' => 'Bad place id.'], 422);
+        $ch = curl_init('https://radio.garden/api/ara/content/page/' . $place . '/channels');
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_FOLLOWLOCATION => true, CURLOPT_USERAGENT => 'BujaBot/1.0']);
+        $raw = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+        if ($code !== 200) Http::json(['error' => 'upstream', 'message' => 'Radio Garden returned ' . $code . '.'], 502);
+        Http::json($this->applyRadio((string) $raw));
+    }
+
+    /** Separated so it can be tested without the network. */
+    public function applyRadio(string $raw): array
+    {
+        $j = json_decode($raw, true);
+        $list = $j['data']['content'][0]['items'] ?? $j['data']['items'] ?? [];
+        if (!$list) return ['matched' => 0, 'added' => 0, 'message' => 'No stations in that response.'];
+        $norm = fn(string $s) => preg_replace('/[^a-z0-9]/', '', mb_strtolower(preg_replace('/\b(fm|radio|abuja|nigeria|frcn|the)\b/i', '', $s)));
+        $ours = Db::pdo()->query('SELECT id, name, frequency FROM radio_stations')->fetchAll();
+        $matched = 0; $added = 0; $names = [];
+        foreach ($list as $it) {
+            $title = trim((string) ($it['title'] ?? '')); $href = (string) ($it['href'] ?? '');
+            if ($title === '' || !preg_match('#/listen/[^/]+/([A-Za-z0-9_-]+)#', $href, $m)) continue;
+            $stream = 'https://radio.garden/api/ara/content/listen/' . $m[1] . '/channel.mp3';
+            $freq = preg_match('/(\d{2,3}\.\d)/', $title, $f) ? $f[1] : null;
+            $hit = null;
+            foreach ($ours as $o) {
+                if ($freq && $o['frequency'] === $freq) { $hit = $o; break; }
+                if ($norm($o['name']) !== '' && $norm($o['name']) === $norm($title)) { $hit = $o; break; }
+            }
+            if ($hit) { Db::run('UPDATE radio_stations SET stream_url = ? WHERE id = ?', [$stream, $hit['id']]); $matched++; $names[] = $hit['name']; }
+            else { Db::run('INSERT INTO radio_stations (name, frequency, genre, stream_url, active) VALUES (?,?,?,?,1)', [mb_substr(trim(preg_replace('/\s*\d{2,3}\.\d\s*(FM)?/i', ' ', $title)) ?: $title, 0, 60), $freq ?: '—', 'From Radio Garden', $stream]); $added++; $names[] = $title; }
+        }
+        return ['matched' => $matched, 'added' => $added, 'stations' => array_slice($names, 0, 40), 'message' => $matched + $added . ' stations now have a stream.'];
+    }
+
     /** POST /admin/storage/test and POST /admin/storage/migrate { batch } */
     public function storageTest(): void { $this->admin(); Http::json(Media::selfTest()); }
     public function migrate(): void

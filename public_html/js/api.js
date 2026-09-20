@@ -144,6 +144,7 @@ export const api = {
   adminDecideSpot: (id, action) => request('POST', '/admin/spots/' + id, { action }),
   adminStorageTest: () => request('POST', '/admin/storage/test'),
   adminMigrate:    () => request('POST', '/admin/storage/migrate', { batch: 20 }),
+  syncRadio:       () => request('POST', '/admin/radio/sync'),
   notifications:   () => request('GET', '/notifications'),
   readNotifications: (b) => request('POST', '/notifications/read', b),
   uploadAvatar:    (file) => { const fd = new FormData(); fd.append('photo', file); return upload('/me/avatar', fd); },
@@ -153,6 +154,18 @@ export const api = {
   adminUserAction: (id, b) => request('POST', '/admin/users/' + id, b),
   adminInvite:     (email, role) => request('POST', '/admin/invite', { email, role }),
   adminAnalytics:  (days) => request('GET', '/admin/analytics' + qs({ days })),
+  // City: news, social, radio
+  news:            (category) => request('GET', '/news' + qs({ category })),
+  refreshNews:     () => request('POST', '/news/refresh'),
+  social:          (f) => request('GET', '/social' + qs(f)),
+  post:            (id) => request('GET', '/social/' + id),
+  createPost:      (b) => request('POST', '/social', b),
+  replyPost:       (id, body) => request('POST', '/social/' + id + '/reply', { body }),
+  likeSocial:      (kind, id) => request('POST', '/social/' + kind + '/' + id + '/like'),
+  deletePost:      (id) => request('DELETE', '/social/' + id),
+  radio:           () => request('GET', '/radio'),
+  setStream:       (id, stream) => request('PATCH', '/radio/' + id, { stream }),
+  matchSuggest:    () => request('POST', '/match/suggest'),
 };
 
 /* Detect the API once at boot. If /api/health is not there, switch to mock mode and say so. */
@@ -208,7 +221,7 @@ async function mockRequest(method, path, body) {
     return { user: pub(u), next: u.district ? 'home' : 'onboarding' };
   }
   if (path === '/auth/logout') { d.session = null; msave(d); return { ok: true }; }
-  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter') || path.startsWith('/ask') || path.startsWith('/spots') || path.startsWith('/pay') || path.startsWith('/verify') || path.startsWith('/admin') || path.startsWith('/notifications') || path.startsWith('/avatar')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
+  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter') || path.startsWith('/ask') || path.startsWith('/spots') || path.startsWith('/pay') || path.startsWith('/verify') || path.startsWith('/admin') || path.startsWith('/notifications') || path.startsWith('/avatar') || path.startsWith('/news') || path.startsWith('/social') || path.startsWith('/radio')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
   if (path === '/me' && method === 'PATCH') {
     const u = me(); if (!u) throw { error: 'unauthenticated', message: 'Please sign in.' };
     Object.assign(u, body); msave(d); return { user: pub(u) };

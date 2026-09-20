@@ -135,6 +135,7 @@ $router->get('/admin/reports',               [AdminController::class, 'reports']
 $router->post('/admin/reports/{id}',         [AdminController::class, 'decideReport']);
 $router->get('/admin/spots',                 [AdminController::class, 'spots']);
 $router->post('/admin/spots/{id}',           [AdminController::class, 'decideSpot']);
+$router->post('/admin/radio/sync',           [AdminController::class, 'syncRadio']);
 $router->post('/admin/storage/test',         [AdminController::class, 'storageTest']);
 $router->post('/admin/storage/migrate',      [AdminController::class, 'migrate']);
 
@@ -149,3 +150,17 @@ $router->get('/admin/users/{id}',            [AdminController::class, 'user']);
 $router->post('/admin/users/{id}',           [AdminController::class, 'userAction']);
 $router->post('/admin/invite',               [AdminController::class, 'invite']);
 $router->get('/admin/analytics',             [AdminController::class, 'analytics']);
+
+// News, Abuja Social, Radio, Match suggestions
+$router->get('/news',                        [NewsController::class, 'index']);
+$router->post('/news/refresh',               [NewsController::class, 'refreshEndpoint']);
+$router->get('/social',                      [SocialController::class, 'index']);
+$router->post('/social',                     [SocialController::class, 'create']);
+$router->get('/social/{id}',                 [SocialController::class, 'show']);
+$router->delete('/social/{id}',              [SocialController::class, 'remove']);
+$router->post('/social/{id}/reply',          [SocialController::class, 'reply']);
+$router->post('/social/post/{id}/like',      [SocialController::class, 'likePost']);
+$router->post('/social/reply/{id}/like',     [SocialController::class, 'likeReply']);
+$router->get('/radio',                       [RadioController::class, 'index']);
+$router->patch('/radio/{id}',                [RadioController::class, 'update']);
+$router->post('/match/suggest',              [MatchController::class, 'suggest']);

@@ -110,8 +110,9 @@ final class HomesController
         [$e, $v] = $this->validate(Http::body()); if ($e) Http::json(['error' => 'validation', 'fields' => $e], 422);
         Db::run('INSERT INTO properties (owner_id, kind, type, title, district, area, price, beds, baths, facilities, description, upfront_years, legal_fee, caution_fee, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
             [$u['id'], $v['kind'], $v['type'], $v['title'], $v['district'], $v['area'] ?: null, $v['price'], $v['beds'], $v['baths'], json_encode($v['fac']), $v['desc'], $v['upfront'], $v['legal'], $v['caution'], 'available', Db::now(), Db::now()]);
+        $id = Db::lastId();
         Track::hit($u, 'homes', 'post');
-        Http::json(['property' => $this->shape(Db::one('SELECT * FROM properties WHERE id = ?', [Db::lastId()]), $u, true)], 201);
+        Http::json(['property' => $this->shape(Db::one('SELECT * FROM properties WHERE id = ?', [$id]), $u, true)], 201);
     }
 
     /** PATCH /homes/{id} : full update, or { status } alone */

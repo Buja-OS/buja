@@ -2,7 +2,7 @@
 export function registerWaka({ route, go, state, api, ui, failed }) {
   const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon } = ui;
   const naira = (n) => n == null ? '₦?' : '₦' + Number(n).toLocaleString('en-NG');
-  const modeIcon = { bus: 'bus', keke: 'car', taxi: 'car', train: 'route' };
+  const modeIcon = { bus: 'bus', along: 'car', keke: 'car', taxi: 'car', train: 'route' };
   const q = () => new URLSearchParams(location.hash.split('?')[1] || '');
 
   /* ---------- Leaflet, loaded once, from cdnjs. Falls back to a list if it cannot load. ---------- */
@@ -71,7 +71,7 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
       ${saved.length ? `<div class="stack" style="gap:10px"><div class="section">SAVED</div><div class="card list">${saved.map((s) => `<a class="item" href="#/waka/plan?from=${s.from}&to=${s.to}"><div class="mi">${icon('bookmark')}</div><div class="grow"><div class="t">${h(s.label || s.fromName + ' to ' + s.toName)}</div><div class="s">${h(s.fromName)} → ${h(s.toName)}</div></div>${icon('chevron-right')}</a>`).join('')}</div></div>` : ''}
       <div class="stack" style="gap:10px"><div class="section">ROUTES RIGHT NOW</div>
         <div class="card list">${busy_.map((r) => `<a class="item" href="#/waka/route/${r.id}"><div class="mi" style="color:${r.color}">${icon(modeIcon[r.mode])}</div><div class="grow"><div class="t">${h(r.name)}</div><div class="s">${r.modeLabel} · ${naira(r.fare.amount)}${r.fare.confirmed ? '' : ' est.'} · ${r.stops.length} stops</div></div>${r.ridersNow ? `<span class="tag green">${r.ridersNow} now</span>` : ''}${icon('chevron-right')}</a>`).join('')}</div>
-        <div class="small muted" style="line-height:1.5">Fares marked est. are starting estimates. When riders report what they paid, the real fare replaces them.</div>
+        <div class="card stack" style="padding:14px;gap:8px"><div class="h-sm">How fares work here</div><div class="small muted" style="line-height:1.55"><strong style="color:var(--ink)">Green bus</strong> is the government AUMTCO bus. Cheapest by far, but few run, so expect a queue.<br><strong style="color:var(--ink)">Along cab</strong> is the shared taxi, four passengers, often someone going to work anyway. Three to five times the bus fare but it leaves when it fills.<br><strong style="color:var(--ink)">Light rail</strong> is free at the moment, four trips a day, weekdays only.<br>Fares marked est. are starting points; when riders report what they paid, the real fare replaces them.</div></div>
       </div>
     </main>
     <div id="picker"></div>`;

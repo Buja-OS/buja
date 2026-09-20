@@ -10,6 +10,7 @@ import { registerHomes } from './homes.js';
 import { registerDeclutter } from './declutter.js';
 import { registerAsk } from './ask.js';
 import { registerTrust } from './trust.js';
+import { registerCity } from './city.js';
 
 const DISTRICTS = ['Asokoro', 'Maitama', 'Wuse', 'Wuse 2', 'Garki', 'Central Area', 'Jabi', 'Utako', 'Gwarinpa', 'Life Camp', 'Kado', 'Katampe', 'Guzape', 'Durumi', 'Apo', 'Lokogoma', 'Galadimawa', 'Lugbe', 'Kubwa', 'Jahi', 'Nyanya', 'Karu', 'Jikwoyi', 'Kuje', 'Gwagwalada'];
 const app = document.getElementById('app');
@@ -184,6 +185,9 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/homes', 'house-chimney', '#E7EEF8', '#1F4E9C', 'Homes', u.kind === 'landlord' ? 'Your listings and enquiries' : 'Rent direct, no agent fee'],
     ['/declutter', 'tags', '#F3E8F8', '#7A3E96', 'Declutter', 'Buy and sell nearby'],
     ['/ask', 'wand-magic-sparkles', 'var(--orange-tint)', 'var(--orange-dark)', 'Ask', 'Best amala, lounges, spots'],
+    ['/news', 'circle-info', '#FDEBE3', '#C0392B', 'News', 'What is happening in Abuja'],
+    ['/social', 'message', '#E7F0EA', '#2E7D1E', 'Social', 'Talk to the city'],
+    ['/radio', 'bolt', '#F1E9F7', '#7A3E96', 'Radio', 'Every FCT station'],
   ];
   return `
   <header class="topbar" style="padding-top:8px">
@@ -200,6 +204,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
   </main>`;
 }, { async mount(el) {
   el.querySelector('#homeask')?.addEventListener('submit', (e) => { e.preventDefault(); const v = el.querySelector('#hq').value.trim(); go('/ask' + (v ? '?q=' + encodeURIComponent(v) : '')); });
+  api.matchSuggest?.().catch(() => {});
   try {
     const t = await api.today(); state.unread = t.unread; setBadge(t.unread);
     const dot = el.querySelector('#belldot'); if (dot) dot.style.display = t.notifications_unread ? '' : 'none';
@@ -257,7 +262,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
     <div class="stack" style="gap:10px"><div class="section">NOTIFICATIONS</div>
       <div class="card list" id="notif">
         <div class="item"><div class="mi">${icon('bell')}</div><div class="grow"><div class="t">Push notifications on this device</div><div class="s" id="pushs">Checking…</div></div><button class="switch" id="pushtoggle" role="switch" aria-checked="false" aria-label="Push notifications"><span></span></button></div>
-        ${[['work', 'briefcase', 'Interviews, messages and applications'], ['match', 'heart', 'New matches and messages'], ['waka', 'route', 'Fare changes on saved routes'], ['offers', 'bolt', 'Buja Plus offers']].map(([k, ic, t]) => `<div class="item"><div class="mi">${icon(ic)}</div><div class="grow"><div class="t">${t}</div></div><button class="switch" data-pref="${k}" role="switch" aria-checked="false" aria-label="${t}"><span></span></button></div>`).join('')}
+        ${[['work', 'briefcase', 'Interviews, messages and applications'], ['match', 'heart', 'New matches and people near you'], ['news', 'circle-info', 'Urgent Abuja news only, up to 3 a day'], ['social', 'message', 'Replies to your posts'], ['waka', 'route', 'Fare changes on saved routes'], ['offers', 'bolt', 'Buja Plus offers']].map(([k, ic, t]) => `<div class="item"><div class="mi">${icon(ic)}</div><div class="grow"><div class="t">${t}</div></div><button class="switch" data-pref="${k}" role="switch" aria-checked="false" aria-label="${t}"><span></span></button></div>`).join('')}
       </div>
       <div class="small muted" id="pushhint">Push works in Chrome on Android and on iPhone once Buja is added to the Home Screen.</div>
     </div>
@@ -268,7 +273,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
   mount(el) {
     el.querySelectorAll('#theme button').forEach((b) => b.addEventListener('click', () => { applyTheme(b.dataset.theme); el.querySelectorAll('#theme button').forEach((x) => x.classList.toggle('on', x === b)); }));
     (async () => {
-      let prefs = { work: true, match: true, waka: true, offers: false }; let pushed = false;
+      let prefs = { work: true, match: true, waka: true, offers: false, news: true, social: true }; let pushed = false;
       try { const t = await api.today(); prefs = t.notifications; pushed = t.pushEnabled; } catch {}
       el.querySelectorAll('[data-pref]').forEach((s) => { const on = !!prefs[s.dataset.pref]; s.classList.toggle('on', on); s.setAttribute('aria-checked', on); s.addEventListener('click', async () => { const next = !s.classList.contains('on'); s.classList.toggle('on', next); s.setAttribute('aria-checked', next); try { await api.notifications({ [s.dataset.pref]: next }); } catch (err) { s.classList.toggle('on', !next); failed(el, err); } }); });
       const tg = el.querySelector('#pushtoggle'), st = el.querySelector('#pushs');
@@ -280,6 +285,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
+registerCity({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
 registerTrust({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
 registerAsk({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
 registerDeclutter({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });

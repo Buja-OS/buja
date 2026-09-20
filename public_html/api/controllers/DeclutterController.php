@@ -70,8 +70,9 @@ final class DeclutterController
         $u = Auth::require(); RateLimit::hit('listing', 30, 3600);
         [$e, $v] = $this->validate(Http::body()); if ($e) Http::json(['error' => 'validation', 'fields' => $e], 422);
         Db::run('INSERT INTO listings (seller_id, title, category, cond, price, negotiable, district, description, delivery, escrow_ok, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', [$u['id'], $v['title'], $v['category'], $v['cond'], $v['price'], $v['negotiable'], $v['district'], $v['description'], $v['delivery'], $v['escrow'], 'active', Db::now(), Db::now()]);
+        $id = Db::lastId();
         Track::hit($u, 'declutter', 'list');
-        Http::json(['listing' => $this->shape(Db::one('SELECT * FROM listings WHERE id = ?', [Db::lastId()]), $u, true)], 201);
+        Http::json(['listing' => $this->shape(Db::one('SELECT * FROM listings WHERE id = ?', [$id]), $u, true)], 201);
     }
 
     /** PATCH /declutter/{id} : full update, or { status } */

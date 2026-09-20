@@ -65,12 +65,12 @@ final class AccountController
     public function notifications(): void
     {
         $u = Auth::require(); $b = Http::body(); $sets = []; $p = [];
-        foreach (['work', 'match', 'waka', 'offers'] as $k) if (array_key_exists($k, $b)) { $sets[] = "notify_$k = ?"; $p[] = !empty($b[$k]) ? 1 : 0; }
+        foreach (['work', 'match', 'waka', 'offers', 'news', 'social'] as $k) if (array_key_exists($k, $b)) { $sets[] = "notify_$k = ?"; $p[] = !empty($b[$k]) ? 1 : 0; }
         if (!$sets) Http::json(['error' => 'validation', 'message' => 'Nothing to update.'], 422);
         $p[] = $u['id'];
         Db::run('UPDATE users SET ' . implode(', ', $sets) . ' WHERE id = ?', $p);
         $row = Db::one('SELECT notify_work, notify_match, notify_waka, notify_offers FROM users WHERE id = ?', [$u['id']]);
-        Http::json(['notifications' => ['work' => (bool) $row['notify_work'], 'match' => (bool) $row['notify_match'], 'waka' => (bool) $row['notify_waka'], 'offers' => (bool) $row['notify_offers']]]);
+        Http::json(['notifications' => ['work' => (bool) $row['notify_work'], 'match' => (bool) $row['notify_match'], 'waka' => (bool) $row['notify_waka'], 'offers' => (bool) $row['notify_offers'], 'news' => (bool) $row['notify_news'], 'social' => (bool) $row['notify_social']]]);
     }
 
     /** GET /me/today : confirmed interviews coming up, unread messages */
@@ -91,8 +91,8 @@ final class AccountController
         }
         usort($items, fn($x, $y) => strcmp($x['at'], $y['at']));
         $unread = (int) (Db::one('SELECT COUNT(*) AS n FROM messages m JOIN threads t ON t.id = m.thread_id WHERE (t.user_a = ? OR t.user_b = ?) AND m.sender_id <> ? AND m.id > COALESCE((SELECT last_read_id FROM thread_reads r WHERE r.thread_id = t.id AND r.user_id = ?), 0)', [$u['id'], $u['id'], $u['id'], $u['id']])['n'] ?? 0);
-        $n = Db::one('SELECT notify_work, notify_match, notify_waka, notify_offers FROM users WHERE id = ?', [$u['id']]);
+        $n = Db::one('SELECT notify_work, notify_match, notify_waka, notify_offers, notify_news, notify_social FROM users WHERE id = ?', [$u['id']]);
         $nu = (int) (Db::one('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL', [$u['id']])['n'] ?? 0);
-        Http::json(['items' => array_slice($items, 0, 5), 'unread' => $unread, 'notifications_unread' => $nu, 'notifications' => ['work' => (bool) $n['notify_work'], 'match' => (bool) $n['notify_match'], 'waka' => (bool) $n['notify_waka'], 'offers' => (bool) $n['notify_offers']], 'pushEnabled' => Db::one('SELECT 1 AS x FROM push_subscriptions WHERE user_id = ?', [$u['id']]) !== null]);
+        Http::json(['items' => array_slice($items, 0, 5), 'unread' => $unread, 'notifications_unread' => $nu, 'notifications' => ['work' => (bool) $n['notify_work'], 'match' => (bool) $n['notify_match'], 'waka' => (bool) $n['notify_waka'], 'offers' => (bool) $n['notify_offers'], 'news' => (bool) $n['notify_news'], 'social' => (bool) $n['notify_social']], 'pushEnabled' => Db::one('SELECT 1 AS x FROM push_subscriptions WHERE user_id = ?', [$u['id']]) !== null]);
     }
 }

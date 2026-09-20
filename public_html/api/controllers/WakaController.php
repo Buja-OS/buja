@@ -98,11 +98,29 @@ final class WakaController
         };
         $options = [];
         foreach ($routes as $r) { $pa = $pos((int) $r['id'], $from); $pb = $pos((int) $r['id'], $to); if ($pa !== null && $pb !== null && $pa !== $pb) $options[] = ['legs' => [$leg($r, $from, $to)], 'transfers' => 0]; }
-        if (count($options) < 2) {
-            foreach ($routes as $r1) { $p1 = $pos((int) $r1['id'], $from); if ($p1 === null) continue;
-                foreach ($routes as $r2) { if ($r2['id'] === $r1['id']) continue; $p2 = $pos((int) $r2['id'], $to); if ($p2 === null) continue;
-                    foreach ($stopsBy[$r1['id']] as $mid) { if ($mid['position'] === $p1 || $mid['id'] === $to) continue; $pm = $pos((int) $r2['id'], $mid['id']); if ($pm !== null && $pm !== $p2) { $options[] = ['legs' => [$leg($r1, $from, $mid['id']), $leg($r2, $mid['id'], $to)], 'transfers' => 1]; break; } }
-                } if (count($options) >= 6) break; }
+        // One transfer, but only where a single route cannot already do the trip.
+        if (count($options) < 3) {
+            $pairs = [];
+            foreach ($routes as $r1) {
+                $p1 = $pos((int) $r1['id'], $from); if ($p1 === null) continue;
+                if ($pos((int) $r1['id'], $to) !== null) continue; // this route goes the whole way; it is already a direct option
+                foreach ($routes as $r2) {
+                    if ((int) $r2['id'] === (int) $r1['id']) continue;
+                    $p2 = $pos((int) $r2['id'], $to); if ($p2 === null) continue;
+                    if ($pos((int) $r2['id'], $from) !== null) continue; // same: r2 alone would be direct
+                    $bestPair = null;
+                    foreach ($stopsBy[$r1['id']] as $mid) {
+                        if ((int) $mid['id'] === $from || (int) $mid['id'] === $to) continue;
+                        $pm = $pos((int) $r2['id'], (int) $mid['id']); if ($pm === null || $pm === $p2) continue;
+                        $cand = ['legs' => [$leg($r1, $from, (int) $mid['id']), $leg($r2, (int) $mid['id'], $to)], 'transfers' => 1];
+                        $cost = array_sum(array_map(fn($l) => $l['fare']['amount'] ?? 99999, $cand['legs']));
+                        if ($bestPair === null || $cost < $bestPair[0]) $bestPair = [$cost, $cand];
+                    }
+                    if ($bestPair) $pairs[] = $bestPair;
+                }
+            }
+            usort($pairs, fn($a, $b) => $a[0] <=> $b[0]);
+            foreach (array_slice($pairs, 0, 3) as $pair) $options[] = $pair[1];
         }
         foreach ($options as &$o) { $o['fare'] = array_sum(array_map(fn($l) => $l['fare']['amount'] ?? 0, $o['legs'])); $o['minutes'] = array_sum(array_column($o['legs'], 'minutes')) + $o['transfers'] * 8; $o['confirmed'] = !in_array(false, array_map(fn($l) => $l['fare']['confirmed'], $o['legs']), true); $o['ridersNow'] = array_sum(array_column($o['legs'], 'ridersNow')); }
         unset($o);

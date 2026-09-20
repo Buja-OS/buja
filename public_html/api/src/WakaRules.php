@@ -3,9 +3,9 @@ declare(strict_types=1);
 
 final class WakaRules
 {
-    public const MODES = ['bus' => 'Bus', 'keke' => 'Keke', 'taxi' => 'Taxi', 'train' => 'Train'];
+    public const MODES = ['bus' => 'Green bus', 'along' => 'Along cab', 'keke' => 'Keke', 'taxi' => 'Taxi', 'train' => 'Train'];
     /** Average speed in km/h by mode, for time estimates. Abuja traffic, not free flow. */
-    public const SPEED = ['bus' => 22, 'keke' => 18, 'taxi' => 30, 'train' => 45];
+    public const SPEED = ['bus' => 20, 'along' => 26, 'keke' => 18, 'taxi' => 30, 'train' => 45];
     public const CHECKIN_WINDOW_MIN = 15;
     public const FARE_WINDOW_DAYS = 30;
 

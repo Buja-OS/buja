@@ -1,4 +1,4 @@
-# Buja, Phase 9a: notifications, profiles, admin
+# Buja, Phase 9b: real Abuja transport, News, Social, Radio
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -124,8 +124,20 @@ Note on tiles: OpenStreetMap's public tile server is fine for testing and early 
 - Activity is recorded in `events` from this version on (`api/src/Track.php`), so analytics start counting at deploy.
 - New: `api/src/Track.php`, `api/controllers/NotificationsController.php`, `AvatarController.php`, `migrations/010_admin_notifications.sql`.
 
+## Phase 9b: researched Waka, News, Abuja Social, Radio
+
+- **Waka rebuilt from research.** 71 boarding points with coordinates (parks, junctions, landmarks and all 12 light-rail stations) and 26 routes across four modes:
+  - **Green bus** (AUMTCO): published government fares, e.g. Kubwa–Wuse ₦200, Nyanya–Wuse ₦200, Wuse–Gwagwalada ₦400. Cheap but few buses run.
+  - **Along cab**: the shared taxi most people actually take, often a worker filling their car. 2025 commuter prices: Kubwa–Berger ₦1,000, Nyanya–Secretariat ₦700, Mararaba–Wuse ₦800, Lugbe–Wuse ₦1,100.
+  - **Keke** inside districts, and the **light rail** (Gbazango–Idu–Abuja Metro and Idu–Airport), free at present, four trips a day on weekdays, with Idu as the interchange.
+  The planner offers both the cheap-and-slow and the quick-and-dear option for the same trip and tags them, with one transfer where no single route goes the whole way. Route notes carry local knowledge (which side of Berger to board, when the parks fill, night risk).
+- **News**: every half hour Buja reads the RSS feeds of Punch, Premium Times, Daily Trust, Vanguard, Guardian, Channels, Leadership and TheCable, keeps only Abuja and FCT stories, scores them and files them by category (transport, security, power, housing, jobs, life). Only stories scoring 3 or more (road closures, strikes, fuel scarcity, floods, security alerts) send a notification, capped at three a day so the drawer stays readable. No API key needed.
+- **Abuja Social**: a forum with nine boards, posts tagged to a district, replies, likes, and first-name-plus-initial identity. Authors are notified of replies; moderators and admins can remove posts.
+- **Radio**: all 24 FCT stations by frequency with genre and station link, an in-app player, and a mini player that keeps going while you read. Streams come from Radio Garden: an admin taps Sync in the admin panel and Buja pulls the live stream for every Abuja station, matching them to the dial by frequency and adding any it does not have. Re-runnable any time the streams change.
+- **Match** suggests people who have joined near you in the last fortnight, once a day at most, never the same person twice.
+
 ## What is next
 
-Phase 9b: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 9c: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

@@ -204,6 +204,36 @@ final class MatchController
         Http::json(['ok' => true, 'matched' => $matched, 'superlikesLeft' => $this->superlikesLeft((int) $u['id'])]);
     }
 
+    /** POST /match/suggest : called by the app on open; tells you about new people near you, at most once a day. */
+    public function suggest(): void
+    {
+        $u = Auth::require();
+        $me = Db::one('SELECT p.*, u.district FROM match_profiles p JOIN users u ON u.id = p.user_id WHERE p.user_id = ?', [$u['id']]);
+        if (!$me || !(int) $me['visible']) Http::json(['suggested' => 0]);
+        if (Db::one('SELECT 1 AS x FROM match_suggestions WHERE user_id = ? AND created_at > ?', [$u['id'], gmdate('Y-m-d H:i:s', time() - 86400)])) Http::json(['suggested' => 0]);
+        $near = MatchRules::nearby((string) ($me['district'] ?? ''));
+        $in = implode(',', array_fill(0, max(1, count($near)), '?'));
+        $wantGender = $me['seeking'] === 'women' ? ['woman'] : ($me['seeking'] === 'men' ? ['man'] : MatchRules::GENDERS);
+        $theySeek = $me['gender'] === 'woman' ? ['women', 'everyone'] : ['men', 'everyone'];
+        $minBd = (new DateTime('today'))->modify('-' . ((int) $me['age_max'] + 1) . ' years')->format('Y-m-d'); $maxBd = (new DateTime('today'))->modify('-' . (int) $me['age_min'] . ' years')->format('Y-m-d');
+        $sql = "SELECT p.user_id, u.name, u.district FROM match_profiles p JOIN users u ON u.id = p.user_id
+                WHERE p.user_id <> ? AND p.visible = 1 AND u.deleted_at IS NULL AND u.district IN ($in)
+                  AND p.gender IN (" . implode(',', array_fill(0, count($wantGender), '?')) . ") AND p.seeking IN (" . implode(',', array_fill(0, count($theySeek), '?')) . ")
+                  AND p.birthdate > ? AND p.birthdate <= ? AND p.created_at > ?
+                  AND EXISTS (SELECT 1 FROM match_photos ph WHERE ph.user_id = p.user_id)
+                  AND NOT EXISTS (SELECT 1 FROM swipes s WHERE s.from_user = ? AND s.to_user = p.user_id)
+                  AND NOT EXISTS (SELECT 1 FROM match_suggestions ms WHERE ms.user_id = ? AND ms.suggested = p.user_id)
+                  AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.blocker = ? AND b.blocked = p.user_id) OR (b.blocked = ? AND b.blocker = p.user_id))
+                ORDER BY p.created_at DESC LIMIT 3";
+        $st = Db::pdo()->prepare($sql);
+        $st->execute([$u['id'], ...($near ?: ['']), ...$wantGender, ...$theySeek, $minBd, $maxBd, gmdate('Y-m-d H:i:s', time() - 14 * 86400), $u['id'], $u['id'], $u['id'], $u['id']]);
+        $rows = $st->fetchAll(); if (!$rows) Http::json(['suggested' => 0]);
+        foreach ($rows as $r) Db::run('INSERT INTO match_suggestions (user_id, suggested, created_at) VALUES (?,?,?)', [$u['id'], $r['user_id'], Db::now()]);
+        $first = $rows[0]; $more = count($rows) - 1;
+        Notify::user((int) $u['id'], 'match', 'Someone new in ' . ($first['district'] ?? 'Abuja'), explode(' ', $first['name'])[0] . ($more ? ' and ' . $more . ' other' . ($more > 1 ? 's' : '') . ' just joined Match near you.' : ' just joined Match near you.'), '/#/match/discover');
+        Http::json(['suggested' => count($rows)]);
+    }
+
     /** GET /match/matches */
     public function matches(): void
     {
