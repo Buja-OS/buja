@@ -42,7 +42,14 @@ return [
     // openrouteservice.org free key, used once to fetch road paths for routes.
     'ors_api_key' => $env('ORS_API_KEY', ''),
 
-    // Ask Buja: Anthropic API key (console.anthropic.com). Without it Ask still works with keyword matching.
+    // Ask Buja. Set ASK_PROVIDER to gemini, groq, anthropic or rules. Whichever keys exist are tried in turn,
+    // starting with the one you chose, and Ask falls back to keyword matching if they all fail. All optional.
+    'ask_provider' => $env('ASK_PROVIDER', 'gemini'),
+    'gemini_api_key' => $env('GEMINI_API_KEY', ''),      // aistudio.google.com, free, no card
+    'gemini_model' => $env('GEMINI_MODEL', 'gemini-2.5-flash'),
+    'gemini_endpoint' => $env('GEMINI_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/models'),
+    'groq_api_key' => $env('GROQ_API_KEY', ''),          // console.groq.com, free, no card
+    'groq_model' => $env('GROQ_MODEL', 'llama-3.3-70b-versatile'),
     'anthropic_api_key' => $env('ANTHROPIC_API_KEY', ''),
     'ask_model' => $env('ASK_MODEL', 'claude-haiku-4-5-20251001'),
     'ask_daily_limit' => (int) $env('ASK_DAILY_LIMIT', '40'),

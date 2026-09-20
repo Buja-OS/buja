@@ -1,4 +1,4 @@
-# Buja, Phase 9e: search, invites, install, reporting
+# Buja, Phase 9f: Ask on any AI provider, free
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -166,8 +166,19 @@ Bugs fixed in this pass: tracking calls that ran between an insert and reading b
 - **An honest fix:** Buja was showing "Phone verified" on Declutter and Match when all that had happened was somebody typed a number. That claim is gone. Sellers now show "Verified with a selfie" if they passed verification, or "Phone on file" if not. Real phone verification needs an SMS provider and will come with a budget for it.
 - New: `api/controllers/SearchController.php`, `InviteController.php`, `ReportController.php`, `js/growth.js`, `migrations/014_growth.sql`.
 
+## Phase 9f: Ask works on free AI
+
+- **Any provider, one setting.** `ASK_PROVIDER` takes `gemini`, `groq`, `anthropic` or `rules`. Whichever keys exist are tried in turn starting with the one you chose, so a missing key, a spent daily quota or a provider outage drops to the next one and finally to the keyword matcher. Ask never breaks, it only gets simpler.
+  - Gemini (`GEMINI_API_KEY`) from aistudio.google.com: free, no card, the largest daily allowance.
+  - Groq (`GROQ_API_KEY`) from console.groq.com: free, no card, very fast.
+  - Anthropic (`ANTHROPIC_API_KEY`): pay as you go, no free tier.
+- **Only the relevant places are sent.** A question is matched against categories, tags, names and districts first, and at most 40 places go to the model. Measured: with 500 places in the directory the prompt stays about 2,900 tokens, so the free tier lasts and a paid provider would cost roughly a quarter of a cent a question.
+- **Grounding is enforced after the answer, not just asked for.** Any place id the model returns that is not in what we sent is dropped, and an unparseable answer falls through to the keyword matcher. Tested by making a stub provider invent a place and return junk.
+- Admin panel shows which provider is in use, the fallbacks behind it, questions asked today, and a seven-day split by provider so you can see when a free quota runs out.
+- **What is never sent to an AI provider:** messages, CVs, profiles, photos, locations. Only the question and the public place directory.
+
 ## What is next
 
-Phase 9f: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 10: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

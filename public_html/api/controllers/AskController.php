@@ -19,6 +19,29 @@ final class AskController
         return Db::pdo()->query("SELECT * FROM spots WHERE active = 1 ORDER BY id")->fetchAll();
     }
 
+    /** Narrows the directory to what this question could plausibly be about, so requests stay small however big Buja grows. */
+    private function relevant(string $q, array $spots, array $u, int $max = 40): array
+    {
+        $ql = mb_strtolower($q);
+        $cats = [];
+        foreach (['food' => ['amala', 'eat', 'food', 'restaurant', 'suya', 'jollof', 'rice', 'chop', 'buka', 'breakfast', 'lunch', 'dinner', 'brunch', 'shawarma', 'pepper soup', 'nkwobi', 'pounded', 'cafe', 'coffee'], 'lounge' => ['lounge', 'bar', 'drink', 'beer', 'cocktail', 'hangout', 'chill', 'shisha', 'vibe'], 'relax' => ['relax', 'serene', 'quiet', 'park', 'lake', 'garden', 'peaceful', 'nature', 'picnic', 'calm', 'walk'], 'nightlife' => ['club', 'night', 'party', 'dance', 'dj'], 'shopping' => ['shop', 'mall', 'market', 'buy', 'gift'], 'kids' => ['kids', 'children', 'family', 'playground', 'amusement'], 'worship' => ['church', 'mosque', 'pray', 'service', 'mass'], 'culture' => ['art', 'gallery', 'museum', 'sight', 'tour', 'monument', 'photo'], 'hotel' => ['hotel', 'stay', 'sleep', 'room'], 'services' => ['fix', 'repair', 'barber', 'salon', 'laundry', 'mechanic']] as $c => $ws)
+            foreach ($ws as $w) if (str_contains($ql, $w)) { $cats[$c] = true; break; }
+        $near = $u['district'] ? MatchRules::nearby((string) $u['district']) : [];
+        $scored = [];
+        foreach ($spots as $sp) {
+            $score = 0;
+            if (isset($cats[$sp['category']])) $score += 6;
+            foreach (json_decode($sp['tags'] ?? '[]', true) ?: [] as $t) if ($t && str_contains($ql, mb_strtolower($t))) $score += 4;
+            foreach (preg_split('/\W+/u', mb_strtolower($sp['name'])) as $w) if (mb_strlen($w) > 3 && str_contains($ql, $w)) $score += 8;
+            if (str_contains($ql, mb_strtolower($sp['district']))) $score += 5;
+            elseif (in_array($sp['district'], $near, true)) $score += 2;
+            $scored[] = [$score, $sp];
+        }
+        // Nothing matched the words? Send the most popular places rather than nothing, so the model can still be useful.
+        usort($scored, fn($a, $b) => $b[0] <=> $a[0]);
+        return array_map(fn($x) => $x[1], array_slice($scored, 0, $max));
+    }
+
     /** POST /ask { question, history: [{q,a}] } */
     public function ask(): void
     {
@@ -26,30 +49,74 @@ final class AskController
         $q = mb_substr(trim((string) (Http::body()['question'] ?? '')), 0, 300);
         if ($q === '') Http::json(['error' => 'validation', 'fields' => ['question' => 'Ask something.']], 422);
         $spots = $this->directory();
-        $key = (string) Http::config('anthropic_api_key', '');
-        $result = $key !== '' ? $this->askModel($q, $spots, $u, $key) : null;
+        $shortlist = $this->relevant($q, $spots, $u);
+        $result = null;
+        foreach ($this->providerChain() as $p) { $result = $this->askModel($p, $q, $shortlist, $u); if ($result !== null) break; }
         if ($result === null) $result = $this->askRules($q, $spots, $u);
         $ids = array_map(fn($s) => $s['id'], $result['spots']);
         Db::run('INSERT INTO ask_log (user_id, question, district, spot_ids, mode, created_at) VALUES (?,?,?,?,?,?)', [$u['id'], $q, $u['district'], json_encode($ids), $result['mode'], Db::now()]); Track::hit($u, 'ask', 'ask');
         Http::json($result);
     }
 
-    private function askModel(string $q, array $spots, array $u, string $key): ?array
+    /** Which providers to try, in order. ASK_PROVIDER picks the first; the rest are fallbacks so Ask never simply breaks. */
+    private function providerChain(): array
+    {
+        $want = strtolower((string) Http::config('ask_provider', 'gemini'));
+        $have = array_values(array_filter(['gemini', 'groq', 'anthropic'], fn($p) => Http::config($p . '_api_key', '') !== ''));
+        if ($want === 'rules') return [];
+        usort($have, fn($a, $b) => ($b === $want) <=> ($a === $want));
+        return $have;
+    }
+
+    private function systemPrompt(array $spots, array $u): string
     {
         $compact = array_map(fn($s) => ['id' => (int) $s['id'], 'name' => $s['name'], 'cat' => $s['category'], 'district' => $s['district'], 'tags' => json_decode($s['tags'] ?? '[]', true) ?: [], 'price' => (int) $s['price_level'], 'note' => $s['price_note'], 'desc' => mb_substr((string) $s['description'], 0, 140), 'hours' => $s['hours'], 'rating' => (Db::one('SELECT ROUND(AVG(stars),1) AS a, COUNT(*) AS n FROM spot_ratings WHERE spot_id = ?', [$s['id']]) ?: ['a' => null, 'n' => 0])], $spots);
-        $system = "You are Ask Buja, a local guide to Abuja, Nigeria, inside the Buja app. The user is in " . ($u['district'] ?: 'Abuja') . ". You may ONLY recommend places from the DIRECTORY below, by id. Never invent, rename or guess a place. If nothing in the directory fits, say so plainly and suggest what the user could ask instead or invite them to add the place. Prefer places in or near the user's district when the question implies nearby. Consider price level (1 budget to 4 premium), tags, ratings and hours. Keep the answer to two or three sentences in warm, plain English; no lists in the text, the app shows cards. Respond with JSON only, no markdown: {\"answer\": string, \"spots\": [{\"id\": number, \"why\": string (max 12 words)}], \"followups\": [string, string]}. Pick 1 to 4 spots. Time now (Abuja): " . date('D H:i') . ".\n\nDIRECTORY:\n" . json_encode($compact, JSON_UNESCAPED_UNICODE);
-        $body = json_encode(['model' => (string) Http::config('ask_model', 'claude-haiku-4-5-20251001'), 'max_tokens' => 600, 'system' => $system, 'messages' => [['role' => 'user', 'content' => $q]]], JSON_UNESCAPED_UNICODE);
-        $ch = curl_init('https://api.anthropic.com/v1/messages');
-        curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25, CURLOPT_POSTFIELDS => $body, CURLOPT_HTTPHEADER => ['content-type: application/json', 'x-api-key: ' . $key, 'anthropic-version: 2023-06-01']]);
+        return "You are Ask Buja, a local guide to Abuja, Nigeria, inside the Buja app. The user is in " . ($u['district'] ?: 'Abuja') . ". You may ONLY recommend places from the DIRECTORY below, by id. Never invent, rename or guess a place. If nothing in the directory fits, say so plainly and invite the user to add the place. Prefer places in or near the user's district when the question implies nearby. Consider price level (1 budget to 4 premium), tags, ratings and hours. Keep the answer to two or three sentences in warm, plain English; no lists in the text, the app shows cards. Respond with JSON only, no markdown fences: {\"answer\": string, \"spots\": [{\"id\": number, \"why\": string (max 12 words)}], \"followups\": [string, string]}. Pick 1 to 4 spots. Time now (Abuja): " . date('D H:i') . ".\n\nDIRECTORY:\n" . json_encode($compact, JSON_UNESCAPED_UNICODE);
+    }
+
+    /** Calls one provider. Returns null on any failure so the chain can move on. */
+    private function askModel(string $provider, string $q, array $spots, array $u): ?array
+    {
+        $system = $this->systemPrompt($spots, $u);
+        $key = (string) Http::config($provider . '_api_key', '');
+        if ($key === '') return null;
+        [$url, $headers, $body] = match ($provider) {
+            'gemini' => [
+                rtrim((string) Http::config('gemini_endpoint', 'https://generativelanguage.googleapis.com/v1beta/models'), '/') . '/' . (string) Http::config('gemini_model', 'gemini-2.5-flash') . ':generateContent?key=' . rawurlencode($key),
+                ['content-type: application/json'],
+                json_encode(['systemInstruction' => ['parts' => [['text' => $system]]], 'contents' => [['role' => 'user', 'parts' => [['text' => $q]]]], 'generationConfig' => ['temperature' => 0.4, 'maxOutputTokens' => 700, 'responseMimeType' => 'application/json']], JSON_UNESCAPED_UNICODE),
+            ],
+            'groq' => [
+                'https://api.groq.com/openai/v1/chat/completions',
+                ['content-type: application/json', 'authorization: Bearer ' . $key],
+                json_encode(['model' => (string) Http::config('groq_model', 'llama-3.3-70b-versatile'), 'temperature' => 0.4, 'max_tokens' => 700, 'response_format' => ['type' => 'json_object'], 'messages' => [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => $q]]], JSON_UNESCAPED_UNICODE),
+            ],
+            'anthropic' => [
+                'https://api.anthropic.com/v1/messages',
+                ['content-type: application/json', 'x-api-key: ' . $key, 'anthropic-version: 2023-06-01'],
+                json_encode(['model' => (string) Http::config('ask_model', 'claude-haiku-4-5-20251001'), 'max_tokens' => 700, 'system' => $system, 'messages' => [['role' => 'user', 'content' => $q]]], JSON_UNESCAPED_UNICODE),
+            ],
+            default => [null, [], null],
+        };
+        if ($url === null) return null;
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25, CURLOPT_POSTFIELDS => $body, CURLOPT_HTTPHEADER => $headers]);
         $raw = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-        if ($code !== 200) { error_log('[buja ask] model returned ' . $code . ' ' . substr((string) $raw, 0, 200)); return null; }
-        $text = ''; foreach ((json_decode((string) $raw, true)['content'] ?? []) as $blk) if (($blk['type'] ?? '') === 'text') $text .= $blk['text'];
-        $text = trim(preg_replace('/^```(?:json)?|```$/m', '', $text));
-        $j = json_decode($text, true); if (!is_array($j) || !isset($j['answer'])) { error_log('[buja ask] unparseable: ' . substr($text, 0, 200)); return null; }
+        if ($code !== 200) { error_log('[buja ask] ' . $provider . ' returned ' . $code . ' ' . substr((string) $raw, 0, 200)); return null; }
+        $j = json_decode((string) $raw, true);
+        $text = match ($provider) {
+            'gemini' => $j['candidates'][0]['content']['parts'][0]['text'] ?? '',
+            'groq' => $j['choices'][0]['message']['content'] ?? '',
+            'anthropic' => implode('', array_map(fn($b) => $b['text'] ?? '', array_filter($j['content'] ?? [], fn($b) => ($b['type'] ?? '') === 'text'))),
+            default => '',
+        };
+        $text = trim(preg_replace('/^```(?:json)?|```$/m', '', (string) $text));
+        $parsed = json_decode($text, true);
+        if (!is_array($parsed) || !isset($parsed['answer'])) { error_log('[buja ask] ' . $provider . ' unparseable: ' . substr($text, 0, 200)); return null; }
         $byId = []; foreach ($spots as $s) $byId[(int) $s['id']] = $s;
         $out = [];
-        foreach ((array) ($j['spots'] ?? []) as $x) { $id = (int) ($x['id'] ?? 0); if (isset($byId[$id])) $out[] = $this->spot($byId[$id], $u) + ['why' => mb_substr((string) ($x['why'] ?? ''), 0, 80)]; if (count($out) >= 4) break; }
-        return ['answer' => mb_substr((string) $j['answer'], 0, 600), 'spots' => $out, 'followups' => array_slice(array_map('strval', (array) ($j['followups'] ?? [])), 0, 3), 'mode' => 'model'];
+        foreach ((array) ($parsed['spots'] ?? []) as $x) { $id = (int) ($x['id'] ?? 0); if (isset($byId[$id])) $out[] = $this->spot($byId[$id], $u) + ['why' => mb_substr((string) ($x['why'] ?? ''), 0, 80)]; if (count($out) >= 4) break; }
+        return ['answer' => mb_substr((string) $parsed['answer'], 0, 600), 'spots' => $out, 'followups' => array_slice(array_map('strval', (array) ($parsed['followups'] ?? [])), 0, 3), 'mode' => $provider];
     }
 
     /** Keyword fallback: category words, tags, district names, price words. Honest and predictable. */
