@@ -14,8 +14,8 @@ final class DeclutterController
     }
     private function seller(int $uid): array
     {
-        $u = Db::one('SELECT id, name, district, created_at, email_verified_at, phone FROM users WHERE id = ?', [$uid]);
-        return ['id' => (int) $u['id'], 'name' => explode(' ', trim($u['name']))[0] . (strlen($u['name']) > strlen(explode(' ', $u['name'])[0]) ? ' ' . mb_substr(explode(' ', trim($u['name']))[1] ?? '', 0, 1) . '.' : ''), 'district' => $u['district'], 'since' => substr($u['created_at'], 0, 7), 'phoneVerified' => $u['phone'] !== null,
+        $u = Db::one('SELECT id, name, district, created_at, email_verified_at, phone, selfie_verified_at FROM users WHERE id = ?', [$uid]);
+        return ['id' => (int) $u['id'], 'name' => explode(' ', trim($u['name']))[0] . (strlen($u['name']) > strlen(explode(' ', $u['name'])[0]) ? ' ' . mb_substr(explode(' ', trim($u['name']))[1] ?? '', 0, 1) . '.' : ''), 'district' => $u['district'], 'since' => substr($u['created_at'], 0, 7), 'phoneAdded' => $u['phone'] !== null, 'verified' => !empty($u['selfie_verified_at']),
             'active' => (int) (Db::one("SELECT COUNT(*) AS n FROM listings WHERE seller_id = ? AND status = 'active'", [$uid])['n'] ?? 0), 'sold' => (int) (Db::one("SELECT COUNT(*) AS n FROM listings WHERE seller_id = ? AND status = 'sold'", [$uid])['n'] ?? 0)];
     }
     private function shape(array $l, ?array $u = null, bool $full = false): array

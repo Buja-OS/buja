@@ -137,12 +137,28 @@ final class AdminController
     {
         $this->admin(true);
         $st = Db::pdo()->query('SELECT r.*, a.name AS reporter_name, b.name AS reported_name, b.email AS reported_email, (SELECT COUNT(*) FROM reports x WHERE x.reported = r.reported) AS total FROM reports r JOIN users a ON a.id = r.reporter JOIN users b ON b.id = r.reported WHERE r.reviewed_at IS NULL ORDER BY total DESC, r.id ASC LIMIT 50');
-        Http::json(['items' => array_map(fn($r) => ['id' => (int) $r['id'], 'reason' => $r['reason'], 'createdAt' => $r['created_at'], 'reporter' => $r['reporter_name'], 'reported' => ['id' => (int) $r['reported'], 'name' => $r['reported_name'], 'email' => $r['reported_email'], 'totalReports' => (int) $r['total']]], $st->fetchAll())]);
+        $titleOf = function (string $kind, ?int $id) {
+            if (!$id) return null;
+            $q = ['listing' => ['listings', 'title', '/declutter/'], 'property' => ['properties', 'title', '/homes/'], 'post' => ['social_posts', 'title', '/social/'], 'job' => ['jobs', 'title', '/work/job/'], 'spot' => ['spots', 'name', '/ask/place/']][$kind] ?? null;
+            if (!$q) return null;
+            $row = Db::one("SELECT {$q[1]} AS t FROM {$q[0]} WHERE id = ?", [$id]);
+            return $row ? ['title' => $row['t'], 'url' => $q[2] . $id] : null;
+        };
+        Http::json(['items' => array_map(fn($r) => ['id' => (int) $r['id'], 'reason' => $r['reason'], 'createdAt' => $r['created_at'], 'reporter' => $r['reporter_name'], 'kind' => $r['target_kind'] ?? 'user', 'target' => $titleOf((string) ($r['target_kind'] ?? 'user'), $r['target_id'] ? (int) $r['target_id'] : null), 'reported' => ['id' => (int) $r['reported'], 'name' => $r['reported_name'], 'email' => $r['reported_email'], 'totalReports' => (int) $r['total']]], $st->fetchAll())]);
     }
     public function decideReport(int $id): void
     {
         $a = $this->admin(true); $r = Db::one('SELECT * FROM reports WHERE id = ?', [$id]); if (!$r) Http::json(['error' => 'not_found'], 404);
-        $act = (string) (Http::body()['action'] ?? ''); if (!in_array($act, ['dismiss', 'suspend'], true)) Http::json(['error' => 'validation'], 422);
+        $act = (string) (Http::body()['action'] ?? ''); if (!in_array($act, ['dismiss', 'suspend', 'hide'], true)) Http::json(['error' => 'validation'], 422);
+        if ($act === 'hide' && !empty($r['target_id'])) {
+            $k = (string) $r['target_kind'];
+            if ($k === 'listing') Db::run("UPDATE listings SET status = 'hidden' WHERE id = ?", [$r['target_id']]);
+            if ($k === 'property') Db::run("UPDATE properties SET status = 'hidden' WHERE id = ?", [$r['target_id']]);
+            if ($k === 'post') Db::run('UPDATE social_posts SET hidden_at = ? WHERE id = ?', [Db::now(), $r['target_id']]);
+            if ($k === 'job') Db::run("UPDATE jobs SET status = 'closed' WHERE id = ?", [$r['target_id']]);
+            if ($k === 'spot') Db::run('UPDATE spots SET active = 0 WHERE id = ?', [$r['target_id']]);
+            Notify::user((int) $r['reported'], 'work', 'Something you posted was taken down', 'A moderator removed it after a report. Message support if you think that is wrong.', '/#/home');
+        }
         Db::run('UPDATE reports SET reviewed_at = ?, reviewed_by = ?, outcome = ? WHERE id = ?', [Db::now(), $a['id'], $act, $id]);
         if ($act === 'suspend') { Db::run('UPDATE users SET deleted_at = ? WHERE id = ?', [Db::now(), $r['reported']]); Db::run('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL', [Db::now(), $r['reported']]); Db::run('UPDATE match_profiles SET visible = 0 WHERE user_id = ?', [$r['reported']]); Db::run("UPDATE listings SET status = 'hidden' WHERE seller_id = ?", [$r['reported']]); Db::run("UPDATE properties SET status = 'hidden' WHERE owner_id = ?", [$r['reported']]); }
         Http::json(['ok' => true]);

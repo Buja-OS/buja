@@ -178,6 +178,10 @@ export const api = {
   pingTrip:        (lat, lng) => request('POST', '/safety/ping', { lat, lng }),
   endTrip:         (b) => request('POST', '/safety/end', b),
   publicTrip:      (token) => request('GET', '/safety/trip/' + token),
+  search:          (q) => request('GET', '/search' + qs({ q })),
+  myInvite:        () => request('GET', '/me/invite'),
+  invite:          (code) => request('GET', '/invite/' + code),
+  report:          (kind, id, reason) => request('POST', '/report', { kind, id, reason }),
 };
 
 /* Detect the API once at boot. If /api/health is not there, switch to mock mode and say so. */
@@ -233,7 +237,7 @@ async function mockRequest(method, path, body) {
     return { user: pub(u), next: u.district ? 'home' : 'onboarding' };
   }
   if (path === '/auth/logout') { d.session = null; msave(d); return { ok: true }; }
-  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter') || path.startsWith('/ask') || path.startsWith('/spots') || path.startsWith('/pay') || path.startsWith('/verify') || path.startsWith('/admin') || path.startsWith('/notifications') || path.startsWith('/avatar') || path.startsWith('/news') || path.startsWith('/social') || path.startsWith('/radio') || path.startsWith('/uploads') || path.startsWith('/safety')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
+  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter') || path.startsWith('/ask') || path.startsWith('/spots') || path.startsWith('/pay') || path.startsWith('/verify') || path.startsWith('/admin') || path.startsWith('/notifications') || path.startsWith('/avatar') || path.startsWith('/news') || path.startsWith('/social') || path.startsWith('/radio') || path.startsWith('/uploads') || path.startsWith('/safety') || path.startsWith('/search') || path.startsWith('/report') || path.startsWith('/invite')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
   if (path === '/me' && method === 'PATCH') {
     const u = me(); if (!u) throw { error: 'unauthenticated', message: 'Please sign in.' };
     Object.assign(u, body); msave(d); return { user: pub(u) };

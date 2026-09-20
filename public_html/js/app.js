@@ -12,6 +12,9 @@ import { registerAsk } from './ask.js';
 import { registerTrust } from './trust.js';
 import { registerCity } from './city.js';
 import { registerSafety } from './safety.js';
+import { registerGrowth } from './growth.js';
+
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__bujaInstall = e; });
 
 /* ---------------- Radio player, global so it keeps playing as you move around ---------------- */
 export const radio = {
@@ -224,6 +227,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
   <header class="topbar" style="padding-top:8px">
     ${markAuto(30)}<h1 style="letter-spacing:1px;font-size:22px">Buja</h1>
     <a class="iconbtn" href="#/settings" aria-label="Settings">${icon('gear')}</a>
+    <a class="iconbtn" href="#/search" aria-label="Search Buja">${icon('magnifying-glass')}</a>
     <a class="iconbtn" href="#/notifications" aria-label="Notifications" style="position:relative">${icon('regular/bell')}<span class="dot" id="belldot" style="display:none"></span></a>
   </header>
   <main class="pad stack" style="gap:16px;padding-top:4px">
@@ -265,6 +269,8 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
       <a class="item" href="#/declutter/mine"><div class="mi">${icon('tags')}</div><div class="grow"><div class="t">My listings</div><div class="s">Declutter</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/waka"><div class="mi">${icon('route')}</div><div class="grow"><div class="t">Saved routes</div><div class="s">Waka</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#${u.kind === 'company' ? '/work/company' : '/work/profile'}"><div class="mi">${icon('briefcase')}</div><div class="grow"><div class="t">${u.kind === 'company' ? 'Company and vacancies' : 'My CV and applications'}</div><div class="s">Work</div></div>${icon('chevron-right')}</a>
+      <a class="item" href="#/invite"><div class="mi">${icon('paper-plane')}</div><div class="grow"><div class="t">Invite friends</div><div class="s">Buja works better with your people on it</div></div>${icon('chevron-right')}</a>
+      <a class="item" href="#/install"><div class="mi">${icon('plus')}</div><div class="grow"><div class="t">Install Buja</div><div class="s">Put it on your home screen</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/safety"><div class="mi">${icon('location-dot')}</div><div class="grow"><div class="t">Trip Share</div><div class="s">Tell a friend where you are when you go out</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/verify"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">Verification</div><div class="s">${u.selfieVerified ? 'Selfie verified' : 'Get the verified badge'}</div></div>${icon('chevron-right')}</a>
       ${u.kind === 'company' ? '' : `<a class="item" href="#/plus"><div class="mi">${icon('bolt')}</div><div class="grow"><div class="t">Buja Plus</div><div class="s">${u.plus ? 'Active' : 'See who liked you, five super likes a day'}</div></div>${icon('chevron-right')}</a>`}
@@ -289,6 +295,12 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
           <button data-theme="system" class="${state.theme === 'system' ? 'on' : ''}">${icon('mobile-screen')} System</button>
         </div>
         <div class="small muted" style="line-height:1.5">System follows your phone. Waka's map stays dark in both modes so vehicles read clearly.</div>
+      </div>
+    </div>
+    <div class="stack" style="gap:10px"><div class="section">ABOUT</div>
+      <div class="card list">
+        <a class="item" href="#/terms"><div class="mi">${icon('file-arrow-up')}</div><div class="grow"><div class="t">Terms of use</div></div>${icon('chevron-right')}</a>
+        <a class="item" href="#/privacy"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">Privacy</div><div class="s">What Buja keeps and what others see</div></div>${icon('chevron-right')}</a>
       </div>
     </div>
     <div class="stack" style="gap:10px"><div class="section">NOTIFICATIONS</div>
@@ -317,6 +329,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerGrowth({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerSafety({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerCity({ route, go, state, api, radio, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
 registerTrust({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });

@@ -30,6 +30,7 @@ final class AuthController
             ['resident', $name, $email, $phone, password_hash($pass, PASSWORD_DEFAULT), Db::now(), Db::now()]);
         $id = Db::lastId();
         if (!empty($b['invite'])) { $inv = Db::one('SELECT * FROM invites WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?', [hash('sha256', (string) $b['invite']), Db::now()]); if ($inv && strtolower($inv['email']) === $email) { Db::run('UPDATE users SET role = ?, is_admin = ?, email_verified_at = ? WHERE id = ?', [$inv['role'], $inv['role'] === 'admin' ? 1 : 0, Db::now(), $id]); Db::run('UPDATE invites SET used_at = ? WHERE id = ?', [Db::now(), $inv['id']]); } }
+        if (!empty($b['ref'])) { $ref = Db::one('SELECT id FROM users WHERE invite_code = ? AND deleted_at IS NULL', [strtoupper((string) $b['ref'])]); if ($ref && (int) $ref['id'] !== (int) $id) { Db::run('UPDATE users SET referred_by = ? WHERE id = ?', [$ref['id'], $id]); Notify::user((int) $ref['id'], 'offers', $name . ' joined Buja on your invite', 'That is one more person in the city using it.', '/#/invite'); } }
         Track::hit(['id' => $id], 'account', 'register');
         Auth::signIn($id);
         $u = Db::one('SELECT * FROM users WHERE id = ?', [$id]);

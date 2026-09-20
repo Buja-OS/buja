@@ -18,7 +18,7 @@ final class MatchController
             'id' => (int) $p['user_id'], 'name' => explode(' ', trim($p['name']))[0], 'age' => MatchRules::age($p['birthdate']), 'gender' => $p['gender'], 'district' => $p['district'],
             'bio' => $p['bio'], 'interests' => json_decode($p['interests'] ?? '[]', true) ?: [], 'prompts' => json_decode($p['prompts'] ?? '[]', true) ?: [],
             'work' => $p['work'], 'education' => $p['education'], 'height' => $p['height'] ? (int) $p['height'] : null, 'faith' => $p['faith'], 'drinking' => $p['drinking'], 'smoking' => $p['smoking'], 'kids' => $p['kids'], 'languages' => $p['languages'],
-            'photos' => $this->photos((int) $p['user_id']), 'phoneVerified' => $p['phone'] !== null, 'emailVerified' => $p['email_verified_at'] !== null, 'verified' => !empty($p['selfie_verified_at']),
+            'photos' => $this->photos((int) $p['user_id']), 'phoneAdded' => $p['phone'] !== null, 'emailVerified' => $p['email_verified_at'] !== null, 'verified' => !empty($p['selfie_verified_at']),
             'activeAt' => $p['active_at'],
         ];
         if ($me) {

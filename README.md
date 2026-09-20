@@ -1,4 +1,4 @@
-# Buja, Phase 9d: real distances and Trip Share
+# Buja, Phase 9e: search, invites, install, reporting
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -156,8 +156,18 @@ Bugs fixed in this pass: tracking calls that ran between an insert and reading b
   - The public page shows a first name and a position and nothing else: no phone, no email, no token, not even which contact was chosen.
 - New: `api/controllers/SafetyController.php`, `LocationController.php`, `js/safety.js`, `migrations/013_location_safety.sql`.
 
+## Phase 9e: finding things, bringing people, keeping it clean
+
+- **One search** across the whole app from the Home header: jobs by title or company, homes, items for sale, places in Ask, Social posts and Waka stops, grouped by kind.
+- **Invites.** Every account gets a six-character code and a link. Someone opening it sees who invited them before they sign up, and the inviter is told when they join and can see who came in through them. This is the honest answer to the cold-start problem: a jobs board with no jobs is useless until people bring their people.
+- **Install Buja** as an app: the Android prompt where the browser offers it, and the three Safari steps on iPhone, which is also the only way to get notifications there.
+- **Report anything**, not just people: listings, properties, posts, vacancies and places, with six common reasons and a free-text line. Everything lands in the one moderator queue, which now shows what was reported with a link to it and a Take it down button that hides the content and tells the owner.
+- **Terms of use and Privacy** pages, written plainly, readable without an account, linked from Settings.
+- **An honest fix:** Buja was showing "Phone verified" on Declutter and Match when all that had happened was somebody typed a number. That claim is gone. Sellers now show "Verified with a selfie" if they passed verification, or "Phone on file" if not. Real phone verification needs an SMS provider and will come with a budget for it.
+- New: `api/controllers/SearchController.php`, `InviteController.php`, `ReportController.php`, `js/growth.js`, `migrations/014_growth.sql`.
+
 ## What is next
 
-Phase 9e: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 9f: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

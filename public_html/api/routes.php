@@ -181,3 +181,9 @@ $router->post('/safety/start',               [SafetyController::class, 'start'])
 $router->post('/safety/ping',                [SafetyController::class, 'ping']);
 $router->post('/safety/end',                 [SafetyController::class, 'end']);
 $router->get('/safety/trip/{token}',         [SafetyController::class, 'publicTrip']);
+
+// Search, invites, reporting
+$router->get('/search',                      [SearchController::class, 'index']);
+$router->get('/me/invite',                   [InviteController::class, 'index']);
+$router->get('/invite/{code}',               [InviteController::class, 'show']);
+$router->post('/report',                     [ReportController::class, 'create']);
