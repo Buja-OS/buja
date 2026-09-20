@@ -85,18 +85,51 @@ export function registerGrowth({ route, go, state, api, ui, failed }) {
         <div class="h-md">Put Buja on your home screen</div>
         <div class="small muted" style="line-height:1.6">It opens like a normal app, without the browser bars, works when the network is poor, and it is the only way to get notifications${ios ? ' on an iPhone' : ''}.</div>
         ${ios ? `<div class="stack" style="gap:8px;margin-top:4px">${['Tap the share button at the bottom of Safari', 'Scroll down and tap Add to Home Screen', 'Tap Add at the top right'].map((s, i) => `<div class="row" style="gap:10px;align-items:flex-start"><span style="width:22px;height:22px;border-radius:11px;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${i + 1}</span><span style="font-size:14px;line-height:1.5">${s}</span></div>`).join('')}</div><div class="small muted">It must be Safari. Chrome on iPhone cannot add apps.</div>`
-        : `<button class="btn btn-primary" id="doinstall">${icon('plus')} Add Buja to my home screen</button><div class="small muted" id="hint">If nothing happens, open your browser menu and choose "Install app" or "Add to Home screen".</div>`}
+        : `<button class="btn btn-primary" id="doinstall">${icon('plus')} Add Buja to my home screen</button><div class="small muted" id="hint">If nothing happens, run the check below and send me what it says.</div>`}
       </div>`}
+      <div class="card stack" style="padding:16px;gap:10px">
+        <div class="row"><div class="grow"><div class="h-sm">Why will it not install?</div><div class="small muted">Checks the five things a browser insists on</div></div><button class="btn btn-sm btn-ink" id="diag" style="width:auto">Run check</button></div>
+        <div id="diagout" class="stack" style="gap:6px"></div>
+      </div>
       <div class="card stack" style="padding:16px;gap:8px"><div class="h-sm">Why it matters</div><div class="small muted" style="line-height:1.6">Buja is a website that behaves like an app, so there is nothing to download from Play Store and no 60 MB of data. Installed, it keeps its own space on your phone and can wake you for an interview invitation or a match.</div></div>
     </main>`;
   }, {
     mount(el) {
-      const b = el.querySelector('#doinstall'); if (!b) return;
-      b.addEventListener('click', async () => {
+      const b = el.querySelector('#doinstall');
+      b?.addEventListener('click', async () => {
         const evt = window.__bujaInstall;
-        if (!evt) { el.querySelector('#hint').textContent = 'Your browser did not offer the prompt. Open the browser menu and choose "Install app" or "Add to Home screen".'; return; }
+        if (!evt) { el.querySelector('#hint').textContent = 'Your browser did not offer the prompt. Run the check below and send me the result.'; return; }
         evt.prompt(); const res = await evt.userChoice; window.__bujaInstall = null;
         toast(res.outcome === 'accepted' ? 'Installing. Look for Buja on your home screen.' : 'No problem, you can do it any time.');
+      });
+      el.querySelector('#diag').addEventListener('click', async (e) => {
+        busy(e.currentTarget, true);
+        const out = el.querySelector('#diagout'); const lines = [];
+        const row = (ok, label, detail) => `<div class="row" style="gap:10px;align-items:flex-start"><span style="color:${ok ? 'var(--green-dark)' : '#D92D20'};flex-shrink:0">${icon(ok ? 'circle-check' : 'triangle-exclamation')}</span><span style="font-size:13px;line-height:1.5"><strong>${label}</strong>${detail ? '<br><span class="muted">' + h(detail) + '</span>' : ''}</span></div>`;
+        lines.push(row(location.protocol === 'https:', 'Secure connection', location.protocol));
+        let reg = null;
+        try { reg = await navigator.serviceWorker.getRegistration(); } catch {}
+        lines.push(row(!!reg, 'Service worker registered', reg ? 'scope ' + reg.scope + (navigator.serviceWorker.controller ? ', controlling this page' : ', not controlling yet, reload once') : 'none found'));
+        let man = null, manOk = false, manDetail = '';
+        try {
+          const r = await fetch('/manifest.webmanifest', { cache: 'no-cache' });
+          manDetail = r.status + ' ' + (r.headers.get('content-type') || 'no content type');
+          man = await r.json(); manOk = r.ok && !!man.name && !!man.start_url && man.display === 'standalone';
+        } catch (err) { manDetail = 'could not read it'; }
+        lines.push(row(manOk, 'Manifest readable', manDetail));
+        const icons = (man && man.icons || []).filter((i) => (i.type || '').includes('png'));
+        let iconOk = false, iconDetail = 'no PNG icons listed';
+        if (icons.length) {
+          const checks = await Promise.all(icons.map(async (i) => { try { const r = await fetch(i.src, { cache: 'no-cache' }); return { src: i.src, ok: r.ok && (r.headers.get('content-type') || '').includes('image'), info: r.status + ' ' + (r.headers.get('content-type') || '?') }; } catch { return { src: i.src, ok: false, info: 'failed' }; } }));
+          iconOk = checks.every((c) => c.ok);
+          iconDetail = checks.map((c) => c.src.split('/').pop() + ' ' + c.info).join(' · ');
+        }
+        lines.push(row(iconOk, 'PNG icons load', iconDetail));
+        const prompted = !!window.__bujaInstall;
+        const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+        lines.push(row(prompted || standalone, 'Browser offered installation', standalone ? 'already installed' : prompted ? 'yes, the button works' : 'not yet. Chrome sometimes waits until you have used the site a little, or is on an old cached copy. Close Chrome fully, reopen, use it for a minute, then look in the menu again.'));
+        out.innerHTML = lines.join('');
+        busy(e.currentTarget, false);
       });
     }
   });
