@@ -45,7 +45,7 @@ export function registerGrowth({ route, go, state, api, ui, failed }) {
 
   /* Landing for an invite link, before sign-up */
   route('/join/:code', { guest: true, tabs: '' }, async ({ code }) => {
-    let from = null; try { from = (await api.invite(code)).from; } catch {}
+    let from = null; try { from = (await api.inviteInfo(code)).from; } catch {}
     sessionStorage.setItem('buja_ref', code);
     return `<main class="pad stack" style="gap:18px;padding-top:40px">
       <div class="center stack" style="gap:10px"><div style="font-size:26px;font-weight:700;letter-spacing:4px">BUJA</div><div class="muted">Everything Abuja, in one app</div></div>

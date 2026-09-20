@@ -25,7 +25,8 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
         <div class="row" style="padding:12px 14px;background:var(--green-tint);color:var(--green-dark);gap:10px;font-size:13px;font-weight:700">${icon('calendar-check')} ${label} ${s === 'confirmed' ? '· Confirmed' : s === 'suggested' ? '· Time suggested' : ''}</div>
         <div class="stack" style="padding:14px;gap:8px;font-size:14px">
           <div class="row" style="gap:10px">${icon('clock')}<strong>${h(pretty(m.meta.at))}</strong></div>
-          <div class="row" style="gap:10px">${icon('location-dot')}<span>${h(m.meta.place)}</span></div>
+          <div class="row" style="gap:10px">${icon(m.meta.virtual ? 'video' : 'location-dot')}<span>${h(m.meta.place)}</span></div>
+          ${m.meta.virtual && m.meta.room ? `<a class="btn btn-sm btn-primary" href="#/rtc/${h(m.meta.room)}" style="margin-top:2px">${icon('video')} Join the call</a><div class="small muted">The room opens 15 minutes before.</div>` : ''}
           ${m.meta.with ? `<div class="row" style="gap:10px">${icon('users')}<span>With ${h(m.meta.with)}</span></div>` : ''}
           ${m.meta.note ? `<div class="small muted" style="line-height:1.5">${h(m.meta.note)}</div>` : ''}
           ${!mine && s === 'pending' ? `<div class="row" style="gap:8px;margin-top:6px"><button class="btn btn-sm btn-ink" style="flex:1" data-respond="confirm">Confirm</button><button class="btn btn-sm btn-outline" style="flex:1" data-respond="suggest">Suggest time</button></div>` : ''}
@@ -220,7 +221,7 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
           e.preventDefault(); const f = e.target; const btn = f.querySelector('[type=submit]'); showErrors(el, {}); busy(btn, true);
           const localAt = new Date(f.date.value + 'T' + f.time.value); const at = new Date(localAt.getTime() - localAt.getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' ');
           const virtual = el.querySelector('#how button.on')?.dataset.v === '1';
-          try { await api.invite(id, { at, virtual, place: f.place.value, with: f.with.value, note: f.note.value }); toast('Invitation sent'); if (location.hash === '#/inbox/' + id) location.reload(); else location.hash = '#/inbox/' + id; } catch (err) { busy(btn, false); failed(el, err); }
+          try { await api.scheduleInterview(id, { at, virtual, place: f.place.value, with: f.with.value, note: f.note.value }); toast('Invitation sent'); if (location.hash === '#/inbox/' + id) location.reload(); else location.hash = '#/inbox/' + id; } catch (err) { busy(btn, false); failed(el, err); }
         });
       });
     }

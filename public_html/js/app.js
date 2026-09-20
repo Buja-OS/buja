@@ -333,7 +333,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
     (async () => {
       let prefs = { work: true, match: true, waka: true, offers: false, news: true, social: true, digest: true }; let pushed = false;
       try { const t = await api.today(); prefs = t.notifications; pushed = t.pushEnabled; } catch {}
-      el.querySelectorAll('[data-pref]').forEach((s) => { const on = !!prefs[s.dataset.pref]; s.classList.toggle('on', on); s.setAttribute('aria-checked', on); s.addEventListener('click', async () => { const next = !s.classList.contains('on'); s.classList.toggle('on', next); s.setAttribute('aria-checked', next); try { await api.notifications({ [s.dataset.pref]: next }); } catch (err) { s.classList.toggle('on', !next); failed(el, err); } }); });
+      el.querySelectorAll('[data-pref]').forEach((s) => { const on = !!prefs[s.dataset.pref]; s.classList.toggle('on', on); s.setAttribute('aria-checked', on); s.addEventListener('click', async () => { const next = !s.classList.contains('on'); s.classList.toggle('on', next); s.setAttribute('aria-checked', next); try { await api.saveNotifyPrefs({ [s.dataset.pref]: next }); } catch (err) { s.classList.toggle('on', !next); failed(el, err); } }); });
       const tg = el.querySelector('#pushtoggle'), st = el.querySelector('#pushs');
       if (!push.pushSupported() || api.isMock()) { st.textContent = api.isMock() ? 'Needs the live site' : 'Not supported in this browser'; tg.disabled = true; return; }
       const local = await push.pushState(); tg.classList.toggle('on', local); tg.setAttribute('aria-checked', local); st.textContent = local ? 'On' : (pushed ? 'On for another device' : 'Off');
