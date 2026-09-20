@@ -1,7 +1,7 @@
 /* Buja service worker, phase 1.
    Cache-first for the app shell and static assets, network-only for /api.
    Bump VERSION whenever a shell file changes so users get the update. */
-const VERSION = 'buja-shell-v23';
+const VERSION = 'buja-shell-v24';
 const SHELL = [
   '/', '/index.html', '/manifest.webmanifest', '/assets/icons/icon-192.png', '/assets/icons/icon-512.png', '/offline.html',
   '/css/app.css', '/js/app.js', '/js/api.js', '/js/ui.js', '/js/store.js', '/js/icons.js', '/js/work.js', '/js/messages.js', '/js/match.js', '/js/waka.js', '/js/homes.js', '/js/declutter.js', '/js/ask.js', '/js/trust.js', '/js/city.js', '/js/safety.js', '/js/growth.js', '/js/call.js', '/js/rtc.js',
@@ -34,10 +34,25 @@ self.addEventListener('fetch', (e) => {
 
 self.addEventListener('push', (e) => {
   let d = {}; try { d = e.data ? e.data.json() : {}; } catch { d = { title: 'Buja', body: e.data ? e.data.text() : '' }; }
-  e.waitUntil(self.registration.showNotification(d.title || 'Buja', { body: d.body || '', icon: '/assets/icons/icon-512.svg', badge: '/assets/icons/favicon.svg', tag: d.tag || 'buja', data: { url: d.url || '/#/home' }, renotify: true }));
+  const opts = {
+    body: d.body || '', icon: '/assets/icons/icon-192.png', badge: '/assets/icons/favicon.svg',
+    tag: d.ring ? 'buja-call' : (d.tag || 'buja'), data: { url: d.url || '/#/home', room: d.room || null }, renotify: true,
+  };
+  if (d.ring) {
+    // A call keeps ringing until it is answered or declined, and can be answered from the notification.
+    opts.requireInteraction = true;
+    opts.vibrate = [400, 200, 400, 200, 400];
+    opts.actions = [{ action: 'answer', title: 'Answer' }, { action: 'decline', title: 'Decline' }];
+  }
+  e.waitUntil(self.registration.showNotification(d.title || 'Buja', opts));
 });
 
 self.addEventListener('notificationclick', (e) => {
+  if (e.action === 'decline' && e.notification.data && e.notification.data.room) {
+    e.notification.close();
+    e.waitUntil(fetch('/api/call/' + e.notification.data.room + '/decline', { method: 'POST', headers: { 'X-Buja-Client': 'pwa', 'Content-Type': 'application/json' }, credentials: 'include' }).catch(() => {}));
+    return;
+  }
   e.notification.close();
   const url = new URL(e.notification.data?.url || '/#/home', location.origin).href;
   e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {

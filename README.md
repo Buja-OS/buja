@@ -1,4 +1,4 @@
-# Buja, Phase 9k: proper phone-style calls in chat
+# Buja, Phase 9l: one call system, properly designed
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -230,6 +230,26 @@ Verified with two browsers calling each other: ringing, the banner appearing on 
 audio flowing both ways with a timer running on both sides, and hanging up ending it for both.
 Bug fixed on the way: the incoming-call watcher started before anyone was signed in, and the banner used a
 CSS variable that did not exist so it sat off-screen.
+
+## Phase 9l: one call system, WhatsApp placement, speaker and screen share
+
+- **Jitsi is retired.** Every call in Buja, interviews included, now runs phone to phone over WebRTC on
+  Buja's own screen. One system, one look, nothing handed to another service.
+- **Call buttons sit in the chat header**, where people expect them: a video camera and a phone handset,
+  in that order, top right of every conversation.
+- **Proper call icons** added to the icon set: phone, phone-slash, video, video-slash, microphone-slash,
+  speaker on and off, screen share, flip camera. Nine new Font Awesome paths inlined, still no icon font.
+- **The call screen redesigned**: a soft gradient, a pulsing avatar while it rings, the other person's video
+  edge to edge once connected, your preview in the corner, a round red handset to end. Controls in one row:
+  Mute, Speaker, Camera, Flip, Share, each labelled and lighting up when active.
+- **Speaker toggle** switches the audio output where the browser allows it, and says so plainly where it does not.
+- **Screen sharing** for interviews, shown only where the browser supports it, and it drops back to the
+  camera by itself when you stop sharing.
+- **Ringing notifications** now carry Answer and Decline buttons, vibrate, and stay on screen until
+  answered rather than fading away. Declining from the notification tells the caller without opening Buja.
+
+Verified with two browsers: header buttons, ringing, the banner, answering, audio and video flowing both
+ways with a timer on both sides, mute, speaker, camera and hang up.
 
 ## What is next
 

@@ -45,7 +45,7 @@ final class CallController
         $startsAt = null;
         if (!empty($b['startsAt'])) { $ts = strtotime((string) $b['startsAt']); if (!$ts || $ts < time() - 3600) Http::json(['error' => 'validation', 'fields' => ['startsAt' => 'Pick a time in the future.']], 422); $startsAt = gmdate('Y-m-d H:i:s', $ts); }
         $room = 'buja-' . bin2hex(random_bytes(16));
-        $engine = $kind === 'interview' ? 'jitsi' : 'rtc'; // interviews use a meeting room; chat calls are phone-style, peer to peer
+        $engine = 'rtc'; // every call, interviews included, runs phone to phone inside Buja
         Db::run('INSERT INTO calls (room, kind, mode, engine, status, callee, thread_id, created_by, starts_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
             [$room, $kind, $mode, $engine, 'ringing', $this->other($t, $u), $id, $u['id'], $startsAt, Db::now()]);
         $callId = (int) Db::lastId();
@@ -57,8 +57,9 @@ final class CallController
         $name = explode(' ', trim((string) $u['name']))[0];
         Notify::user($this->other($t, $u), $kind === 'interview' ? 'work' : 'match',
             $startsAt ? $name . ' booked a ' . $mode . ' call' : $name . ' is calling',
-            $startsAt ? 'On ' . date('D j M, H:i', strtotime($startsAt . ' UTC')) . '. Open Buja to join.' : 'Tap to join the call in Buja.',
-            '/#/inbox/' . $id, true);
+            $startsAt ? 'On ' . date('D j M, H:i', strtotime($startsAt . ' UTC')) . '. Open Buja to join.' : ($mode === 'audio' ? 'Incoming call on Buja' : 'Incoming video call on Buja'),
+            $startsAt ? '/#/inbox/' . $id : '/#/rtc/' . $room, true,
+            $startsAt ? [] : ['ring' => true, 'room' => $room, 'mode' => $mode]);
         Http::json(['call' => self::shape(Db::one('SELECT * FROM calls WHERE id = ?', [$callId]))], 201);
     }
 
@@ -111,7 +112,7 @@ final class CallController
     {
         $u = Auth::require();
         $c = Db::one("SELECT c.*, u.name FROM calls c JOIN users u ON u.id = c.created_by
-                      WHERE c.callee = ? AND c.engine = 'rtc' AND c.status = 'ringing' AND c.ended_at IS NULL AND c.starts_at IS NULL AND c.created_at > ?
+                      WHERE c.callee = ? AND c.status = 'ringing' AND c.ended_at IS NULL AND c.starts_at IS NULL AND c.created_at > ?
                       ORDER BY c.id DESC LIMIT 1", [$u['id'], gmdate('Y-m-d H:i:s', time() - 45)]);
         if (!$c) Http::json(['call' => null]);
         Http::json(['call' => self::shape($c) + ['from' => explode(' ', trim((string) $c['name']))[0], 'threadId' => (int) $c['thread_id']]]);

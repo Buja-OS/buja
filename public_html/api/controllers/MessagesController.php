@@ -129,7 +129,7 @@ final class MessagesController
         if ($virtual) {
             // A virtual interview gets its own private room inside Buja, opened 15 minutes before the time.
             $room = 'buja-' . bin2hex(random_bytes(16));
-            Db::run('INSERT INTO calls (room, kind, mode, thread_id, created_by, starts_at, created_at) VALUES (?,?,?,?,?,?,?)', [$room, 'interview', 'video', $id, $u['id'], gmdate('Y-m-d H:i:s', $ts), Db::now()]);
+            Db::run('INSERT INTO calls (room, kind, mode, engine, callee, thread_id, created_by, starts_at, created_at) VALUES (?,?,?,?,?,?,?,?,?)', [$room, 'interview', 'video', 'rtc', $this->other($t, $u), $id, $u['id'], gmdate('Y-m-d H:i:s', $ts), Db::now()]);
             $place = $place ?: 'Video call on Buja';
         }
         $meta = ['at' => gmdate('Y-m-d H:i', $ts), 'place' => $place, 'with' => $with, 'note' => $note, 'status' => 'pending', 'virtual' => $virtual, 'room' => $room];
