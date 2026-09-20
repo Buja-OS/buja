@@ -1,4 +1,4 @@
-# Buja, Phase 9i: Ask knows where you are
+# Buja, Phase 9j: calls, weather, voice notes fixed
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -198,6 +198,18 @@ Bugs fixed in this pass: tracking calls that ran between an insert and reading b
 - Coordinates added for all 22 seeded places (`migrations/017_spot_coords.sql`), so distances and thumbnails work from the first question rather than only for places found on the map.
 
 Bugs fixed: the live position was read from a variable that was never defined, so it was always ignored; and distance was read from the stored position rather than the fix just sent.
+
+## Phase 9j: video and audio calls, weather, and a voice-note fix
+
+- **Voice notes were broken and now work.** The server checked a file's own bytes and a browser recording comes back as `application/octet-stream` or `video/webm`, neither of which was allowed, so every voice note was rejected. Buja now reads the container's magic bytes and maps it properly: webm, mp4, ogg, wav and mp3 from Android, iPhone and Firefox recorders. A jpeg or an executable renamed to .webm is still refused.
+- **Calls inside Buja.** Jitsi embedded in a Buja screen, never handing anyone off to another app. Rooms are 32 random characters, so they cannot be guessed, and only the two people in that conversation can open one.
+  - **Match chat**: Video and Call buttons at the top of the thread. A card lands in the conversation and the other person gets a push.
+  - **Virtual interviews**: when scheduling, a company picks "Video call on Buja" instead of an address. Buja makes the room, the card carries a Join button, and the room opens 15 minutes before the time and refuses before that.
+  - Audio calls start with the camera off. The Jitsi app promo, deep links and invite buttons are disabled so nobody leaves Buja.
+  - `JITSI_DOMAIN` defaults to meet.jit.si, which is free and needs no account; point it at your own server later without touching code.
+- **Abuja weather on the home screen**: temperature, what it feels like, today's range, rain chance and a line of advice ("Carry an umbrella, and leave earlier than usual"). Open-Meteo, free, no key, cached half an hour, and the last reading is reused if the service is slow.
+
+Verified: voice notes from three recorder formats plus two forgeries; starting a call, joining, an outsider being refused, a scheduled call refusing early joins, and ending a call. Not verified end to end in the sandbox: the virtual-interview branch specifically, which reuses the same room and join code.
 
 ## What is next
 

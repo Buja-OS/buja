@@ -122,15 +122,23 @@ final class MessagesController
         $at = trim((string) ($b['at'] ?? '')); $place = mb_substr(trim((string) ($b['place'] ?? '')), 0, 160); $with = mb_substr(trim((string) ($b['with'] ?? '')), 0, 120); $note = mb_substr(trim((string) ($b['note'] ?? '')), 0, 400);
         $ts = strtotime($at);
         if (!$ts || $ts < time()) $errors['at'] = 'Pick a date and time in the future.';
-        if ($place === '') $errors['place'] = 'Where is the interview?';
+        $virtual = !empty($b['virtual']);
+        if ($place === '' && !$virtual) $errors['place'] = 'Where is the interview?';
         if ($errors) Http::json(['error' => 'validation', 'fields' => $errors], 422);
-        $meta = ['at' => gmdate('Y-m-d H:i', $ts), 'place' => $place, 'with' => $with, 'note' => $note, 'status' => 'pending'];
+        $room = null;
+        if ($virtual) {
+            // A virtual interview gets its own private room inside Buja, opened 15 minutes before the time.
+            $room = 'buja-' . bin2hex(random_bytes(16));
+            Db::run('INSERT INTO calls (room, kind, mode, thread_id, created_by, starts_at, created_at) VALUES (?,?,?,?,?,?,?)', [$room, 'interview', 'video', $id, $u['id'], gmdate('Y-m-d H:i:s', $ts), Db::now()]);
+            $place = $place ?: 'Video call on Buja';
+        }
+        $meta = ['at' => gmdate('Y-m-d H:i', $ts), 'place' => $place, 'with' => $with, 'note' => $note, 'status' => 'pending', 'virtual' => $virtual, 'room' => $room];
         Db::run('INSERT INTO messages (thread_id, sender_id, type, body, meta, created_at) VALUES (?,?,?,?,?,?)', [$id, $u['id'], 'interview', 'Interview invitation', json_encode($meta), Db::now()]);
         $mid = Db::lastId();
         Db::run('UPDATE threads SET last_message_at = ? WHERE id = ?', [Db::now(), $id]);
         Db::run("UPDATE applications SET status = 'interview', updated_at = ? WHERE id = ? AND status IN ('new','shortlisted')", [Db::now(), $t['application_id']]);
         $when = date('D j M, H:i', $ts);
-        Notify::user($this->other($t, $u), 'work', $this->companyName($u) . ' wants to interview you', "$when at $place. Tap to confirm.", '/#/inbox/' . $id, true);
+        Notify::user($this->other($t, $u), 'work', $this->companyName($u) . ' wants to interview you', $virtual ? "$when, video call inside Buja. Tap to confirm." : "$when at $place. Tap to confirm.", '/#/inbox/' . $id, true);
         Http::json(['message' => $this->shapeMessage(Db::one('SELECT * FROM messages WHERE id = ?', [$mid]), (int) $u['id'])], 201);
     }
 

@@ -8,7 +8,7 @@ final class UploadsController
     private const MIMES = [
         'image' => ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
         'video' => ['video/mp4', 'video/webm', 'video/quicktime'],
-        'audio' => ['audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/wav', 'audio/x-m4a'],
+        'audio' => ['audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/wav', 'audio/x-m4a', 'audio/x-wav'],
         'file'  => ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/plain', 'application/zip'],
     ];
 
@@ -28,8 +28,9 @@ final class UploadsController
         if (!isset(self::LIMITS[$kind])) Http::json(['error' => 'validation', 'message' => 'Unknown attachment type.'], 422);
         $f = Http::file('file'); if (!$f) Http::json(['error' => 'validation', 'fields' => ['file' => 'Choose a file.']], 422);
         if ((int) $f['size'] > self::LIMITS[$kind] * 1024 * 1024) Http::json(['error' => 'validation', 'fields' => ['file' => ucfirst($kind) . ' is too large. Limit is ' . self::LIMITS[$kind] . ' MB.']], 422);
-        $data = file_get_contents($f['tmp_name']) ?: ''; $mime = (new finfo(FILEINFO_MIME_TYPE))->buffer($data) ?: '';
-        if (!in_array($mime, self::MIMES[$kind], true)) Http::json(['error' => 'validation', 'fields' => ['file' => 'That file type is not allowed here.']], 422);
+        $data = file_get_contents($f['tmp_name']) ?: '';
+        $mime = self::sniff($data, $kind, (string) ($f['type'] ?? ''));
+        if ($mime === null) Http::json(['error' => 'validation', 'fields' => ['file' => 'That file type is not allowed here.']], 422);
         $ext = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif', 'video/mp4' => 'mp4', 'video/webm' => 'webm', 'video/quicktime' => 'mov', 'audio/webm' => 'webm', 'audio/ogg' => 'ogg', 'audio/mpeg' => 'mp3', 'audio/mp4' => 'm4a', 'audio/aac' => 'aac', 'audio/wav' => 'wav', 'audio/x-m4a' => 'm4a', 'application/pdf' => 'pdf'][$mime] ?? 'bin';
         $key = Media::put('chat/' . $kind, $data, $mime, $ext);
         $meta = null;
@@ -38,6 +39,30 @@ final class UploadsController
         Db::run('INSERT INTO uploads (user_id, kind, mime, size, name, meta, data, storage_key, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
             [$u['id'], $kind, $mime, strlen($data), mb_substr((string) ($f['name'] ?? ''), 0, 120) ?: null, $meta, $key ? null : $data, $key, Db::now()]);
         Http::json(['upload' => self::shape((int) Db::lastId())], 201);
+    }
+
+    /**
+     * Works out what a file really is. PHP's mime sniffer calls a browser voice note video/webm or plain
+     * bytes, because webm and mp4 are containers that hold either. So we read the magic bytes ourselves and
+     * trust the recorder's own label only when the container agrees with it.
+     */
+    private static function sniff(string $data, string $kind, string $declared): ?string
+    {
+        $sniffed = (new finfo(FILEINFO_MIME_TYPE))->buffer($data) ?: '';
+        if (in_array($sniffed, self::MIMES[$kind], true)) return $sniffed;
+        $head = substr($data, 0, 16);
+        $container = match (true) {
+            str_starts_with($head, "\x1A\x45\xDF\xA3") => 'webm',   // EBML, used by webm
+            substr($head, 4, 4) === 'ftyp' => 'mp4',
+            str_starts_with($head, 'OggS') => 'ogg',
+            str_starts_with($head, 'RIFF') && substr($head, 8, 4) === 'WAVE' => 'wav',
+            str_starts_with($head, 'ID3') || (ord($head[0] ?? "\0") === 0xFF && (ord($head[1] ?? "\0") & 0xE0) === 0xE0) => 'mp3',
+            default => null,
+        };
+        if ($container === null) return null;
+        if ($kind === 'audio') return match ($container) { 'webm' => 'audio/webm', 'mp4' => 'audio/mp4', 'ogg' => 'audio/ogg', 'wav' => 'audio/wav', 'mp3' => 'audio/mpeg', default => null };
+        if ($kind === 'video') return match ($container) { 'webm' => 'video/webm', 'mp4' => str_contains($declared, 'quicktime') ? 'video/quicktime' : 'video/mp4', default => null };
+        return null;
     }
 
     /** POST /uploads/location { lat, lng, label } */

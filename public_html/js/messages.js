@@ -40,6 +40,15 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
         ${!mine && s === 'pending' ? `<div class="row" style="gap:8px;margin-top:6px"><button class="btn btn-sm btn-ink" style="flex:1" data-offer-act="accept">Accept</button><button class="btn btn-sm btn-outline" style="flex:1" data-offer-act="decline">Decline</button></div>` : ''}
         ${mine && s === 'pending' ? `<div class="small muted">Waiting for the seller</div>` : ''}</div></div>`;
     }
+    if (m.type === 'call') {
+      const meta = m.meta || {};
+      const started = meta.startsAt ? new Date(meta.startsAt.replace(' ', 'T') + 'Z') : null;
+      const soon = !started || started.getTime() - Date.now() < 15 * 60000;
+      return `<div class="card stack" style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px;padding:14px;gap:10px;border-color:var(--orange)">
+        <div class="row" style="gap:10px"><span style="width:34px;height:34px;border-radius:17px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center">${icon(meta.mode === 'audio' ? 'microphone' : 'camera')}</span><div class="grow"><div style="font-size:14px;font-weight:700">${h(m.body)}</div>${started ? `<div class="small muted">${started.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>` : '<div class="small muted">Now</div>'}</div></div>
+        ${soon ? `<a class="btn btn-sm btn-primary" href="#/call/${h(meta.room)}">${icon('camera')} Join the call</a>` : `<div class="small muted">Opens 15 minutes before</div>`}
+        <div class="small" style="opacity:.6;text-align:right">${when(m.createdAt)}</div></div>`;
+    }
     const att = m.attachment ? attachmentHtml(m.attachment, { max: 260 }) : '';
     const yt = youtubeEmbed(m.body || '');
     if (att && !m.body) return `<div style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px">${att}<div class="small muted" style="text-align:right;margin-top:3px">${when(m.createdAt)}</div></div>`;
@@ -53,7 +62,7 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
     ${topbar(t.title, '/inbox', t.canSchedule ? `<button class="iconbtn" id="sched" aria-label="Schedule interview" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('calendar-check')}</button>` : t.canRequestInspection ? `<button class="iconbtn" id="inspect" aria-label="Request inspection" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('calendar-check')}</button>` : t.canOffer ? `<button class="iconbtn" id="mkoffer" aria-label="Make an offer" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('naira-sign')}</button>` : '')}
     ${t.kind === 'declutter' && c ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${icon('tags')}<span class="grow">${c.isSeller ? `${h(t.other.name)} · about your <strong style="color:var(--ink)">${h(c.title)}</strong>` : `<strong style="color:var(--ink)">${h(c.title)}</strong> · ₦${Number(c.price).toLocaleString('en-NG')}`}${c.status !== 'active' ? ' · <strong>' + c.status + '</strong>' : ''}</span><a href="#/declutter/${c.listingId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
     ${t.kind === 'homes' && c ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${icon('house-chimney')}<span class="grow">${c.isOwner ? `${h(t.other.name)} · enquiring about <strong style="color:var(--ink)">${h(c.title)}</strong>` : `<strong style="color:var(--ink)">${h(c.title)}</strong> · ${h(c.district)}`}</span><a href="#/homes/${c.propertyId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
-    ${t.kind === 'match' ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${avatar(t.other.name, 28, color(t.other.name))}<span class="grow">You matched on Buja</span><a href="#/safety/start?with=${encodeURIComponent(t.other.name.split(' ')[0])}&user=${t.other.id}" style="color:var(--green-dark);font-weight:600">${icon('shield-halved')} Meeting up?</a><a href="#/match/profile/${t.other.id}" style="color:var(--orange-dark);font-weight:600">Profile</a></div>` : ''}
+    ${t.kind === 'match' ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${avatar(t.other.name, 28, color(t.other.name))}<span class="grow">You matched on Buja</span><button id="vcall" style="background:none;border:none;color:var(--orange-dark);font-weight:600;font-size:12px;cursor:pointer">${icon('camera')} Video</button><button id="acall" style="background:none;border:none;color:var(--orange-dark);font-weight:600;font-size:12px;cursor:pointer">${icon('microphone')} Call</button><a href="#/safety/start?with=${encodeURIComponent(t.other.name.split(' ')[0])}&user=${t.other.id}" style="color:var(--green-dark);font-weight:600">${icon('shield-halved')} Meet?</a><a href="#/match/profile/${t.other.id}" style="color:var(--orange-dark);font-weight:600">Profile</a></div>` : ''}
     ${c && t.kind !== 'homes' && t.kind !== 'declutter' ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${avatar(t.other.name, 28, color(t.other.name))}<span class="grow">${state.user.kind === 'company' ? `${h(t.other.name)} · applied for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong> · ${c.match}% match` : `Recruiting for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong>`}</span><a href="#/work/${state.user.kind === 'company' ? 'company/job/' + c.jobId : 'job/' + c.jobId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
     <main id="msgs" class="stack" style="padding:8px 16px 0;gap:12px;flex:1" data-last="${t.messages.length ? t.messages[t.messages.length - 1].id : 0}">${t.messages.map(bubble).join('')}</main>
     <div id="sheet"></div>
@@ -140,6 +149,9 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
           toast('Recording. Tap again to stop.');
         } catch { toast('Microphone permission is needed for voice notes.'); }
       });
+      const ring = async (mode) => { try { const r = await api.startCall(id, mode); go('/call/' + r.call.room); } catch (err) { failed(el, err); } };
+      el.querySelector('#vcall')?.addEventListener('click', () => ring('video'));
+      el.querySelector('#acall')?.addEventListener('click', () => ring('audio'));
       el.querySelector('#compose').addEventListener('submit', async (e) => {
         e.preventDefault(); const i = el.querySelector('#body'); const v = i.value.trim(); if (!v && !pending) return; i.value = '';
         const att = pending; pending = null; showPending();
@@ -181,6 +193,7 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
           <div class="row" style="gap:10px"><div class="field" style="flex:1"><label for="date">Date</label><input class="input" id="date" type="date" value="${def}" min="${new Date().toISOString().slice(0, 10)}"></div><div class="field" style="flex:1"><label for="time">Time</label><input class="input" id="time" type="time" value="10:00"></div></div>
           <div class="error" data-error="at"></div>
           ${field({ id: 'place', label: 'Where', placeholder: 'Zenith Bank, Maitama branch' })}
+          <div class="field"><label>How</label><div class="seg" id="how"><button type="button" data-v="0" class="on">In person</button><button type="button" data-v="1">Video call on Buja</button></div><div class="hint" id="howhint">They come to your office.</div></div>
           ${field({ id: 'with', label: 'With (optional)', placeholder: 'Ngozi Eze, Branch Manager' })}
           ${field({ id: 'note', label: 'Anything to bring or know (optional)', placeholder: 'Bring a valid ID' })}
           <button class="btn btn-primary" type="submit">${icon('paper-plane')} Send invitation</button>
@@ -188,10 +201,21 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
         </form>`;
         clearOnInput(el.querySelector('#sheet')); scroll();
         el.querySelector('#closeinv').addEventListener('click', () => { el.querySelector('#sheet').innerHTML = ''; });
+        const how = el.querySelector('#how');
+        how.addEventListener('click', (e) => {
+          const b = e.target.closest('button[data-v]'); if (!b) return;
+          how.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+          const virtual = b.dataset.v === '1';
+          el.querySelector('#howhint').textContent = virtual ? 'Buja creates a private video room. Both of you join from inside the app, nothing to install.' : 'They come to your office.';
+          const place = el.querySelector('#place');
+          place.closest('.field').style.display = virtual ? 'none' : '';
+          if (virtual) place.value = '';
+        });
         el.querySelector('#inv').addEventListener('submit', async (e) => {
           e.preventDefault(); const f = e.target; const btn = f.querySelector('[type=submit]'); showErrors(el, {}); busy(btn, true);
           const localAt = new Date(f.date.value + 'T' + f.time.value); const at = new Date(localAt.getTime() - localAt.getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' ');
-          try { await api.invite(id, { at, place: f.place.value, with: f.with.value, note: f.note.value }); toast('Invitation sent'); if (location.hash === '#/inbox/' + id) location.reload(); else location.hash = '#/inbox/' + id; } catch (err) { busy(btn, false); failed(el, err); }
+          const virtual = el.querySelector('#how button.on').dataset.v === '1';
+          try { await api.invite(id, { at, virtual, place: f.place.value, with: f.with.value, note: f.note.value }); toast('Invitation sent'); if (location.hash === '#/inbox/' + id) location.reload(); else location.hash = '#/inbox/' + id; } catch (err) { busy(btn, false); failed(el, err); }
         });
       });
     }

@@ -13,6 +13,7 @@ import { registerTrust } from './trust.js';
 import { registerCity } from './city.js';
 import { registerSafety } from './safety.js';
 import { registerGrowth } from './growth.js';
+import { registerCall } from './call.js';
 
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__bujaInstall = e; });
 
@@ -240,6 +241,15 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
 }, { async mount(el) {
   el.querySelector('#homeask')?.addEventListener('submit', (e) => { e.preventDefault(); const v = el.querySelector('#hq').value.trim(); go('/ask' + (v ? '?q=' + encodeURIComponent(v) : '')); });
   api.matchSuggest?.().catch(() => {});
+  api.weather?.().then(({ weather: w }) => {
+    const box = document.getElementById('weather'); if (!box || !w) return;
+    const art = { sun: '#F5A524', cloud: '#7A8290', rain: '#2E7DD1', storm: '#6B4FA8' }[w.icon] || '#7A8290';
+    box.innerHTML = `<div class="card row" style="padding:12px 16px;gap:14px;align-items:center">
+      <div style="width:44px;height:44px;border-radius:14px;background:${art}1A;color:${art};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;font-weight:700">${w.temp}°</div>
+      <div class="grow" style="min-width:0"><div style="font-size:14px;font-weight:650">${h(w.label)} in Abuja</div><div class="small muted">Feels ${w.feels}° · ${w.low}° to ${w.high}° · rain ${w.rainChance}%</div></div>
+    </div>
+    <div class="small muted" style="padding:6px 4px 0;line-height:1.4">${h(w.advice)}</div>`;
+  }).catch(() => {});
   try {
     const t = await api.today(); state.unread = t.unread; setBadge(t.unread);
     const dot = el.querySelector('#belldot'); if (dot) dot.style.display = t.notifications_unread ? '' : 'none';
@@ -329,6 +339,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerCall({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerGrowth({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerSafety({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerCity({ route, go, state, api, radio, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });

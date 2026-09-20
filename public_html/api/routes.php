@@ -187,3 +187,9 @@ $router->get('/search',                      [SearchController::class, 'index'])
 $router->get('/me/invite',                   [InviteController::class, 'index']);
 $router->get('/invite/{code}',               [InviteController::class, 'show']);
 $router->post('/report',                     [ReportController::class, 'create']);
+
+// Calls and weather
+$router->post('/threads/{id}/call',          [CallController::class, 'create']);
+$router->get('/call/{room}',                 [CallController::class, 'show']);
+$router->post('/call/{room}/end',            [CallController::class, 'end']);
+$router->get('/weather',                     [WeatherController::class, 'index']);
