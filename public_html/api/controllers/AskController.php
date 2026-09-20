@@ -205,17 +205,17 @@ final class AskController
             'gemini' => [
                 rtrim((string) Http::config('gemini_endpoint', 'https://generativelanguage.googleapis.com/v1beta/models'), '/') . '/' . (string) Http::config('gemini_model', 'gemini-3.6-flash') . ':generateContent?key=' . rawurlencode($key),
                 ['content-type: application/json'],
-                json_encode(['systemInstruction' => ['parts' => [['text' => $system]]], 'contents' => [['role' => 'user', 'parts' => [['text' => $q]]]], 'generationConfig' => ['temperature' => 0.4, 'maxOutputTokens' => 700, 'responseMimeType' => 'application/json']], JSON_UNESCAPED_UNICODE),
+                json_encode(['systemInstruction' => ['parts' => [['text' => $system]]], 'contents' => [['role' => 'user', 'parts' => [['text' => $q]]]], 'generationConfig' => ['temperature' => 0.4, 'maxOutputTokens' => 1400, 'responseMimeType' => 'application/json']], JSON_UNESCAPED_UNICODE),
             ],
             'groq' => [
                 'https://api.groq.com/openai/v1/chat/completions',
                 ['content-type: application/json', 'authorization: Bearer ' . $key],
-                json_encode(['model' => (string) Http::config('groq_model', 'llama-3.3-70b-versatile'), 'temperature' => 0.4, 'max_tokens' => 700, 'response_format' => ['type' => 'json_object'], 'messages' => [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => $q]]], JSON_UNESCAPED_UNICODE),
+                json_encode(['model' => (string) Http::config('groq_model', 'llama-3.3-70b-versatile'), 'temperature' => 0.4, 'max_tokens' => 1400, 'response_format' => ['type' => 'json_object'], 'messages' => [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => $q]]], JSON_UNESCAPED_UNICODE),
             ],
             'anthropic' => [
                 'https://api.anthropic.com/v1/messages',
                 ['content-type: application/json', 'x-api-key: ' . $key, 'anthropic-version: 2023-06-01'],
-                json_encode(['model' => (string) Http::config('ask_model', 'claude-haiku-4-5-20251001'), 'max_tokens' => 700, 'system' => $system, 'messages' => [['role' => 'user', 'content' => $q]]], JSON_UNESCAPED_UNICODE),
+                json_encode(['model' => (string) Http::config('ask_model', 'claude-haiku-4-5-20251001'), 'max_tokens' => 1400, 'system' => $system, 'messages' => [['role' => 'user', 'content' => $q]]], JSON_UNESCAPED_UNICODE),
             ],
             default => [null, [], null],
         };

@@ -9,7 +9,7 @@ final class InviteController
         if (!empty($row['invite_code'])) return (string) $row['invite_code'];
         for ($i = 0; $i < 5; $i++) {
             $code = strtoupper(substr(str_replace(['0', 'O', 'I', '1', 'l'], '', base_convert(bin2hex(random_bytes(6)), 16, 36)), 0, 6));
-            if (mb_strlen($code) < 6) continue;
+            if (mb_strlen($code) < 6 || ctype_digit($code)) continue; // all-digit codes read like a number, not a code
             if (!Db::one('SELECT id FROM users WHERE invite_code = ?', [$code])) { Db::run('UPDATE users SET invite_code = ? WHERE id = ?', [$code, $u['id']]); return $code; }
         }
         return 'BUJA' . $u['id'];
@@ -28,9 +28,9 @@ final class InviteController
     }
 
     /** GET /invite/{code} : who is inviting me, shown before sign-up */
-    public function show(string $code): void
+    public function show(string|int $code): void
     {
-        $u = Db::one('SELECT id, name, district FROM users WHERE invite_code = ? AND deleted_at IS NULL', [strtoupper($code)]);
+        $u = Db::one('SELECT id, name, district FROM users WHERE invite_code = ? AND deleted_at IS NULL', [strtoupper((string) $code)]);
         if (!$u) Http::json(['error' => 'not_found', 'message' => 'That invite link is not valid.'], 404);
         Http::json(['from' => ['name' => explode(' ', trim($u['name']))[0], 'district' => $u['district']]]);
     }

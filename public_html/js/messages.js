@@ -208,19 +208,18 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
         clearOnInput(el.querySelector('#sheet')); scroll();
         el.querySelector('#closeinv').addEventListener('click', () => { el.querySelector('#sheet').innerHTML = ''; });
         const how = el.querySelector('#how');
-        how.addEventListener('click', (e) => {
+        how?.addEventListener('click', (e) => {
           const b = e.target.closest('button[data-v]'); if (!b) return;
           how.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
           const virtual = b.dataset.v === '1';
-          el.querySelector('#howhint').textContent = virtual ? 'Buja creates a private video room. Both of you join from inside the app, nothing to install.' : 'They come to your office.';
+          const hint = el.querySelector('#howhint'); if (hint) hint.textContent = virtual ? 'Buja creates a private video room. Both of you join from inside the app, nothing to install.' : 'They come to your office.';
           const place = el.querySelector('#place');
-          place.closest('.field').style.display = virtual ? 'none' : '';
-          if (virtual) place.value = '';
+          if (place) { const wrap = place.closest('.field'); if (wrap) wrap.style.display = virtual ? 'none' : ''; if (virtual) place.value = ''; }
         });
         el.querySelector('#inv').addEventListener('submit', async (e) => {
           e.preventDefault(); const f = e.target; const btn = f.querySelector('[type=submit]'); showErrors(el, {}); busy(btn, true);
           const localAt = new Date(f.date.value + 'T' + f.time.value); const at = new Date(localAt.getTime() - localAt.getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' ');
-          const virtual = el.querySelector('#how button.on').dataset.v === '1';
+          const virtual = el.querySelector('#how button.on')?.dataset.v === '1';
           try { await api.invite(id, { at, virtual, place: f.place.value, with: f.with.value, note: f.note.value }); toast('Invitation sent'); if (location.hash === '#/inbox/' + id) location.reload(); else location.hash = '#/inbox/' + id; } catch (err) { busy(btn, false); failed(el, err); }
         });
       });
