@@ -16,14 +16,19 @@ final class WebPush
     public static function keys(): array
     {
         $row = Db::one("SELECT v FROM app_keys WHERE k = 'vapid'");
-        if ($row) return json_decode($row['v'], true);
+        if ($row) {
+            $j = json_decode((string) $row['v'], true);
+            // Stored base64 so the binary public key survives JSON. Older broken rows (json_encode of raw bytes) decode to null and are regenerated.
+            if (is_array($j) && !empty($j['pem']) && !empty($j['public_b64'])) return ['pem' => $j['pem'], 'public' => base64_decode($j['public_b64'])];
+            Db::run("DELETE FROM app_keys WHERE k = 'vapid'");
+            Db::run('DELETE FROM push_subscriptions'); // subscriptions were signed against the lost key and would be rejected
+        }
         $key = openssl_pkey_new(['curve_name' => 'prime256v1', 'private_key_type' => OPENSSL_KEYTYPE_EC]);
         openssl_pkey_export($key, $pem);
         $d = openssl_pkey_get_details($key);
         $pub = "\x04" . str_pad($d['ec']['x'], 32, "\0", STR_PAD_LEFT) . str_pad($d['ec']['y'], 32, "\0", STR_PAD_LEFT);
-        $v = ['pem' => $pem, 'public' => $pub];
-        Db::run("INSERT INTO app_keys (k, v) VALUES ('vapid', ?)", [json_encode($v)]);
-        return $v;
+        Db::run("INSERT INTO app_keys (k, v) VALUES ('vapid', ?)", [json_encode(['pem' => $pem, 'public_b64' => base64_encode($pub)])]);
+        return ['pem' => $pem, 'public' => $pub];
     }
 
     public static function publicKeyB64u(): string { return self::b64u(self::keys()['public']); }
