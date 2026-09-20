@@ -21,10 +21,10 @@ final class Alerts
         if (!empty($f['kind']) && ($row['kind'] ?? '') !== $f['kind']) return false;
         if (!empty($f['condition']) && ($row['condition'] ?? '') !== $f['condition']) return false;
         if (!empty($f['beds']) && (int) ($row['beds'] ?? 0) < (int) $f['beds']) return false;
-        $price = (int) ($row['price'] ?? $row['pay_min'] ?? 0);
+        $price = (int) ($row['price'] ?? $row['salary_min'] ?? 0);
         if (!empty($f['max']) && $price > 0 && $price > (int) $f['max']) return false;
         if (!empty($f['min']) && $price > 0 && $price < (int) $f['min']) return false;
-        if ($module === 'work' && !empty($f['payMin']) && (int) ($row['pay_max'] ?? $row['pay_min'] ?? 0) > 0 && (int) ($row['pay_max'] ?? 0) < (int) $f['payMin']) return false;
+        if ($module === 'work' && !empty($f['payMin']) && (int) ($row['salary_max'] ?? $row['salary_min'] ?? 0) > 0 && (int) ($row['salary_max'] ?? 0) < (int) $f['payMin']) return false;
         return true;
     }
 

@@ -205,3 +205,13 @@ $router->get('/saved-searches',              [SavedSearchController::class, 'ind
 $router->post('/saved-searches',             [SavedSearchController::class, 'create']);
 $router->patch('/saved-searches/{id}',       [SavedSearchController::class, 'update']);
 $router->delete('/saved-searches/{id}',      [SavedSearchController::class, 'remove']);
+
+// Ratings for people, road alerts, weekly digest
+$router->get('/users/{id}/ratings',          [RatingController::class, 'show']);
+$router->get('/threads/{id}/rating',         [RatingController::class, 'status']);
+$router->post('/threads/{id}/rate',          [RatingController::class, 'create']);
+$router->get('/waka/alerts',                 [WakaAlertController::class, 'index']);
+$router->post('/waka/alerts',                [WakaAlertController::class, 'create']);
+$router->post('/waka/alerts/{id}/vote',      [WakaAlertController::class, 'vote']);
+$router->get('/me/digest',                   [DigestController::class, 'preview']);
+$router->get('/cron/digest',                 [DigestController::class, 'run']);

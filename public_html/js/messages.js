@@ -149,6 +149,12 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
           toast('Recording. Tap again to stop.');
         } catch { toast('Microphone permission is needed for voice notes.'); }
       });
+      api.ratingStatus(id).then((rs) => {
+        if (!rs.canRate) return;
+        const box = document.createElement('div');
+        box.innerHTML = `<a class="card row" href="#/rate/${id}" style="margin:10px 16px;padding:12px 14px;gap:10px;border-style:dashed"><span style="width:32px;height:32px;border-radius:10px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0">★</span><span class="grow"><span style="display:block;font-size:13px;font-weight:650">How did it go with ${h(rs.other.name)}?</span><span class="small muted">Your rating helps the next person</span></span></a>`;
+        el.querySelector('#attachbar')?.before(box.firstElementChild);
+      }).catch(() => {});
       const ring = async (mode) => { try { const r = await api.startCall(id, mode); go('/rtc/' + r.call.room); } catch (err) { failed(el, err); } };
       el.querySelector('#vcall')?.addEventListener('click', () => ring('video'));
       el.querySelector('#acall')?.addEventListener('click', () => ring('audio'));

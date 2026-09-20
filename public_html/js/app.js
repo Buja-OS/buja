@@ -15,6 +15,7 @@ import { registerSafety } from './safety.js';
 import { registerGrowth } from './growth.js';
 import { registerCall } from './call.js';
 import { registerAlerts } from './alerts.js';
+import { registerTrustAlerts, ringer } from './trustalerts.js';
 import { registerRtc, watchIncoming } from './rtc.js';
 
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__bujaInstall = e; });
@@ -319,7 +320,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
     <div class="stack" style="gap:10px"><div class="section">NOTIFICATIONS</div>
       <div class="card list" id="notif">
         <div class="item"><div class="mi">${icon('bell')}</div><div class="grow"><div class="t">Push notifications on this device</div><div class="s" id="pushs">Checking…</div></div><button class="switch" id="pushtoggle" role="switch" aria-checked="false" aria-label="Push notifications"><span></span></button></div>
-        ${[['work', 'briefcase', 'Interviews, messages and applications'], ['match', 'heart', 'New matches and people near you'], ['news', 'circle-info', 'Urgent Abuja news only, up to 3 a day'], ['social', 'message', 'Replies to your posts'], ['waka', 'route', 'Fare changes on saved routes'], ['offers', 'bolt', 'Buja Plus offers']].map(([k, ic, t]) => `<div class="item"><div class="mi">${icon(ic)}</div><div class="grow"><div class="t">${t}</div></div><button class="switch" data-pref="${k}" role="switch" aria-checked="false" aria-label="${t}"><span></span></button></div>`).join('')}
+        ${[['digest', 'paper-plane', 'A weekly email: new jobs, homes and what people are saying'], ['work', 'briefcase', 'Interviews, messages and applications'], ['match', 'heart', 'New matches and people near you'], ['news', 'circle-info', 'Urgent Abuja news only, up to 3 a day'], ['social', 'message', 'Replies to your posts'], ['waka', 'route', 'Fare changes on saved routes'], ['offers', 'bolt', 'Buja Plus offers']].map(([k, ic, t]) => `<div class="item"><div class="mi">${icon(ic)}</div><div class="grow"><div class="t">${t}</div></div><button class="switch" data-pref="${k}" role="switch" aria-checked="false" aria-label="${t}"><span></span></button></div>`).join('')}
       </div>
       <div class="small muted" id="pushhint">Push works in Chrome on Android and on iPhone once Buja is added to the Home Screen.</div>
     </div>
@@ -330,7 +331,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
   mount(el) {
     el.querySelectorAll('#theme button').forEach((b) => b.addEventListener('click', () => { applyTheme(b.dataset.theme); el.querySelectorAll('#theme button').forEach((x) => x.classList.toggle('on', x === b)); }));
     (async () => {
-      let prefs = { work: true, match: true, waka: true, offers: false, news: true, social: true }; let pushed = false;
+      let prefs = { work: true, match: true, waka: true, offers: false, news: true, social: true, digest: true }; let pushed = false;
       try { const t = await api.today(); prefs = t.notifications; pushed = t.pushEnabled; } catch {}
       el.querySelectorAll('[data-pref]').forEach((s) => { const on = !!prefs[s.dataset.pref]; s.classList.toggle('on', on); s.setAttribute('aria-checked', on); s.addEventListener('click', async () => { const next = !s.classList.contains('on'); s.classList.toggle('on', next); s.setAttribute('aria-checked', next); try { await api.notifications({ [s.dataset.pref]: next }); } catch (err) { s.classList.toggle('on', !next); failed(el, err); } }); });
       const tg = el.querySelector('#pushtoggle'), st = el.querySelector('#pushs');
@@ -342,6 +343,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerTrustAlerts({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerAlerts({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerRtc({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerCall({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
@@ -406,5 +408,5 @@ function mountGoogle(el) {
   setInterval(() => { if (!state.user || document.hidden || api.isMock() || !navigator.geolocation) return; navigator.geolocation.getCurrentPosition((p) => { api.pingTrip(p.coords.latitude, p.coords.longitude).catch(() => {}); }, () => {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }); }, 120000);
   setInterval(async () => { if (state.user && !document.hidden && !api.isMock()) { try { const t = await api.today(); if (t.unread !== state.unread) { state.unread = t.unread; setBadge(t.unread); } } catch {} } }, 60000);
   if ('serviceWorker' in navigator && !api.isMock() && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});
-  if (!api.isMock()) watchIncoming({ api, go, state, ui: { icon, h } }); // starts now, waits for a signed-in user
+  if (!api.isMock()) watchIncoming({ api, go, state, ui: { icon, h }, ring: ringer() }); // starts now, waits for a signed-in user
 })();

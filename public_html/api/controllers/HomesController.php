@@ -11,7 +11,7 @@ final class HomesController
     private function landlord(int $ownerId): ?array
     {
         $l = Db::one('SELECT lp.*, u.name AS user_name, u.phone FROM landlord_profiles lp JOIN users u ON u.id = lp.user_id WHERE lp.user_id = ?', [$ownerId]);
-        return $l ? ['id' => (int) $l['user_id'], 'photo' => $l['photo_upload_id'] ? '/api/uploads/' . (int) $l['photo_upload_id'] : null, 'name' => $l['display_name'] ?: $l['user_name'], 'isCompany' => (bool) $l['is_company'], 'verified' => $l['verified_at'] !== null, 'about' => $l['about'], 'listings' => (int) (Db::one("SELECT COUNT(*) AS n FROM properties WHERE owner_id = ? AND status <> 'hidden'", [$ownerId])['n'] ?? 0)] : null;
+        return $l ? ['id' => (int) $l['user_id'], 'rating' => RatingController::summary((int) $l['user_id']), 'photo' => $l['photo_upload_id'] ? '/api/uploads/' . (int) $l['photo_upload_id'] : null, 'name' => $l['display_name'] ?: $l['user_name'], 'isCompany' => (bool) $l['is_company'], 'verified' => $l['verified_at'] !== null, 'about' => $l['about'], 'listings' => (int) (Db::one("SELECT COUNT(*) AS n FROM properties WHERE owner_id = ? AND status <> 'hidden'", [$ownerId])['n'] ?? 0)] : null;
     }
     private function shape(array $p, ?array $u = null, bool $full = false): array
     {

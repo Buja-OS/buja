@@ -1,4 +1,4 @@
-# Buja, Phase 10: photos of places, and searches that watch for you
+# Buja, Phase 11: trust between strangers, live roads, weekly digest
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -274,8 +274,34 @@ notifying, non-matching posts staying silent, the hit counter, and alerts going 
 Bug fixed: a tracking insert sat between saving a search and reading it back, the same last-insert-id
 mistake I made in Phase 9c.
 
+## Phase 11: rating people, roads right now, the weekly email, ringtones
+
+- **Ratings for people.** You can rate someone only after you have both spoken in a conversation here, once
+  per conversation, with stars, ready-made tags for what actually happened ("Showed up on time", "Item not
+  as described", "Asked for money upfront") and an optional line. The summary shows on seller and landlord
+  cards, and `#/people/{id}` is a public page of how somebody deals with people. Tags differ per module,
+  because what matters in Homes is not what matters in Match.
+- **Roads right now.** Nine kinds of report: heavy traffic, road blocked, accident, flooded, checkpoint,
+  fuel queue, protest, no vehicles, and moving freely again. A report goes to people who saved a route
+  through that stop first, then to people in that district, never to everybody. Duplicates merge into one
+  alert and extend it rather than cluttering the list, riders vote "still there" or "it has cleared", and
+  every alert dies on its own, in two to five hours depending on what it is.
+- **The weekly digest.** New jobs in your district, homes and items matching your saved searches, the most
+  talked-about Social posts, and anything waiting in your inbox. Sent to a few people per request so a free
+  host never times out, and skipped entirely when there is nothing worth an email. Preview it any time at
+  `/me/digest`, and turn it off in Settings. Schedule it by calling `/api/cron/digest?key=ADMIN_KEY` weekly.
+- **Ringtones.** Calls now ring: a double tone for an incoming call with vibration, a softer ringback while
+  you wait for an answer. Made with the browser's own audio, so nothing to download and it works offline.
+
+Verified: rating once and being refused twice, a stranger being refused entirely, the summary appearing on
+the seller card, the notification to the rated person; reporting an alert, a duplicate merging and bumping
+the count, voting it cleared, and the notification reaching a rider with that route saved; the digest
+preview, the cron running and then skipping people already sent this week.
+Bugs fixed: a MySQL-only statement that broke alert merging on any other database, and the digest reading
+pay columns by the wrong name.
+
 ## What is next
 
-Phase 11: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 12: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

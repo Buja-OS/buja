@@ -1,6 +1,9 @@
 // Buja chat calls: the two phones connect directly. Buja only passes the handshake, and never sees the
 // audio or video. Registered by app.js.
+import { ringer } from './trustalerts.js';
+
 export function registerRtc({ route, go, state, api, ui, failed }) {
+  const ringBack = ringer();
   const { h, toast, icon } = ui;
 
   route('/rtc/:room', { auth: true, tabs: '' }, async ({ room }) => {
@@ -59,11 +62,13 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
       let pc = null, local = null, since = 0, poll = null, timer = null, started = 0, closed = false, facing = 'user', camTrack = null;
 
       $('#pulse')?.classList.add('ring');
+      if (c.caller) ringBack.start('outgoing');
       if (wantVideo) { $('#cam').classList.add('on'); }
       else { $('#cam').style.display = 'none'; $('#flip').style.display = 'none'; }
 
       const stop = async (tellServer = true) => {
         if (closed) return; closed = true;
+        ringBack.stop();
         clearInterval(poll); clearInterval(timer);
         try { local?.getTracks().forEach((t) => t.stop()); } catch {}
         try { pc?.close(); } catch {}
@@ -88,6 +93,7 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
       pc.onconnectionstatechange = () => {
         const s = pc.connectionState;
         if (s === 'connected') {
+          ringBack.stop();
           $('#pulse')?.classList.remove('ring');
           started = started || Date.now(); say('Connected'); clearInterval(timer);
           timer = setInterval(() => { const n = Math.floor((Date.now() - started) / 1000); say(String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0')); }, 1000);
@@ -194,13 +200,13 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
 }
 
 /** The banner that appears anywhere in the app when somebody rings you. */
-export function watchIncoming({ api, go, ui, state }) {
+export function watchIncoming({ api, go, ui, state, ring }) {
   const { icon, h } = ui;
   let shown = null;
   const tick = async () => {
     if (!state.user || document.hidden || location.hash.startsWith('#/rtc/') || location.hash.startsWith('#/call/')) return;
     let call; try { call = (await api.incomingCall()).call; } catch { return; }
-    if (!call) { if (shown) { document.getElementById('ringing')?.remove(); shown = null; } return; }
+    if (!call) { if (shown) { document.getElementById('ringing')?.remove(); shown = null; ring?.stop(); } return; }
     if (shown === call.room) return;
     shown = call.room;
     const bar = document.createElement('div');
@@ -213,9 +219,10 @@ export function watchIncoming({ api, go, ui, state }) {
     </div>
     <style>@keyframes bjdrop{from{transform:translateY(-16px);opacity:0}to{transform:none;opacity:1}}@keyframes bjpulse{0%{box-shadow:0 0 0 0 rgba(47,191,78,.55)}70%{box-shadow:0 0 0 16px rgba(47,191,78,0)}100%{box-shadow:0 0 0 0 rgba(47,191,78,0)}}</style>`;
     document.body.appendChild(bar);
-    bar.querySelector('#acc').addEventListener('click', () => { bar.remove(); shown = null; go('/rtc/' + call.room); });
-    bar.querySelector('#decl').addEventListener('click', async () => { bar.remove(); shown = null; try { await api.declineCall(call.room); } catch {} });
-    setTimeout(() => { if (document.getElementById('ringing')) { document.getElementById('ringing').remove(); shown = null; } }, 40000);
+    ring?.start('incoming');
+    bar.querySelector('#acc').addEventListener('click', () => { ring?.stop(); bar.remove(); shown = null; go('/rtc/' + call.room); });
+    bar.querySelector('#decl').addEventListener('click', async () => { ring?.stop(); bar.remove(); shown = null; try { await api.declineCall(call.room); } catch {} });
+    setTimeout(() => { if (document.getElementById('ringing')) { ring?.stop(); document.getElementById('ringing').remove(); shown = null; } }, 40000);
   };
   setInterval(tick, 5000);
 }
