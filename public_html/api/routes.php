@@ -192,4 +192,8 @@ $router->post('/report',                     [ReportController::class, 'create']
 $router->post('/threads/{id}/call',          [CallController::class, 'create']);
 $router->get('/call/{room}',                 [CallController::class, 'show']);
 $router->post('/call/{room}/end',            [CallController::class, 'end']);
+$router->post('/call/{room}/signal',         [CallController::class, 'signal']);
+$router->get('/call/{room}/signals',         [CallController::class, 'signals']);
+$router->post('/call/{room}/decline',        [CallController::class, 'decline']);
+$router->get('/calls/incoming',              [CallController::class, 'incoming']);
 $router->get('/weather',                     [WeatherController::class, 'index']);

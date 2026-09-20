@@ -1,4 +1,4 @@
-# Buja, Phase 9j: calls, weather, voice notes fixed
+# Buja, Phase 9k: proper phone-style calls in chat
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -210,6 +210,26 @@ Bugs fixed: the live position was read from a variable that was never defined, s
 - **Abuja weather on the home screen**: temperature, what it feels like, today's range, rain chance and a line of advice ("Carry an umbrella, and leave earlier than usual"). Open-Meteo, free, no key, cached half an hour, and the last reading is reused if the service is slow.
 
 Verified: voice notes from three recorder formats plus two forgeries; starting a call, joining, an outsider being refused, a scheduled call refusing early joins, and ending a call. Not verified end to end in the sandbox: the virtual-interview branch specifically, which reuses the same room and join code.
+
+## Phase 9k: chat calls are peer to peer, not a meeting room
+
+Jitsi stays where it belongs, on interviews, where a scheduled room with a lobby is the right shape. Chat calls
+are now a real phone call: the two devices connect directly over WebRTC and Buja only passes the handshake.
+No third party sits in the middle, no audio or video ever touches the server, and the screen is Buja's own.
+
+- Full-screen call UI: the other person's video edge to edge, your own preview in the corner, mute, camera
+  off, switch camera, hang up, and a running timer once connected. Audio calls show a large initial instead.
+- An incoming call banner appears anywhere in the app with Answer and Decline, and a push notification covers
+  the case where Buja is closed. Declining tells the caller; 45 seconds with no answer gives up.
+- Signalling rides on Buja's own API: `/call/{room}/signal` and `/signals`. You never receive your own
+  messages, and only the two people in that conversation can read any of it.
+- STUN is free and public. `TURN_URL`, `TURN_USER` and `TURN_PASS` add a relay for networks that refuse a
+  direct connection, which is worth adding once real users are on mobile data.
+
+Verified with two browsers calling each other: ringing, the banner appearing on the second phone, answering,
+audio flowing both ways with a timer running on both sides, and hanging up ending it for both.
+Bug fixed on the way: the incoming-call watcher started before anyone was signed in, and the banner used a
+CSS variable that did not exist so it sat off-screen.
 
 ## What is next
 

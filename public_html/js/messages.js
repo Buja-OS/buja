@@ -46,7 +46,7 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
       const soon = !started || started.getTime() - Date.now() < 15 * 60000;
       return `<div class="card stack" style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px;padding:14px;gap:10px;border-color:var(--orange)">
         <div class="row" style="gap:10px"><span style="width:34px;height:34px;border-radius:17px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center">${icon(meta.mode === 'audio' ? 'microphone' : 'camera')}</span><div class="grow"><div style="font-size:14px;font-weight:700">${h(m.body)}</div>${started ? `<div class="small muted">${started.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>` : '<div class="small muted">Now</div>'}</div></div>
-        ${soon ? `<a class="btn btn-sm btn-primary" href="#/call/${h(meta.room)}">${icon('camera')} Join the call</a>` : `<div class="small muted">Opens 15 minutes before</div>`}
+        ${soon ? `<a class="btn btn-sm btn-primary" href="#${meta.engine === 'jitsi' ? '/call/' : '/rtc/'}${h(meta.room)}">${icon('camera')} Join the call</a>` : `<div class="small muted">Opens 15 minutes before</div>`}
         <div class="small" style="opacity:.6;text-align:right">${when(m.createdAt)}</div></div>`;
     }
     const att = m.attachment ? attachmentHtml(m.attachment, { max: 260 }) : '';
@@ -149,7 +149,7 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
           toast('Recording. Tap again to stop.');
         } catch { toast('Microphone permission is needed for voice notes.'); }
       });
-      const ring = async (mode) => { try { const r = await api.startCall(id, mode); go('/call/' + r.call.room); } catch (err) { failed(el, err); } };
+      const ring = async (mode) => { try { const r = await api.startCall(id, mode); go((r.call.engine === 'jitsi' ? '/call/' : '/rtc/') + r.call.room); } catch (err) { failed(el, err); } };
       el.querySelector('#vcall')?.addEventListener('click', () => ring('video'));
       el.querySelector('#acall')?.addEventListener('click', () => ring('audio'));
       el.querySelector('#compose').addEventListener('submit', async (e) => {

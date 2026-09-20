@@ -45,6 +45,11 @@ return [
     // Ask Buja. Set ASK_PROVIDER to gemini, groq, anthropic or rules. Whichever keys exist are tried in turn,
     // starting with the one you chose, and Ask falls back to keyword matching if they all fail. All optional.
     // Video calls. meet.jit.si is free and needs no account. Point this at your own Jitsi if you ever run one.
+    // Chat calls run phone to phone. STUN is free; a TURN relay is only needed for networks that block
+    // a direct connection. openrelay.metered.ca gives free TURN if you want one.
+    'turn_url' => $env('TURN_URL', ''),
+    'turn_user' => $env('TURN_USER', ''),
+    'turn_pass' => $env('TURN_PASS', ''),
     'jitsi_domain' => $env('JITSI_DOMAIN', 'meet.jit.si'),
     'ask_provider' => $env('ASK_PROVIDER', 'gemini'),
     'gemini_api_key' => $env('GEMINI_API_KEY', ''),      // aistudio.google.com, free, no card

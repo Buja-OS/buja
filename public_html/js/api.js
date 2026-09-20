@@ -185,6 +185,10 @@ export const api = {
   startCall:       (threadId, mode, startsAt) => request('POST', '/threads/' + threadId + '/call', { mode, startsAt }),
   call:            (room) => request('GET', '/call/' + room),
   endCall:         (room) => request('POST', '/call/' + room + '/end'),
+  callSignal:      (room, kind, payload) => request('POST', '/call/' + room + '/signal', { kind, payload }),
+  callSignals:     (room, since) => request('GET', '/call/' + room + '/signals' + qs({ since })),
+  incomingCall:    () => request('GET', '/calls/incoming'),
+  declineCall:     (room) => request('POST', '/call/' + room + '/decline'),
   weather:         () => request('GET', '/weather'),
 };
 
