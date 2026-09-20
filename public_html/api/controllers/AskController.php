@@ -10,13 +10,33 @@ final class AskController
     private function spot(array $s, ?array $u = null): array
     {
         $r = Db::one('SELECT COUNT(*) AS n, AVG(stars) AS avg FROM spot_ratings WHERE spot_id = ?', [$s['id']]);
-        $out = ['id' => (int) $s['id'], 'name' => $s['name'], 'category' => $s['category'], 'categoryLabel' => self::CATEGORIES[$s['category']] ?? $s['category'], 'district' => $s['district'], 'area' => $s['area'], 'tags' => json_decode($s['tags'] ?? '[]', true) ?: [], 'priceLevel' => (int) $s['price_level'], 'priceLabel' => self::PRICE[(int) $s['price_level']] ?? '', 'priceNote' => $s['price_note'], 'description' => $s['description'], 'hours' => $s['hours'], 'verified' => $s['verified_at'] !== null, 'rating' => $r && $r['n'] ? round((float) $r['avg'], 1) : null, 'ratings' => (int) ($r['n'] ?? 0), 'wakaTo' => $s['district']];
+        $out = ['id' => (int) $s['id'], 'name' => $s['name'], 'category' => $s['category'], 'categoryLabel' => self::CATEGORIES[$s['category']] ?? $s['category'], 'district' => $s['district'], 'area' => $s['area'], 'tags' => json_decode($s['tags'] ?? '[]', true) ?: [], 'priceLevel' => (int) $s['price_level'], 'priceLabel' => self::PRICE[(int) $s['price_level']] ?? '', 'priceNote' => $s['price_note'], 'description' => $s['description'], 'hours' => $s['hours'], 'verified' => $s['verified_at'] !== null, 'source' => $s['source'] ?? 'buja', 'lat' => $s['lat'] !== null ? (float) $s['lat'] : null, 'lng' => $s['lng'] !== null ? (float) $s['lng'] : null, 'rating' => $r && $r['n'] ? round((float) $r['avg'], 1) : null, 'ratings' => (int) ($r['n'] ?? 0), 'wakaTo' => $s['district']];
         if ($u) $out['myRating'] = (int) (Db::one('SELECT stars FROM spot_ratings WHERE spot_id = ? AND user_id = ?', [$s['id'], $u['id']])['stars'] ?? 0);
         return $out;
     }
     private function directory(): array
     {
         return Db::pdo()->query("SELECT * FROM spots WHERE active = 1 ORDER BY id")->fetchAll();
+    }
+
+    /** The category a question is about, or null if it is not about a kind of place. */
+    private function categoryOf(string $q): ?string
+    {
+        $ql = mb_strtolower($q);
+        foreach (['food' => ['amala', 'eat', 'food', 'restaurant', 'suya', 'jollof', 'rice', 'chop', 'buka', 'breakfast', 'lunch', 'dinner', 'brunch', 'shawarma', 'pepper soup', 'nkwobi', 'pounded', 'cafe', 'coffee', 'pizza', 'chicken'], 'lounge' => ['lounge', 'bar', 'drink', 'beer', 'cocktail', 'hangout', 'chill', 'shisha'], 'relax' => ['relax', 'serene', 'quiet', 'park', 'lake', 'garden', 'peaceful', 'nature', 'picnic', 'calm'], 'nightlife' => ['club', 'night out', 'party', 'dance', 'dj'], 'shopping' => ['shop', 'mall', 'market', 'buy', 'supermarket', 'groceries'], 'kids' => ['kids', 'children', 'family', 'playground', 'amusement'], 'worship' => ['church', 'mosque', 'pray', 'service', 'mass'], 'culture' => ['art', 'gallery', 'museum', 'sight', 'tour', 'monument'], 'hotel' => ['hotel', 'stay', 'sleep', 'room', 'lodge'], 'services' => ['fix', 'repair', 'barber', 'salon', 'laundry', 'mechanic', 'pharmacy', 'hospital', 'bank', 'fuel', 'petrol']] as $c => $ws)
+            foreach ($ws as $w) if (str_contains($ql, $w)) return $c;
+        return null;
+    }
+
+    /** Where to search around: a district named in the question, else the user's position, else their district. */
+    private function whereIs(array $u, string $q): array
+    {
+        $ql = mb_strtolower($q);
+        foreach (HomesRules::CENTROID as $name => [$lat, $lng]) if (str_contains($ql, mb_strtolower($name))) return [$lat, $lng];
+        $row = Db::one('SELECT lat, lng FROM users WHERE id = ?', [$u['id']]);
+        if ($row && $row['lat'] !== null) return [(float) $row['lat'], (float) $row['lng']];
+        $c = HomesRules::CENTROID[$u['district'] ?? ''] ?? null;
+        return $c ? [$c[0], $c[1]] : [9.0578, 7.4951]; // Central Area
     }
 
     /** Narrows the directory to what this question could plausibly be about, so requests stay small however big Buja grows. */
@@ -50,6 +70,16 @@ final class AskController
         if ($q === '') Http::json(['error' => 'validation', 'fields' => ['question' => 'Ask something.']], 422);
         $spots = $this->directory();
         $shortlist = $this->relevant($q, $spots, $u);
+        $cat = $this->categoryOf($q);
+        // If Buja knows little about what was asked, look it up on the map and keep what it finds.
+        $onTopic = array_values(array_filter($shortlist, fn($s) => $s['category'] === $cat));
+        if ($cat && count($onTopic) < 4) {
+            [$lat, $lng] = $this->whereIs($u, $q);
+            if ($lat) {
+                try { RateLimit::hit('osm', 60, 3600); $found = Osm::nearby($cat, $lat, $lng); } catch (Throwable $e) { $found = []; }
+                if ($found) { $spots = $this->directory(); $shortlist = $this->relevant($q, $spots, $u); }
+            }
+        }
         $result = null;
         foreach ($this->providerChain() as $p) { $result = $this->askModel($p, $q, $shortlist, $u); if ($result !== null) break; }
         if ($result === null) $result = $this->askRules($q, $spots, $u);

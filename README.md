@@ -1,4 +1,4 @@
-# Buja, Phase 9f: Ask on any AI provider, free
+# Buja, Phase 9g: GPS in Waka, Ask from the map
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -176,6 +176,13 @@ Bugs fixed in this pass: tracking calls that ran between an insert and reading b
 - **Grounding is enforced after the answer, not just asked for.** Any place id the model returns that is not in what we sent is dropped, and an unparseable answer falls through to the keyword matcher. Tested by making a stub provider invent a place and return junk.
 - Admin panel shows which provider is in use, the fallbacks behind it, questions asked today, and a seven-day split by provider so you can see when a free quota runs out.
 - **What is never sent to an AI provider:** messages, CVs, profiles, photos, locations. Only the question and the public place directory.
+
+## Phase 9g: your actual position, and real places from the map
+
+- **Waka picks up where you are.** "Use where I am now" in the place picker reads the phone's GPS and lists the six nearest stops with real distances ("0 m from Jabi Motor Park", "665 m from Jabi Lake Mall"), so nobody has to guess which junction they are standing at. It also saves the position for Match distances.
+- **Ask answers from the real map.** When Buja's own directory has fewer than four places matching the kind of thing asked about, Buja queries OpenStreetMap through the free Overpass API around the district named in the question, or the user's position, and writes what it finds into the directory: name, category, district resolved from Buja's own surveyed stops, coordinates, hours and cuisine where OSM has them. Those places are marked "found on OpenStreetMap, nobody on Buja has reviewed it yet" and carry a Map link, so residents can rate and correct them and a moderator can remove them. No key, no bill.
+- **Map credit is now a small ⓘ** in the corner rather than a line of text across the map. The licence requires the credit to be reachable, not printed, so tapping it shows it.
+- New: `api/src/Osm.php`, `migrations/015_osm.sql`.
 
 ## What is next
 

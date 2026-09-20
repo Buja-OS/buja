@@ -17,13 +17,25 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
     });
     return leafletReady;
   }
+  /** Map data credit, required by the licence, kept as a small ⓘ rather than a line of text on the map. */
+  function credit(box) {
+    if (box.querySelector('[data-credit]')) return;
+    const b = document.createElement('button');
+    b.dataset.credit = '1'; b.type = 'button'; b.setAttribute('aria-label', 'Map data credit');
+    b.style.cssText = 'position:absolute;right:8px;bottom:8px;width:22px;height:22px;border-radius:11px;border:none;background:rgba(255,255,255,.82);color:#5A5A62;font:600 12px Inter,sans-serif;z-index:500;cursor:pointer';
+    b.textContent = 'i';
+    b.addEventListener('click', (e) => { e.stopPropagation(); const t = document.getElementById('toast'); if (t) { t.textContent = 'Map data © OpenStreetMap contributors'; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 3200); } });
+    box.style.position = 'relative'; box.appendChild(b);
+  }
+
   async function drawMap(el, legs, focus) {
     const box = el.querySelector('#map'); if (!box) return;
     const ok = await loadLeaflet();
     if (!ok) { box.innerHTML = `<div class="placeholder" style="height:100%;padding:20px"><div class="small muted">Map could not load on this connection. The route steps below still work.</div></div>`; return; }
     box.innerHTML = '';
-    const map = L.map(box, { zoomControl: false, attributionControl: true }).setView([9.06, 7.45], 12);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(map);
+    const map = L.map(box, { zoomControl: false, attributionControl: false }).setView([9.06, 7.45], 12);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+    credit(box);
     const bounds = [];
     legs.forEach((leg) => {
       const pts = leg.path.map((p) => [p.lat, p.lng]); bounds.push(...pts);
@@ -44,12 +56,28 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
       const { places } = await api.wakaPlaces();
       sheet.innerHTML = `<div style="position:fixed;inset:0;background:var(--surface);z-index:30;display:flex;flex-direction:column;max-width:480px;margin:0 auto">
         <header class="topbar"><button class="iconbtn" id="pclose" aria-label="Close">${icon('arrow-left')}</button><h1>${h(title)}</h1></header>
-        <div class="pad"><div class="card row" style="height:48px;padding:0 16px"><label for="pq" style="position:absolute;left:-9999px">Search places</label>${icon('magnifying-glass')}<input id="pq" type="search" placeholder="Park, junction, landmark" autofocus style="flex:1;border:none;background:transparent;outline:none;font-size:15px;color:var(--ink)"></div></div>
+        <div class="pad stack" style="gap:10px"><div class="card row" style="height:48px;padding:0 16px"><label for="pq" style="position:absolute;left:-9999px">Search places</label>${icon('magnifying-glass')}<input id="pq" type="search" placeholder="Park, junction, landmark" autofocus style="flex:1;border:none;background:transparent;outline:none;font-size:15px;color:var(--ink)"></div>
+        <button class="btn btn-outline" id="pgps" style="height:46px">${icon('location-dot')} Use where I am now</button><div class="small muted center" id="pgpsmsg"></div></div>
         <div id="plist" class="pad stack" style="gap:6px;padding-top:12px;overflow-y:auto;flex:1"></div></div>`;
       const list = sheet.querySelector('#plist');
       const render = (v) => { const vv = v.trim().toLowerCase(); const rows = places.filter((p) => !vv || p.name.toLowerCase().includes(vv) || p.district.toLowerCase().includes(vv)); list.innerHTML = rows.map((p) => `<button class="card row" data-p="${p.id}" style="padding:12px 14px;text-align:left;width:100%;gap:12px"><span class="iconbtn" style="width:36px;height:36px;font-size:14px;color:${p.kind === 'park' ? 'var(--orange-dark)' : 'var(--ink-3)'}">${icon(p.kind === 'park' ? 'bus' : 'location-dot')}</span><span class="grow"><span style="font-size:15px;font-weight:600;display:block">${h(p.name)}</span><span class="small muted">${h(p.district)}${p.kind === 'park' ? ' · motor park' : ''}</span></span></button>`).join('') || `<div class="small muted center" style="padding:30px 0">No place found. More stops are added as riders suggest them.</div>`; };
       render('');
       sheet.querySelector('#pq').addEventListener('input', (e) => render(e.target.value));
+      sheet.querySelector('#pgps').addEventListener('click', (e) => {
+        const btn = e.currentTarget, msg = sheet.querySelector('#pgpsmsg');
+        if (!navigator.geolocation) { msg.textContent = 'This phone cannot share location.'; return; }
+        busy(btn, true); msg.textContent = 'Finding you…';
+        navigator.geolocation.getCurrentPosition((pos) => {
+          const { latitude: la, longitude: lo } = pos.coords;
+          const km = (a, b, c, d) => { const R = 6371, r = Math.PI / 180, dLa = (c - a) * r, dLo = (d - b) * r; const x = Math.sin(dLa / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
+          const ranked = places.map((p) => ({ p, d: km(la, lo, p.lat, p.lng) })).sort((x, y) => x.d - y.d);
+          const near = ranked.slice(0, 6);
+          busy(btn, false);
+          msg.textContent = near[0].d < 1 ? `You are about ${Math.round(near[0].d * 1000)} m from ${near[0].p.name}` : `Nearest stop is ${near[0].p.name}, about ${near[0].d.toFixed(1)} km away`;
+          list.innerHTML = near.map(({ p, d }) => `<button class="card row" data-p="${p.id}" style="padding:12px 14px;text-align:left;width:100%;gap:12px"><span class="iconbtn" style="width:36px;height:36px;font-size:14px;color:${p.kind === 'park' ? 'var(--orange-dark)' : 'var(--ink-3)'}">${icon(p.kind === 'park' ? 'bus' : 'location-dot')}</span><span class="grow"><span style="font-size:15px;font-weight:600;display:block">${h(p.name)}</span><span class="small muted">${h(p.district)} · ${d < 1 ? Math.round(d * 1000) + ' m away' : d.toFixed(1) + ' km away'}</span></span></button>`).join('');
+          api.setLocation(la, lo).catch(() => {});
+        }, () => { busy(btn, false); msg.textContent = 'Could not get your location. Check the permission for this site.'; }, { enableHighAccuracy: true, timeout: 12000 });
+      });
       sheet.querySelector('#pclose').addEventListener('click', () => { sheet.innerHTML = ''; });
       list.addEventListener('click', (e) => { const b = e.target.closest('[data-p]'); if (!b) return; const p = places.find((x) => x.id === +b.dataset.p); sheet.innerHTML = ''; onPick(p); });
     };

@@ -60,8 +60,9 @@ export function registerSafety({ route, go, state, api, ui, failed }) {
     const box = el.querySelector('#map'); if (!box) return;
     const d = data || (await api.safety()).active; if (!d || !d.last) { box.innerHTML = `<div class="placeholder" style="height:100%"><div class="small muted">Waiting for your first position…</div></div>`; return; }
     const ok = await loadLeaflet(); if (!ok) { box.innerHTML = `<div class="placeholder" style="height:100%;padding:16px"><div class="small muted">Last seen at ${d.last.lat.toFixed(4)}, ${d.last.lng.toFixed(4)}</div></div>`; return; }
-    box.innerHTML = ''; const map = L.map(box, { zoomControl: false }).setView([d.last.lat, d.last.lng], 15);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(map);
+    box.innerHTML = ''; const map = L.map(box, { zoomControl: false, attributionControl: false }).setView([d.last.lat, d.last.lng], 15);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+    if (!box.querySelector('[data-credit]')) { const b = document.createElement('button'); b.dataset.credit = '1'; b.type = 'button'; b.setAttribute('aria-label', 'Map data credit'); b.textContent = 'i'; b.style.cssText = 'position:absolute;right:8px;bottom:8px;width:22px;height:22px;border-radius:11px;border:none;background:rgba(255,255,255,.82);color:#5A5A62;font:600 12px Inter,sans-serif;z-index:500'; b.addEventListener('click', (e) => { e.stopPropagation(); toast('Map data © OpenStreetMap contributors'); }); box.style.position = 'relative'; box.appendChild(b); }
     if (d.track && d.track.length > 1) L.polyline(d.track.map((p) => [p.lat, p.lng]), { color: '#FF7A1A', weight: 5, opacity: .85 }).addTo(map);
     L.circleMarker([d.last.lat, d.last.lng], { radius: 10, color: '#fff', weight: 3, fillColor: d.status === 'alarm' ? '#D92D20' : '#FF7A1A', fillOpacity: 1 }).addTo(map);
     setTimeout(() => map.invalidateSize(), 200);
