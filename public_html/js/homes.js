@@ -1,4 +1,6 @@
 // Buja Homes: search, property detail, landlord dashboard. Registered into the app router by app.js.
+import { saveSearchBar, bindSaveSearch } from './alerts.js';
+
 export function registerHomes({ route, go, state, api, ui, DISTRICTS, failed }) {
   const { h, toast, topbar, field, showErrors, clearOnInput, busy, avatar, icon } = ui;
   const naira = (n) => n == null ? '' : '₦' + Number(n).toLocaleString('en-NG');
@@ -45,12 +47,14 @@ export function registerHomes({ route, go, state, api, ui, DISTRICTS, failed }) 
     </div>
     <main class="pad stack" style="gap:12px;padding-top:12px">
       <div class="row small muted" style="justify-content:space-between"><span>${r.total} home${r.total === 1 ? '' : 's'} · <strong style="color:var(--green-dark)">${r.direct} direct from landlords</strong></span><span>${f.near ? 'Closest to Central first' : 'Newest first'}</span></div>
+      ${saveSearchBar({ module: 'homes', filters: f, ui: { icon, h } })}
       ${r.properties.length ? r.properties.map(card).join('') : `<div class="placeholder" style="padding:50px 0"><div class="mi card">${icon('house-chimney')}</div><div class="h-md">Nothing matches yet</div><div class="small muted" style="max-width:280px;line-height:1.5">Loosen a filter, or check back. Landlords list here directly, so new homes appear the moment they post.</div></div>`}
     </main>
     <div id="sheet"></div>`;
   }, {
     mount(el) {
       bindSaves(el);
+      bindSaveSearch(el, { api, ui: { toast } });
       const f = Object.fromEntries(q().entries()); f.kind = f.kind || 'rent';
       el.querySelector('#filters')?.addEventListener('click', async () => {
         const { facilities, types } = await api.homes({ kind: f.kind });

@@ -197,3 +197,11 @@ $router->get('/call/{room}/signals',         [CallController::class, 'signals'])
 $router->post('/call/{room}/decline',        [CallController::class, 'decline']);
 $router->get('/calls/incoming',              [CallController::class, 'incoming']);
 $router->get('/weather',                     [WeatherController::class, 'index']);
+
+// Place photos and saved searches
+$router->post('/spots/{id}/photos',          [AskController::class, 'addPhoto']);
+$router->delete('/spots/photos/{id}',        [AskController::class, 'removePhoto']);
+$router->get('/saved-searches',              [SavedSearchController::class, 'index']);
+$router->post('/saved-searches',             [SavedSearchController::class, 'create']);
+$router->patch('/saved-searches/{id}',       [SavedSearchController::class, 'update']);
+$router->delete('/saved-searches/{id}',      [SavedSearchController::class, 'remove']);

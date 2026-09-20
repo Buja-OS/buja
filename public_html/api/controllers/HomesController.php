@@ -116,6 +116,8 @@ final class HomesController
             [$u['id'], $v['kind'], $v['type'], $v['title'], $v['district'], $v['area'] ?: null, $v['price'], $v['beds'], $v['baths'], json_encode($v['fac']), $v['desc'], $v['upfront'], $v['legal'], $v['caution'], 'available', Db::now(), Db::now()]);
         $id = Db::lastId();
         Track::hit($u, 'homes', 'post');
+        $row = Db::one('SELECT * FROM properties WHERE id = ?', [$id]);
+        if ($row) Alerts::fanout('homes', $row, (int) $u['id'], $row['title'] . ', ₦' . number_format((int) $row['price']) . ' in ' . $row['district'], '/#/homes/' . (int) $id);
         Http::json(['property' => $this->shape(Db::one('SELECT * FROM properties WHERE id = ?', [$id]), $u, true)], 201);
     }
 

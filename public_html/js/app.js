@@ -14,6 +14,7 @@ import { registerCity } from './city.js';
 import { registerSafety } from './safety.js';
 import { registerGrowth } from './growth.js';
 import { registerCall } from './call.js';
+import { registerAlerts } from './alerts.js';
 import { registerRtc, watchIncoming } from './rtc.js';
 
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__bujaInstall = e; });
@@ -280,6 +281,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
       <a class="item" href="#/declutter/mine"><div class="mi">${icon('tags')}</div><div class="grow"><div class="t">My listings</div><div class="s">Declutter</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/waka"><div class="mi">${icon('route')}</div><div class="grow"><div class="t">Saved routes</div><div class="s">Waka</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#${u.kind === 'company' ? '/work/company' : '/work/profile'}"><div class="mi">${icon('briefcase')}</div><div class="grow"><div class="t">${u.kind === 'company' ? 'Company and vacancies' : 'My CV and applications'}</div><div class="s">Work</div></div>${icon('chevron-right')}</a>
+      <a class="item" href="#/alerts"><div class="mi">${icon('bell')}</div><div class="grow"><div class="t">Saved searches</div><div class="s">Be told when a job, home or item matches</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/invite"><div class="mi">${icon('paper-plane')}</div><div class="grow"><div class="t">Invite friends</div><div class="s">Buja works better with your people on it</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/install"><div class="mi">${icon('plus')}</div><div class="grow"><div class="t">Install Buja</div><div class="s">Put it on your home screen</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/safety"><div class="mi">${icon('location-dot')}</div><div class="grow"><div class="t">Trip Share</div><div class="s">Tell a friend where you are when you go out</div></div>${icon('chevron-right')}</a>
@@ -340,6 +342,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerAlerts({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerRtc({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerCall({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerGrowth({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });

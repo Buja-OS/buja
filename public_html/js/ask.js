@@ -20,6 +20,7 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
 
   /** A real map tile, shifted so the place sits in the middle, with a pin over it. */
   function thumbHtml(s, size = 56) {
+    if (s.photos && s.photos.length) return `<div style="width:${size}px;height:${size}px;border-radius:12px;flex-shrink:0;overflow:hidden;background:var(--surface)"><img src="${s.photos[0].url}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block"></div>`;
     if (!s.thumb) return `<div style="width:${size}px;height:${size}px;border-radius:12px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon(catIcon[s.category] || 'location-dot')}</div>`;
     const x = Math.round(size / 2 - s.thumb.fx * 256), y = Math.round(size / 2 - s.thumb.fy * 256);
     return `<div style="width:${size}px;height:${size}px;border-radius:12px;flex-shrink:0;position:relative;overflow:hidden;background:#E8EDE4">
@@ -78,6 +79,8 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
     const { spot: s, reviews } = await api.spot(id);
     return `${topbar(s.name, '/ask')}
     <main class="pad stack" style="gap:14px">
+      ${s.photos && s.photos.length ? `<div class="row" id="gal" style="gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px">${s.photos.map((p) => `<div style="position:relative;flex-shrink:0"><img src="${p.url}" alt="" loading="lazy" style="width:${s.photos.length === 1 ? '100%' : '176px'};height:132px;object-fit:cover;border-radius:14px;display:block"><button data-delphoto="${p.id}" aria-label="Remove photo" style="position:absolute;right:6px;top:6px;width:26px;height:26px;border-radius:13px;border:none;background:rgba(0,0,0,.55);color:#fff;font-size:11px">${icon('xmark')}</button></div>`).join('')}</div>` : ''}
+      <label class="btn btn-sm btn-outline" style="width:auto;cursor:pointer">${icon('camera')} ${s.photos && s.photos.length ? 'Add another photo' : 'Add the first photo'}<input type="file" accept="image/*" id="spotpic" style="display:none"></label>
       ${s.thumb ? `<a href="https://www.google.com/maps?q=${s.lat},${s.lng}" target="_blank" rel="noopener" style="display:block;height:150px;border-radius:16px;overflow:hidden;position:relative;background:#E8EDE4">
         <img src="${s.thumb.url}" alt="" style="position:absolute;left:calc(50% - ${Math.round(s.thumb.fx * 256)}px);top:calc(50% - ${Math.round(s.thumb.fy * 256)}px);width:256px;height:256px;max-width:none">
         <span style="position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:8px;background:var(--orange);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></span>
@@ -96,6 +99,18 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
     </main>`;
   }, {
     mount(el, { id }) {
+      el.querySelector('#spotpic')?.addEventListener('change', async (e) => {
+        const f = e.target.files[0]; if (!f) return; toast('Uploading…');
+        try {
+          const bmp = await createImageBitmap(f).catch(() => null);
+          let file = f;
+          if (bmp) { const sc = Math.min(1, 1400 / Math.max(bmp.width, bmp.height)); const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * sc); cv.height = Math.round(bmp.height * sc); cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height); const blob = await new Promise((r) => cv.toBlob(r, 'image/jpeg', 0.85)); file = new File([blob], 'place.jpg', { type: 'image/jpeg' }); }
+          const up = await api.upload(file, 'image');
+          await api.addSpotPhoto(id, up.upload.id);
+          toast('Photo added. Thank you.'); location.reload();
+        } catch (err) { failed(el, err); }
+      });
+      el.querySelectorAll('[data-delphoto]').forEach((b) => b.addEventListener('click', async (e) => { e.preventDefault(); if (!confirm('Remove this photo?')) return; try { await api.removeSpotPhoto(b.dataset.delphoto); location.reload(); } catch (err) { failed(el, err); } }));
       let n = 0; const btns = el.querySelectorAll('#starpick button');
       btns.forEach((b) => { if (b.style.color.includes('orange')) n = +b.dataset.n; b.addEventListener('click', () => { n = +b.dataset.n; btns.forEach((x) => { x.style.color = +x.dataset.n <= n ? 'var(--orange)' : 'var(--line)'; }); }); });
       el.querySelector('#rate').addEventListener('submit', async (e) => { e.preventDefault(); const btn = e.target.querySelector('[type=submit]'); showErrors(el, {}); if (!n) { showErrors(el, { stars: 'Pick 1 to 5 stars.' }); return; } busy(btn, true); try { await api.rateSpot(id, n, el.querySelector('#comment').value); toast('Thanks, rating saved'); location.reload(); } catch (err) { busy(btn, false); failed(el, err); } });

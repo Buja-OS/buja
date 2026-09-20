@@ -72,6 +72,8 @@ final class DeclutterController
         Db::run('INSERT INTO listings (seller_id, title, category, cond, price, negotiable, district, description, delivery, escrow_ok, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', [$u['id'], $v['title'], $v['category'], $v['cond'], $v['price'], $v['negotiable'], $v['district'], $v['description'], $v['delivery'], $v['escrow'], 'active', Db::now(), Db::now()]);
         $id = Db::lastId();
         Track::hit($u, 'declutter', 'list');
+        $row = Db::one('SELECT * FROM listings WHERE id = ?', [$id]);
+        if ($row) Alerts::fanout('declutter', $row, (int) $u['id'], $row['title'] . ', ₦' . number_format((int) $row['price']) . ' in ' . $row['district'], '/#/declutter/' . (int) $id);
         Http::json(['listing' => $this->shape(Db::one('SELECT * FROM listings WHERE id = ?', [$id]), $u, true)], 201);
     }
 

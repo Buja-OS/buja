@@ -1,4 +1,4 @@
-# Buja, Phase 9l: one call system, properly designed
+# Buja, Phase 10: photos of places, and searches that watch for you
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -251,8 +251,31 @@ CSS variable that did not exist so it sat off-screen.
 Verified with two browsers: header buttons, ringing, the banner, answering, audio and video flowing both
 ways with a timer on both sides, mute, speaker, camera and hang up.
 
+## Phase 10: photographs, and saved searches with alerts
+
+- **Places have photographs now.** Anyone can add up to three photos to a place, eight in total per place,
+  resized on the phone before upload. The first photo becomes the card image in Ask, so the directory turns
+  into something people browse rather than read. The map thumbnail stays as the fallback for places nobody
+  has photographed yet. Whoever added a photo can remove it, and so can a moderator; nobody else.
+- **Saved searches.** Set your filters in Work, Homes or Declutter, tap Save this search, and Buja names it
+  for you ("to rent in Lugbe under ₦1,200,000", "\"generator\" under ₦250,000"). When somebody posts
+  something that matches, you get a notification with the title and price. This is the feature that makes
+  people open the app because it told them to, rather than out of habit.
+  - Alerts can be turned off per search without losing the search, each one shows how many matches it has
+    found, and Open it takes you back to exactly those filters.
+  - Matching runs against the newly posted row only, so it costs one small query per post, not a scan.
+  - Up to twelve saved searches, and your own posts never alert you.
+- New: `api/src/Alerts.php`, `api/controllers/SavedSearchController.php`, `js/alerts.js`,
+  `migrations/020_photos_alerts.sql`.
+
+Verified: adding and viewing a photo, the same upload being refused twice, deletion allowed for the author
+and a moderator but refused for anyone else; saving a search, a matching home and a matching item both
+notifying, non-matching posts staying silent, the hit counter, and alerts going quiet when switched off.
+Bug fixed: a tracking insert sat between saving a search and reading it back, the same last-insert-id
+mistake I made in Phase 9c.
+
 ## What is next
 
-Phase 10: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 11: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

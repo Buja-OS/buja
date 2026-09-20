@@ -10,13 +10,45 @@ final class AskController
     private function spot(array $s, ?array $u = null): array
     {
         $r = Db::one('SELECT COUNT(*) AS n, AVG(stars) AS avg FROM spot_ratings WHERE spot_id = ?', [$s['id']]);
-        $out = ['id' => (int) $s['id'], 'name' => $s['name'], 'category' => $s['category'], 'categoryLabel' => self::CATEGORIES[$s['category']] ?? $s['category'], 'district' => $s['district'], 'area' => $s['area'], 'tags' => json_decode($s['tags'] ?? '[]', true) ?: [], 'priceLevel' => (int) $s['price_level'], 'priceLabel' => self::PRICE[(int) $s['price_level']] ?? '', 'priceNote' => $s['price_note'], 'description' => $s['description'], 'hours' => $s['hours'], 'verified' => $s['verified_at'] !== null, 'source' => $s['source'] ?? 'buja', 'lat' => $s['lat'] !== null ? (float) $s['lat'] : null, 'lng' => $s['lng'] !== null ? (float) $s['lng'] : null, 'thumb' => $this->thumb($s), 'away' => $this->away($s, $u), 'rating' => $r && $r['n'] ? round((float) $r['avg'], 1) : null, 'ratings' => (int) ($r['n'] ?? 0), 'wakaTo' => $s['district']];
+        $out = ['id' => (int) $s['id'], 'name' => $s['name'], 'category' => $s['category'], 'categoryLabel' => self::CATEGORIES[$s['category']] ?? $s['category'], 'district' => $s['district'], 'area' => $s['area'], 'tags' => json_decode($s['tags'] ?? '[]', true) ?: [], 'priceLevel' => (int) $s['price_level'], 'priceLabel' => self::PRICE[(int) $s['price_level']] ?? '', 'priceNote' => $s['price_note'], 'description' => $s['description'], 'hours' => $s['hours'], 'verified' => $s['verified_at'] !== null, 'source' => $s['source'] ?? 'buja', 'lat' => $s['lat'] !== null ? (float) $s['lat'] : null, 'lng' => $s['lng'] !== null ? (float) $s['lng'] : null, 'thumb' => $this->thumb($s), 'photos' => $this->photos((int) $s['id']), 'away' => $this->away($s, $u), 'rating' => $r && $r['n'] ? round((float) $r['avg'], 1) : null, 'ratings' => (int) ($r['n'] ?? 0), 'wakaTo' => $s['district']];
         if ($u) $out['myRating'] = (int) (Db::one('SELECT stars FROM spot_ratings WHERE spot_id = ? AND user_id = ?', [$s['id'], $u['id']])['stars'] ?? 0);
         return $out;
     }
     private function directory(): array
     {
         return Db::pdo()->query("SELECT * FROM spots WHERE active = 1 ORDER BY id")->fetchAll();
+    }
+
+    /** Photographs residents have added to this place. */
+    private function photos(int $spotId): array
+    {
+        $st = Db::pdo()->prepare('SELECT id, upload_id FROM spot_photos WHERE spot_id = ? AND hidden_at IS NULL ORDER BY id LIMIT 8');
+        $st->execute([$spotId]);
+        return array_map(fn($p) => ['id' => (int) $p['id'], 'url' => '/api/uploads/' . (int) $p['upload_id']], $st->fetchAll());
+    }
+
+    /** POST /spots/{id}/photos { uploadId } */
+    public function addPhoto(int $id): void
+    {
+        $u = Auth::require(); RateLimit::hit('spotphoto', 20, 86400);
+        if (!Db::one('SELECT id FROM spots WHERE id = ? AND active = 1', [$id])) Http::json(['error' => 'not_found'], 404);
+        if ((int) (Db::one('SELECT COUNT(*) AS n FROM spot_photos WHERE spot_id = ? AND hidden_at IS NULL', [$id])['n'] ?? 0) >= 8) Http::json(['error' => 'validation', 'message' => 'This place already has eight photos.'], 422);
+        if ((int) (Db::one('SELECT COUNT(*) AS n FROM spot_photos WHERE spot_id = ? AND user_id = ? AND hidden_at IS NULL', [$id, $u['id']])['n'] ?? 0) >= 3) Http::json(['error' => 'validation', 'message' => 'You have added three photos here already.'], 422);
+        $upload = UploadsController::claim((int) (Http::body()['uploadId'] ?? 0), $u);
+        Db::run('INSERT INTO spot_photos (spot_id, upload_id, user_id, created_at) VALUES (?,?,?,?)', [$id, $upload, $u['id'], Db::now()]);
+        Track::hit($u, 'ask', 'photo');
+        Http::json(['photos' => $this->photos($id)], 201);
+    }
+
+    /** DELETE /spots/photos/{id} : whoever added it, or a moderator */
+    public function removePhoto(int $id): void
+    {
+        $u = Auth::require();
+        $p = Db::one('SELECT * FROM spot_photos WHERE id = ?', [$id]); if (!$p) Http::json(['error' => 'not_found'], 404);
+        $staff = in_array($u['role'] ?? '', ['admin', 'moderator'], true) || !empty($u['is_admin']);
+        if ((int) $p['user_id'] !== (int) $u['id'] && !$staff) Http::json(['error' => 'forbidden', 'message' => 'Only the person who added that photo can remove it.'], 403);
+        Db::run('UPDATE spot_photos SET hidden_at = ? WHERE id = ?', [Db::now(), $id]);
+        Http::json(['photos' => $this->photos((int) $p['spot_id'])]);
     }
 
     /**

@@ -100,7 +100,9 @@ final class CompanyController
         $id = Db::lastId(); Track::hit(Auth::user(), 'work', 'post_job');
         foreach ($v['reqs'] as $r) Db::run('INSERT INTO job_requirements (job_id, label, weight) VALUES (?,?,?)', [$id, $r['label'], $r['weight']]);
         $pdo->commit();
-        Http::json(['job' => Work::job(Db::one('SELECT * FROM jobs WHERE id = ?', [$id]), $c, ['requirements' => Work::requirements($id)])], 201);
+        $row = Db::one('SELECT * FROM jobs WHERE id = ?', [$id]);
+        if ($row) Alerts::fanout('work', $row + ['company_name' => $c['name']], (int) $u['id'], $row['title'] . ' at ' . $c['name'] . ', ' . $row['district'], '/#/work/job/' . (int) $id);
+        Http::json(['job' => Work::job($row, $c, ['requirements' => Work::requirements($id)])], 201);
     }
 
     /** PATCH /company/jobs/{id}  full update, or { status: 'open'|'closed' } alone */

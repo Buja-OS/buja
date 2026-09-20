@@ -86,7 +86,8 @@ final class UploadsController
             || Db::one('SELECT 1 AS x FROM social_posts WHERE upload_id = ? AND hidden_at IS NULL', [$id]) !== null
             || Db::one('SELECT 1 AS x FROM social_replies WHERE upload_id = ? AND hidden_at IS NULL', [$id]) !== null
             || Db::one('SELECT 1 AS x FROM companies WHERE logo_upload_id = ?', [$id]) !== null
-            || Db::one('SELECT 1 AS x FROM landlord_profiles WHERE photo_upload_id = ?', [$id]) !== null;
+            || Db::one('SELECT 1 AS x FROM landlord_profiles WHERE photo_upload_id = ?', [$id]) !== null
+            || Db::one('SELECT 1 AS x FROM spot_photos WHERE upload_id = ? AND hidden_at IS NULL', [$id]) !== null;
         if (!$allowed) Http::json(['error' => 'forbidden'], 403);
         if ($f['storage_key']) { header('Location: ' . Media::url($f['storage_key'], 900)); header('Cache-Control: private, max-age=300'); exit; }
         header('Content-Type: ' . ($f['mime'] ?: 'application/octet-stream'));
@@ -103,7 +104,7 @@ final class UploadsController
         if (!$id) return null;
         $f = Db::one('SELECT id FROM uploads WHERE id = ? AND user_id = ?', [$id, $u['id']]);
         if (!$f) Http::json(['error' => 'validation', 'message' => 'That attachment is not yours.'], 422);
-        if (Db::one('SELECT 1 AS x FROM messages WHERE upload_id = ?', [$id]) || Db::one('SELECT 1 AS x FROM social_posts WHERE upload_id = ?', [$id])) Http::json(['error' => 'validation', 'message' => 'That attachment is already used.'], 422);
+        if (Db::one('SELECT 1 AS x FROM messages WHERE upload_id = ?', [$id]) || Db::one('SELECT 1 AS x FROM social_posts WHERE upload_id = ?', [$id]) || Db::one('SELECT 1 AS x FROM spot_photos WHERE upload_id = ?', [$id])) Http::json(['error' => 'validation', 'message' => 'That attachment is already used.'], 422);
         return (int) $id;
     }
 }

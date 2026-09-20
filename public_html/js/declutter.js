@@ -1,4 +1,6 @@
 // Buja Declutter: buy and sell nearby. Registered into the app router by app.js.
+import { saveSearchBar, bindSaveSearch } from './alerts.js';
+
 export function registerDeclutter({ route, go, state, api, ui, DISTRICTS, failed }) {
   const { h, toast, topbar, field, showErrors, clearOnInput, busy, avatar, icon } = ui;
   const naira = (n) => n == null ? '' : '₦' + Number(n).toLocaleString('en-NG');
@@ -28,10 +30,11 @@ export function registerDeclutter({ route, go, state, api, ui, DISTRICTS, failed
     <div class="row" style="gap:8px;padding:12px 16px 4px;overflow-x:auto;scrollbar-width:none">${['', ...r.categories].map((c) => `<a class="chip ${(f.category || '') === c ? 'on' : ''}" href="#/declutter?${new URLSearchParams({ ...f, category: c })}">${c || 'All'}</a>`).join('')}</div>
     <main class="pad stack" style="gap:12px;padding-top:10px">
       <div class="row small muted" style="justify-content:space-between"><span>${r.total} item${r.total === 1 ? '' : 's'}</span><span class="row" style="gap:10px">${[['nearby', 'Near me'], ['newest', 'Newest'], ['cheapest', 'Cheapest']].map(([k, v]) => `<a href="#/declutter?${new URLSearchParams({ ...f, sort: k })}" style="font-weight:600;color:${f.sort === k ? 'var(--ink)' : 'var(--ink-3)'}">${v}</a>`).join('')}</span></div>
+      ${saveSearchBar({ module: 'declutter', filters: f, ui: { icon, h } })}
       ${r.listings.length ? `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">${r.listings.map(card).join('')}</div>` : `<div class="placeholder" style="padding:50px 0"><div class="mi card">${icon('tags')}</div><div class="h-md">Nothing here yet</div><div class="small muted" style="max-width:280px;line-height:1.5">Be the first to list something. Items near ${h(state.user.district || 'you')} show first.</div></div>`}
     </main>
     <a href="#/declutter/sell" style="position:fixed;right:16px;bottom:calc(var(--tab-h) + var(--safe-b) + 16px);height:52px;padding:0 20px;display:flex;align-items:center;gap:10px;background:var(--orange);color:#fff;border-radius:26px;font-size:15px;font-weight:700;box-shadow:0 8px 24px rgba(255,122,26,.35);z-index:15">${icon('plus')} Sell</a>`;
-  }, { mount(el) { bindSaves(el); el.querySelector('#q')?.addEventListener('submit', (e) => { e.preventDefault(); const p = q(); p.set('q', e.target.q.value); go('/declutter?' + p); }); } });
+  }, { mount(el) { bindSaves(el); bindSaveSearch(el, { api, ui: { toast } }); el.querySelector('#q')?.addEventListener('submit', (e) => { e.preventDefault(); const p = q(); p.set('q', e.target.q.value); go('/declutter?' + p); }); } });
 
   route('/declutter/saved', { auth: true, tabs: '' }, async () => { const { listings } = await api.dSaved(); return `${topbar('Saved items', '/declutter')}<main class="pad">${listings.length ? `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">${listings.map(card).join('')}</div>` : `<div class="placeholder" style="padding:50px 0"><div class="mi card">${icon('regular/heart')}</div><div class="h-md">Nothing saved</div></div>`}</main>`; }, { mount: bindSaves });
 

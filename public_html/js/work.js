@@ -1,4 +1,6 @@
 // Buja Work module: seeker and company screens. Registered into the app router by app.js.
+import { saveSearchBar, bindSaveSearch } from './alerts.js';
+
 export function registerWork({ route, go, state, setState, api, ui, DISTRICTS, failed }) {
   const shrinkImg = async (f, max = 800) => { const b = await createImageBitmap(f).catch(() => null); if (!b) return f; const s = Math.min(1, max / Math.max(b.width, b.height)); const c = document.createElement('canvas'); c.width = Math.round(b.width * s); c.height = Math.round(b.height * s); c.getContext('2d').drawImage(b, 0, 0, c.width, c.height); const bl = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.86)); return new File([bl], 'logo.jpg', { type: 'image/jpeg' }); };
   const { h, toast, topbar, field, showErrors, clearOnInput, busy, avatar, icon } = ui;
@@ -51,9 +53,10 @@ export function registerWork({ route, go, state, setState, api, ui, DISTRICTS, f
     <div class="row" style="gap:8px;padding:12px 16px 4px;overflow-x:auto;scrollbar-width:none">${chips.map((d) => `<a class="chip ${f.district === d ? 'on' : ''}" href="#/work?${new URLSearchParams({ ...f, district: d })}">${d || 'All Abuja'}</a>`).join('')}</div>
     <main class="stack" style="padding:10px 16px 0;gap:12px">
       <div class="row small muted" style="justify-content:space-between"><span>${r.total} open role${r.total === 1 ? '' : 's'}${f.district ? ' in ' + h(f.district) : ''}</span><span>Newest first</span></div>
+      ${saveSearchBar({ module: 'work', filters: f, ui: { icon, h } })}
       ${r.jobs.length ? r.jobs.map((j) => jobCard(j)).join('') : `<div class="placeholder" style="padding:40px 0"><div class="mi card">${icon('briefcase')}</div><div class="h-md">No roles match yet</div><div class="small muted">Try another district or clear the search. New vacancies appear here the moment a company posts them.</div></div>`}
     </main>`;
-  }, { mount(el) { bindSaves(el); el.querySelector('#q')?.addEventListener('submit', (e) => { e.preventDefault(); const q = new URLSearchParams(location.hash.split('?')[1] || ''); q.set('q', e.target.q.value); go('/work?' + q); }); } });
+  }, { mount(el) { bindSaves(el); bindSaveSearch(el, { api, ui: { toast } }); el.querySelector('#q')?.addEventListener('submit', (e) => { e.preventDefault(); const q = new URLSearchParams(location.hash.split('?')[1] || ''); q.set('q', e.target.q.value); go('/work?' + q); }); } });
 
   /* ---------- Seeker: job detail + apply ---------- */
   route('/work/job/:id', { auth: true, tabs: '' }, async ({ id }) => {
