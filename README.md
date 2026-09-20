@@ -1,4 +1,4 @@
-# Buja, Phase 9c: media everywhere, radio in-app
+# Buja, Phase 9d: real distances and Trip Share
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -146,8 +146,18 @@ Note on tiles: OpenStreetMap's public tile server is fine for testing and early 
 
 Bugs fixed in this pass: tracking calls that ran between an insert and reading back its id, which had broken posting in Homes, Declutter and Social; a variable in the Waka planner that clobbered the destination and produced a 1,300 km trip; a duplicate timer name that stopped the whole app loading; and the radio player being declared after first use.
 
+## Phase 9d: Match on GPS, and Trip Share
+
+- **Real distances in Match.** Tap once to share your location and every card shows how far away the person is ("4 km away", or "under 1 km" so nobody can be pinpointed). Positions are stored to three decimals, about 100 metres, never shown to anyone, and only ever turned into a distance. A new filter finds people within 2 to 40 km; the district filter still works for anyone who prefers not to share a position.
+- **Trip Share**, for meeting someone from Buja. Start a trip with where you are going, who with, and how long before your friend should worry. Buja gives you a private link to send on WhatsApp. Your friend opens it with no account and sees a live map of where you are, when you are due back, and a plain instruction if something looks wrong. Position updates every two minutes while the app is open.
+  - **I am home safe** ends it. **+1 hour** extends it. **Something is wrong** raises the alarm and the link turns red with "call them now, then call 112".
+  - If you pass your time without ending the trip, the link says overdue by itself.
+  - Up to five trusted contacts, and a Meeting up? shortcut inside every Match conversation.
+  - The public page shows a first name and a position and nothing else: no phone, no email, no token, not even which contact was chosen.
+- New: `api/controllers/SafetyController.php`, `LocationController.php`, `js/safety.js`, `migrations/013_location_safety.sql`.
+
 ## What is next
 
-Phase 9d: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 9e: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

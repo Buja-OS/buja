@@ -5,7 +5,7 @@ final class MatchController
 {
     private function profileRow(int $userId): ?array
     {
-        return Db::one('SELECT p.*, u.name, u.district, u.email_verified_at, u.phone, u.selfie_verified_at FROM match_profiles p JOIN users u ON u.id = p.user_id WHERE p.user_id = ?', [$userId]);
+        return Db::one('SELECT p.*, u.name, u.district, u.email_verified_at, u.phone, u.selfie_verified_at, u.lat, u.lng FROM match_profiles p JOIN users u ON u.id = p.user_id WHERE p.user_id = ?', [$userId]);
     }
     private function photos(int $userId): array
     {
@@ -21,7 +21,14 @@ final class MatchController
             'photos' => $this->photos((int) $p['user_id']), 'phoneVerified' => $p['phone'] !== null, 'emailVerified' => $p['email_verified_at'] !== null, 'verified' => !empty($p['selfie_verified_at']),
             'activeAt' => $p['active_at'],
         ];
-        if ($me) $out['match'] = MatchRules::score($me, $p);
+        if ($me) {
+            $out['match'] = MatchRules::score($me, $p);
+            if (($me['lat'] ?? null) !== null && ($p['lat'] ?? null) !== null) {
+                $km = WakaRules::km((float) $me['lat'], (float) $me['lng'], (float) $p['lat'], (float) $p['lng']);
+                $out['km'] = $km < 1 ? round($km, 1) : (float) round($km); // under a kilometre stays deliberately vague
+                $out['match']['proximity'] = $km <= 3 ? 'same' : ($km <= 10 ? 'nearby' : 'abuja');
+            }
+        }
         if (!$full) { unset($out['prompts'], $out['work'], $out['education'], $out['languages']); }
         return $out;
     }
@@ -32,7 +39,7 @@ final class MatchController
         $u = Auth::require();
         $p = $this->profileRow((int) $u['id']);
         $likes = (int) (Db::one("SELECT COUNT(*) AS n FROM swipes s WHERE s.to_user = ? AND s.action IN ('like','superlike') AND NOT EXISTS (SELECT 1 FROM swipes r WHERE r.from_user = ? AND r.to_user = s.from_user)", [$u['id'], $u['id']])['n'] ?? 0);
-        Http::json(['profile' => $p ? $this->shape($p) + ['seeking' => $p['seeking'], 'ageMin' => (int) $p['age_min'], 'ageMax' => (int) $p['age_max'], 'nearbyOnly' => (bool) $p['nearby_only'], 'visible' => (bool) $p['visible'], 'birthdate' => $p['birthdate']] : null,
+        Http::json(['profile' => $p ? $this->shape($p) + ['seeking' => $p['seeking'], 'ageMin' => (int) $p['age_min'], 'ageMax' => (int) $p['age_max'], 'nearbyOnly' => (bool) $p['nearby_only'], 'radiusKm' => $p['radius_km'] ? (int) $p['radius_km'] : null, 'hasLocation' => $p['lat'] !== null, 'visible' => (bool) $p['visible'], 'birthdate' => $p['birthdate']] : null,
             'likes' => $likes, 'options' => ['interests' => MatchRules::INTERESTS, 'prompts' => MatchRules::PROMPTS, 'faith' => MatchRules::FAITH, 'habit' => MatchRules::HABIT, 'kids' => MatchRules::KIDS]]);
     }
 
@@ -61,11 +68,12 @@ final class MatchController
         $work = mb_substr(trim((string) ($b['work'] ?? ($existing['work'] ?? ''))), 0, 80); $edu = mb_substr(trim((string) ($b['education'] ?? ($existing['education'] ?? ''))), 0, 80); $lang = mb_substr(trim((string) ($b['languages'] ?? ($existing['languages'] ?? ''))), 0, 80);
         $ageMin = max(18, min(80, (int) ($b['ageMin'] ?? ($existing['age_min'] ?? 21)))); $ageMax = max($ageMin, min(90, (int) ($b['ageMax'] ?? ($existing['age_max'] ?? 40))));
         $nearby = array_key_exists('nearbyOnly', $b) ? (!empty($b['nearbyOnly']) ? 1 : 0) : (int) ($existing['nearby_only'] ?? 0);
+        $radiusKm = array_key_exists('radiusKm', $b) ? (empty($b['radiusKm']) ? null : max(1, min(60, (int) $b['radiusKm']))) : ($existing['radius_km'] ?? null);
         $visible = array_key_exists('visible', $b) ? (!empty($b['visible']) ? 1 : 0) : (int) ($existing['visible'] ?? 1);
         if ($e) Http::json(['error' => 'validation', 'fields' => $e], 422);
-        $vals = [$bd, $gender, $seeking, $bio, json_encode($interests), json_encode($prompts), $faith, $drinking, $smoking, $kids, $height ?: null, $work, $edu, $lang, $ageMin, $ageMax, $nearby, $visible, Db::now(), Db::now()];
-        if ($existing) Db::run('UPDATE match_profiles SET birthdate=?, gender=?, seeking=?, bio=?, interests=?, prompts=?, faith=?, drinking=?, smoking=?, kids=?, height=?, work=?, education=?, languages=?, age_min=?, age_max=?, nearby_only=?, visible=?, active_at=?, updated_at=? WHERE user_id = ?', [...$vals, $u['id']]);
-        else Db::run('INSERT INTO match_profiles (birthdate, gender, seeking, bio, interests, prompts, faith, drinking, smoking, kids, height, work, education, languages, age_min, age_max, nearby_only, visible, active_at, updated_at, created_at, user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [...$vals, Db::now(), $u['id']]);
+        $vals = [$bd, $gender, $seeking, $bio, json_encode($interests), json_encode($prompts), $faith, $drinking, $smoking, $kids, $height ?: null, $work, $edu, $lang, $ageMin, $ageMax, $nearby, $radiusKm, $visible, Db::now(), Db::now()];
+        if ($existing) Db::run('UPDATE match_profiles SET birthdate=?, gender=?, seeking=?, bio=?, interests=?, prompts=?, faith=?, drinking=?, smoking=?, kids=?, height=?, work=?, education=?, languages=?, age_min=?, age_max=?, nearby_only=?, radius_km=?, visible=?, active_at=?, updated_at=? WHERE user_id = ?', [...$vals, $u['id']]);
+        else Db::run('INSERT INTO match_profiles (birthdate, gender, seeking, bio, interests, prompts, faith, drinking, smoking, kids, height, work, education, languages, age_min, age_max, nearby_only, radius_km, visible, active_at, updated_at, created_at, user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [...$vals, Db::now(), $u['id']]);
         $this->me();
     }
 
@@ -139,7 +147,8 @@ final class MatchController
         $params = [$u['id'], ...$wantGender, ...$theySeek, $minBd, $maxBd, $u['id'], $u['id'], $u['id']];
         $districtSql = '';
         if ((int) $me['nearby_only']) { $near = MatchRules::nearby($me['district'] ?? ''); $districtSql = ' AND u.district IN (' . $in($near) . ')'; $params = [...$params, ...$near]; }
-        $sql = "SELECT p.*, u.name, u.district, u.email_verified_at, u.phone, u.selfie_verified_at FROM match_profiles p JOIN users u ON u.id = p.user_id
+        $radius = $me['radius_km'] ? (int) $me['radius_km'] : null;
+        $sql = "SELECT p.*, u.name, u.district, u.email_verified_at, u.phone, u.selfie_verified_at, u.lat, u.lng FROM match_profiles p JOIN users u ON u.id = p.user_id
                 WHERE p.user_id <> ? AND p.visible = 1 AND u.deleted_at IS NULL AND u.kind <> 'company'
                   AND p.gender IN ({$in($wantGender)}) AND p.seeking IN ({$in($theySeek)}) AND p.birthdate > ? AND p.birthdate <= ?
                   AND EXISTS (SELECT 1 FROM match_photos ph WHERE ph.user_id = p.user_id)
@@ -148,6 +157,7 @@ final class MatchController
                   $districtSql ORDER BY p.active_at DESC LIMIT 40";
         $st = Db::pdo()->prepare($sql); $st->execute($params);
         $cards = array_map(fn($r) => $this->shape($r, $me, false), $st->fetchAll());
+        if ($radius && $me['lat'] !== null) $cards = array_values(array_filter($cards, fn($c) => !isset($c['km']) || $c['km'] <= $radius));
         usort($cards, fn($a, $b) => $b['match']['score'] <=> $a['match']['score']);
         Http::json(['cards' => array_slice($cards, 0, 12), 'superlikesLeft' => $this->superlikesLeft((int) $u['id'])]);
     }

@@ -11,6 +11,7 @@ import { registerDeclutter } from './declutter.js';
 import { registerAsk } from './ask.js';
 import { registerTrust } from './trust.js';
 import { registerCity } from './city.js';
+import { registerSafety } from './safety.js';
 
 /* ---------------- Radio player, global so it keeps playing as you move around ---------------- */
 export const radio = {
@@ -264,6 +265,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
       <a class="item" href="#/declutter/mine"><div class="mi">${icon('tags')}</div><div class="grow"><div class="t">My listings</div><div class="s">Declutter</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/waka"><div class="mi">${icon('route')}</div><div class="grow"><div class="t">Saved routes</div><div class="s">Waka</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#${u.kind === 'company' ? '/work/company' : '/work/profile'}"><div class="mi">${icon('briefcase')}</div><div class="grow"><div class="t">${u.kind === 'company' ? 'Company and vacancies' : 'My CV and applications'}</div><div class="s">Work</div></div>${icon('chevron-right')}</a>
+      <a class="item" href="#/safety"><div class="mi">${icon('location-dot')}</div><div class="grow"><div class="t">Trip Share</div><div class="s">Tell a friend where you are when you go out</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/verify"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">Verification</div><div class="s">${u.selfieVerified ? 'Selfie verified' : 'Get the verified badge'}</div></div>${icon('chevron-right')}</a>
       ${u.kind === 'company' ? '' : `<a class="item" href="#/plus"><div class="mi">${icon('bolt')}</div><div class="grow"><div class="t">Buja Plus</div><div class="s">${u.plus ? 'Active' : 'See who liked you, five super likes a day'}</div></div>${icon('chevron-right')}</a>`}
       <a class="item" href="#/settings"><div class="mi">${icon('gear')}</div><div class="grow"><div class="t">Settings</div><div class="s">Appearance, notifications, privacy</div></div>${icon('chevron-right')}</a>
@@ -315,6 +317,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerSafety({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerCity({ route, go, state, api, radio, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
 registerTrust({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerAsk({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
@@ -371,6 +374,7 @@ function mountGoogle(el) {
   setState({ booted: true });
   if (!location.hash) go(state.user ? '/home' : '/welcome');
   render();
+  setInterval(() => { if (!state.user || document.hidden || api.isMock() || !navigator.geolocation) return; navigator.geolocation.getCurrentPosition((p) => { api.pingTrip(p.coords.latitude, p.coords.longitude).catch(() => {}); }, () => {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }); }, 120000);
   setInterval(async () => { if (state.user && !document.hidden && !api.isMock()) { try { const t = await api.today(); if (t.unread !== state.unread) { state.unread = t.unread; setBadge(t.unread); } } catch {} } }, 60000);
   if ('serviceWorker' in navigator && !api.isMock() && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();

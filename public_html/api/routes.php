@@ -170,3 +170,14 @@ $router->post('/uploads',                    [UploadsController::class, 'create'
 $router->post('/uploads/location',           [UploadsController::class, 'location']);
 $router->get('/uploads/{id}',                [UploadsController::class, 'show']);
 $router->post('/company/logo',               [CompanyController::class, 'logo']);
+
+// Location and Trip Share
+$router->post('/me/location',                [LocationController::class, 'update']);
+$router->delete('/me/location',              [LocationController::class, 'clear']);
+$router->get('/safety',                      [SafetyController::class, 'index']);
+$router->post('/safety/contacts',            [SafetyController::class, 'addContact']);
+$router->delete('/safety/contacts/{id}',     [SafetyController::class, 'removeContact']);
+$router->post('/safety/start',               [SafetyController::class, 'start']);
+$router->post('/safety/ping',                [SafetyController::class, 'ping']);
+$router->post('/safety/end',                 [SafetyController::class, 'end']);
+$router->get('/safety/trip/{token}',         [SafetyController::class, 'publicTrip']);
