@@ -47,6 +47,18 @@ return [
     'ask_model' => $env('ASK_MODEL', 'claude-haiku-4-5-20251001'),
     'ask_daily_limit' => (int) $env('ASK_DAILY_LIMIT', '40'),
 
+    // Paystack (dashboard.paystack.com > Settings > API Keys). Test key sk_test_... first, then live.
+    'paystack_secret' => $env('PAYSTACK_SECRET', ''),
+    'paystack_mock' => filter_var($env('PAYSTACK_MOCK', 'false'), FILTER_VALIDATE_BOOL),
+
+    // Cloudflare R2 (or any S3-compatible bucket) for photos and CVs. Leave empty to keep files in the database.
+    'r2_account_id' => $env('R2_ACCOUNT_ID', ''),
+    'r2_bucket'     => $env('R2_BUCKET', ''),
+    'r2_access_key' => $env('R2_ACCESS_KEY', ''),
+    'r2_secret_key' => $env('R2_SECRET_KEY', ''),
+    'r2_endpoint'   => $env('R2_ENDPOINT', ''),
+    'r2_region'     => $env('R2_REGION', 'auto'),
+
     // Only true when testing on http://localhost.
     'insecure_cookies' => filter_var($env('INSECURE_COOKIES', 'false'), FILTER_VALIDATE_BOOL),
 ];

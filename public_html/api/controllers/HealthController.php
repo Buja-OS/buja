@@ -7,6 +7,6 @@ final class HealthController
     {
         $db = 'ok';
         try { Db::one('SELECT 1'); } catch (Throwable $e) { $db = 'unreachable'; }
-        Http::json(['ok' => $db === 'ok', 'app' => 'buja', 'phase' => '7', 'php' => PHP_VERSION, 'db' => $db, 'time' => Db::now()]);
+        Http::json(['ok' => $db === 'ok', 'app' => 'buja', 'phase' => '8a', 'php' => PHP_VERSION, 'db' => $db, 'time' => Db::now()]);
     }
 }

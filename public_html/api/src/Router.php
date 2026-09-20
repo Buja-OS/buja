@@ -21,7 +21,7 @@ final class Router
     {
         foreach ($this->routes[$method] ?? [] as [$regex, $handler]) {
             if (preg_match($regex, $path, $m)) {
-                if ($method !== 'GET') Http::requireClientHeader();
+                if ($method !== 'GET' && $path !== '/pay/webhook') Http::requireClientHeader();
                 $params = array_filter($m, 'is_string', ARRAY_FILTER_USE_KEY);
                 [$class, $action] = $handler;
                 (new $class())->$action(...array_values(array_map(fn($v) => ctype_digit($v) ? (int) $v : $v, $params)));

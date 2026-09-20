@@ -115,7 +115,7 @@ export function registerMatch({ route, go, state, api, ui, DISTRICTS, failed }) 
       <div style="position:absolute;top:16px;left:16px;display:flex;gap:8px"><span class="tag" style="background:var(--green);color:#101014">${c.match.score}% match</span><span class="tag" style="background:rgba(0,0,0,.45);color:#fff">${prox(c.match.proximity)}</span></div>
       <a href="#/match/profile/${c.id}" aria-label="Open profile" style="position:absolute;top:12px;right:12px;width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;color:#fff">${icon('circle-info')}</a>
       <div style="position:relative;padding:60px 20px 20px;background:linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.78) 100%);color:#fff;display:flex;flex-direction:column;gap:6px">
-        <div class="row" style="gap:8px"><span style="font-size:26px;font-weight:700">${h(c.name)}, ${c.age}</span>${c.phoneVerified ? icon('circle-check') : ''}</div>
+        <div class="row" style="gap:8px"><span style="font-size:26px;font-weight:700">${h(c.name)}, ${c.age}</span>${c.verified ? `<span class="tag" style="background:var(--green);color:#101014">${icon('circle-check')} Verified</span>` : ''}</div>
         <div style="font-size:14px;color:#D0D0D6" class="row">${icon('location-dot')} ${h(c.district)}${c.work ? ' · ' + h(c.work) : ''}</div>
         ${c.bio ? `<div style="font-size:14px;color:#D0D0D6;line-height:1.4">${h(c.bio)}</div>` : ''}
         ${c.interests.length ? `<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px">${c.interests.map((i) => `<span class="tag" style="background:rgba(255,255,255,${c.match.shared.includes(i) ? '.32' : '.15'});color:#fff">${c.match.shared.includes(i) ? icon('circle-check') + ' ' : ''}${h(i)}</span>`).join('')}</div>` : ''}
@@ -134,6 +134,7 @@ export function registerMatch({ route, go, state, api, ui, DISTRICTS, failed }) 
         <button class="iconbtn" data-act="like" aria-label="Like" style="width:64px;height:64px;background:var(--orange);border-color:var(--orange);color:#fff;font-size:26px">${icon('heart')}</button>
       </div>
       <div class="small muted center" id="superleft"></div>
+      ${state.user.selfieVerified ? '' : `<a class="small center" href="#/verify" style="color:var(--orange-dark);font-weight:600;padding-bottom:6px">Get the verified badge with a selfie</a>`}
     </main>
     <div id="matchoverlay"></div>`;
   }, {
@@ -178,7 +179,7 @@ export function registerMatch({ route, go, state, api, ui, DISTRICTS, failed }) 
       <span class="tag" style="position:absolute;bottom:28px;left:16px;background:var(--green);color:#101014">${p.match.score}% match</span>
     </div>
     <main class="pad stack" style="gap:14px;padding-top:18px">
-      <div><div class="row" style="gap:8px"><span class="h-lg" style="font-size:26px">${h(p.name)}, ${p.age}</span>${p.phoneVerified ? `${icon('circle-check')}<span class="small" style="font-weight:700;color:var(--green-dark)">PHONE VERIFIED</span>` : ''}</div><div class="muted small row" style="gap:6px;margin-top:4px">${icon('location-dot')} ${h(p.district)} · ${prox(p.match.proximity)}${p.likedYou ? ' · <strong style="color:var(--orange-dark)">Liked you</strong>' : ''}</div></div>
+      <div><div class="row" style="gap:8px"><span class="h-lg" style="font-size:26px">${h(p.name)}, ${p.age}</span>${p.verified ? `${icon('circle-check')}<span class="small" style="font-weight:700;color:var(--green-dark)">VERIFIED</span>` : p.phoneVerified ? `<span class="small muted" style="font-weight:600">PHONE VERIFIED</span>` : ''}</div><div class="muted small row" style="gap:6px;margin-top:4px">${icon('location-dot')} ${h(p.district)} · ${prox(p.match.proximity)}${p.likedYou ? ' · <strong style="color:var(--orange-dark)">Liked you</strong>' : ''}</div></div>
       ${p.bio ? `<p style="margin:0;font-size:15px;line-height:1.5">${h(p.bio)}</p>` : ''}
       ${facts.length ? `<div class="row" style="flex-wrap:wrap;gap:8px">${facts.map(([ic, t]) => `<span class="tag" style="background:var(--card);border:1px solid var(--line);color:var(--ink-2)">${icon(ic)} ${h(t)}</span>`).join('')}</div>` : ''}
       ${p.interests.length ? `<div class="row" style="flex-wrap:wrap;gap:8px">${p.interests.map((i) => tag((p.match.shared.includes(i) ? icon('circle-check') + ' ' : '') + h(i), p.match.shared.includes(i) ? 'green' : '')).join('')}</div>` : ''}
@@ -215,12 +216,12 @@ export function registerMatch({ route, go, state, api, ui, DISTRICTS, failed }) 
 
   /* ---------- Likes you ---------- */
   route('/match/likes', { auth: true, tabs: '' }, async () => {
-    const { likes, total } = await api.likes();
+    const { likes, total, plus } = await api.likes();
     return `${topbar('Liked you', '/match/discover')}
     <main class="pad stack" style="gap:14px">
-      <div class="small muted">${total ? `<strong style="color:var(--ink)">${total} ${total === 1 ? 'person' : 'people'}</strong> liked you. The newest is shown in full; super likes are always shown.` : 'Nobody yet. Likes show up here as they come in.'}</div>
+      <div class="small muted">${total ? `<strong style="color:var(--ink)">${total} ${total === 1 ? 'person' : 'people'}</strong> liked you.${plus ? '' : ' The newest is shown in full; super likes are always shown.'}` : 'Nobody yet. Likes show up here as they come in.'}</div>
       ${likes.length ? `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">${likes.map((l) => l.locked ? `<div class="card" style="aspect-ratio:3/4;overflow:hidden;position:relative;background:linear-gradient(180deg,#3E5C76,#1C1C22)"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.7);font-size:24px">${icon('eye-slash')}</div></div>` : `<a class="card" href="#/match/profile/${l.id}" style="aspect-ratio:3/4;overflow:hidden;position:relative">${ph(l.photo)}${l.superlike ? `<span class="tag" style="position:absolute;top:8px;left:8px;background:#1F4E9C;color:#fff">${icon('star')} Super like</span>` : ''}<div style="position:absolute;left:0;right:0;bottom:0;padding:30px 12px 12px;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.75));color:#fff"><div style="font-size:15px;font-weight:700">${h(l.name)}, ${l.age}</div><div class="small" style="color:#D0D0D6">${h(l.district)}</div></div></a>`).join('')}</div>` : ''}
-      ${likes.some((l) => l.locked) ? `<div class="card dark stack" style="padding:18px;gap:10px"><div class="row" style="gap:10px"><span style="font-size:12px;font-weight:700;letter-spacing:2px;color:#7ED957">BUJA PLUS</span><span class="small" style="color:#B5B5BC">coming soon</span></div><div style="font-size:14px;line-height:1.5">See everyone who liked you, unlimited likes, five super likes a day and a weekly boost.</div></div>` : ''}
+      ${likes.some((l) => l.locked) ? `<a class="card dark stack" href="#/plus" style="padding:18px;gap:10px"><div class="row" style="gap:10px"><span style="font-size:12px;font-weight:700;letter-spacing:2px;color:#7ED957">BUJA PLUS</span><span class="small" style="color:#B5B5BC">₦3,500 for 30 days</span></div><div style="font-size:14px;line-height:1.5;color:#fff">See everyone who liked you, five super likes a day, invisible mode.</div><div class="btn btn-primary" style="height:44px;font-size:14px">Get Buja Plus</div></a>` : plus ? `<div class="small muted center">Buja Plus: everyone who liked you is shown.</div>` : ''}
     </main>`;
   });
 

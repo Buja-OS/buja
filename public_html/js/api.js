@@ -130,6 +130,20 @@ export const api = {
   spot:            (id) => request('GET', '/spots/' + id),
   rateSpot:        (id, stars, comment) => request('POST', '/spots/' + id + '/rate', { stars, comment }),
   addSpot:         (b) => request('POST', '/spots', b),
+  // Trust and money
+  payStatus:       () => request('GET', '/pay/status'),
+  payPlus:         () => request('POST', '/pay/plus'),
+  verifyStatus:    () => request('GET', '/verify/status'),
+  verifySubmit:    (kind, file) => { const fd = new FormData(); fd.append('file', file); return upload('/verify/' + kind, fd); },
+  adminOverview:   () => request('GET', '/admin/overview'),
+  adminVerifications: () => request('GET', '/admin/verifications'),
+  adminDecide:     (id, action, note) => request('POST', '/admin/verifications/' + id, { action, note }),
+  adminReports:    () => request('GET', '/admin/reports'),
+  adminDecideReport: (id, action) => request('POST', '/admin/reports/' + id, { action }),
+  adminSpots:      () => request('GET', '/admin/spots'),
+  adminDecideSpot: (id, action) => request('POST', '/admin/spots/' + id, { action }),
+  adminStorageTest: () => request('POST', '/admin/storage/test'),
+  adminMigrate:    () => request('POST', '/admin/storage/migrate', { batch: 20 }),
 };
 
 /* Detect the API once at boot. If /api/health is not there, switch to mock mode and say so. */
@@ -185,7 +199,7 @@ async function mockRequest(method, path, body) {
     return { user: pub(u), next: u.district ? 'home' : 'onboarding' };
   }
   if (path === '/auth/logout') { d.session = null; msave(d); return { ok: true }; }
-  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter') || path.startsWith('/ask') || path.startsWith('/spots')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
+  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter') || path.startsWith('/ask') || path.startsWith('/spots') || path.startsWith('/pay') || path.startsWith('/verify') || path.startsWith('/admin')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
   if (path === '/me' && method === 'PATCH') {
     const u = me(); if (!u) throw { error: 'unauthenticated', message: 'Please sign in.' };
     Object.assign(u, body); msave(d); return { user: pub(u) };

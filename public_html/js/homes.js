@@ -126,7 +126,7 @@ export function registerHomes({ route, go, state, api, ui, DISTRICTS, failed }) 
     const sum = (k) => properties.reduce((a, p) => a + (p[k] || 0), 0);
     return `${topbar(l.displayName, '/home', `<a class="iconbtn" href="#/homes/landlord/profile" aria-label="Edit profile">${icon('gear')}</a>`)}
     <main class="pad stack" style="gap:16px">
-      <div class="small muted">${l.isCompany ? 'Real estate company' : 'Landlord'}${l.verified ? ` · <span class="tag green">${icon('circle-check')} Verified</span>` : ' · not yet verified'}</div>
+      <div class="small muted">${l.isCompany ? 'Real estate company' : 'Landlord'}${l.verified ? ` · <span class="tag green">${icon('circle-check')} Verified</span>` : ` · <a href="#/verify" style="color:var(--orange-dark);font-weight:600">Get verified with a title document</a>`}</div>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">${[['VIEWS', sum('views'), ''], ['ENQUIRIES', sum('enquiries'), 'var(--orange-dark)'], ['INSPECTIONS', sum('inspections'), ''], ['SAVED BY OTHERS', savedByOthers, 'var(--green-dark)']].map(([t, v, c]) => `<div class="card" style="padding:14px 16px"><div class="small muted" style="font-weight:600">${t}</div><div style="font-size:28px;font-weight:700;margin-top:4px;color:${c || 'var(--ink)'}">${v}</div></div>`).join('')}</div>
       <a class="btn btn-primary" href="#/homes/landlord/post">${icon('plus')} Post a property</a>
       <div class="section">MY PROPERTIES</div>

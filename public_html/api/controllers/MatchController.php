@@ -5,7 +5,7 @@ final class MatchController
 {
     private function profileRow(int $userId): ?array
     {
-        return Db::one('SELECT p.*, u.name, u.district, u.email_verified_at, u.phone FROM match_profiles p JOIN users u ON u.id = p.user_id WHERE p.user_id = ?', [$userId]);
+        return Db::one('SELECT p.*, u.name, u.district, u.email_verified_at, u.phone, u.selfie_verified_at FROM match_profiles p JOIN users u ON u.id = p.user_id WHERE p.user_id = ?', [$userId]);
     }
     private function photos(int $userId): array
     {
@@ -18,7 +18,7 @@ final class MatchController
             'id' => (int) $p['user_id'], 'name' => explode(' ', trim($p['name']))[0], 'age' => MatchRules::age($p['birthdate']), 'gender' => $p['gender'], 'district' => $p['district'],
             'bio' => $p['bio'], 'interests' => json_decode($p['interests'] ?? '[]', true) ?: [], 'prompts' => json_decode($p['prompts'] ?? '[]', true) ?: [],
             'work' => $p['work'], 'education' => $p['education'], 'height' => $p['height'] ? (int) $p['height'] : null, 'faith' => $p['faith'], 'drinking' => $p['drinking'], 'smoking' => $p['smoking'], 'kids' => $p['kids'], 'languages' => $p['languages'],
-            'photos' => $this->photos((int) $p['user_id']), 'phoneVerified' => $p['phone'] !== null, 'emailVerified' => $p['email_verified_at'] !== null,
+            'photos' => $this->photos((int) $p['user_id']), 'phoneVerified' => $p['phone'] !== null, 'emailVerified' => $p['email_verified_at'] !== null, 'verified' => !empty($p['selfie_verified_at']),
             'activeAt' => $p['active_at'],
         ];
         if ($me) $out['match'] = MatchRules::score($me, $p);
@@ -82,7 +82,8 @@ final class MatchController
         $dim = @getimagesizefromstring($data);
         if (!$dim || $dim[0] < 200 || $dim[1] < 200) Http::json(['error' => 'validation', 'fields' => ['photo' => 'Photo is too small or unreadable.']], 422);
         if ($dim[0] > 2400 || $dim[1] > 2400) Http::json(['error' => 'validation', 'fields' => ['photo' => 'Photo is too large. The app resizes photos before upload; try again.']], 422);
-        Db::run('INSERT INTO match_photos (user_id, position, mime, size, data, created_at) VALUES (?,?,?,?,?,?)', [$u['id'], $n, $mime, strlen($data), $data, Db::now()]);
+        $key = Media::put('match', $data, $mime, $mime === 'image/png' ? 'png' : ($mime === 'image/webp' ? 'webp' : 'jpg'));
+        Db::run('INSERT INTO match_photos (user_id, position, mime, size, data, storage_key, created_at) VALUES (?,?,?,?,?,?,?)', [$u['id'], $n, $mime, strlen($data), $key ? null : $data, $key, Db::now()]);
         Http::json(['photos' => $this->photos((int) $u['id'])], 201);
     }
 
@@ -90,6 +91,7 @@ final class MatchController
     public function deletePhoto(int $id): void
     {
         $u = Auth::require();
+        $old = Db::one('SELECT storage_key FROM match_photos WHERE id = ? AND user_id = ?', [$id, $u['id']]); if ($old && $old['storage_key']) Media::delete($old['storage_key']);
         Db::run('DELETE FROM match_photos WHERE id = ? AND user_id = ?', [$id, $u['id']]);
         $i = 0; foreach ($this->photos((int) $u['id']) as $p) Db::run('UPDATE match_photos SET position = ? WHERE id = ?', [$i++, $p['id']]);
         Http::json(['photos' => $this->photos((int) $u['id'])]);
@@ -112,6 +114,7 @@ final class MatchController
         if ((int) $p['user_id'] !== (int) $u['id']) {
             if ($u['kind'] === 'company' || Db::one('SELECT 1 AS x FROM blocks WHERE (blocker = ? AND blocked = ?) OR (blocker = ? AND blocked = ?)', [$u['id'], $p['user_id'], $p['user_id'], $u['id']])) Http::json(['error' => 'forbidden'], 403);
         }
+        if ($p['storage_key']) { header('Location: ' . Media::url($p['storage_key'])); header('Cache-Control: private, max-age=300'); exit; }
         header('Content-Type: ' . $p['mime']); header('Content-Length: ' . (int) $p['size']); header('Cache-Control: private, max-age=86400'); header('X-Content-Type-Options: nosniff');
         echo $p['data']; exit;
     }
@@ -136,7 +139,7 @@ final class MatchController
         $params = [$u['id'], ...$wantGender, ...$theySeek, $minBd, $maxBd, $u['id'], $u['id'], $u['id']];
         $districtSql = '';
         if ((int) $me['nearby_only']) { $near = MatchRules::nearby($me['district'] ?? ''); $districtSql = ' AND u.district IN (' . $in($near) . ')'; $params = [...$params, ...$near]; }
-        $sql = "SELECT p.*, u.name, u.district, u.email_verified_at, u.phone FROM match_profiles p JOIN users u ON u.id = p.user_id
+        $sql = "SELECT p.*, u.name, u.district, u.email_verified_at, u.phone, u.selfie_verified_at FROM match_profiles p JOIN users u ON u.id = p.user_id
                 WHERE p.user_id <> ? AND p.visible = 1 AND u.deleted_at IS NULL AND u.kind <> 'company'
                   AND p.gender IN ({$in($wantGender)}) AND p.seeking IN ({$in($theySeek)}) AND p.birthdate > ? AND p.birthdate <= ?
                   AND EXISTS (SELECT 1 FROM match_photos ph WHERE ph.user_id = p.user_id)
@@ -152,7 +155,8 @@ final class MatchController
     private function superlikesLeft(int $uid): int
     {
         $n = (int) (Db::one("SELECT COUNT(*) AS n FROM swipes WHERE from_user = ? AND action = 'superlike' AND created_at > ?", [$uid, gmdate('Y-m-d H:i:s', time() - 86400)])['n'] ?? 0);
-        return max(0, 1 - $n);
+        $u = Db::one('SELECT plus_until FROM users WHERE id = ?', [$uid]); $max = PayController::plusActive($u ?: []) ? 5 : 1;
+        return max(0, $max - $n);
     }
 
     /** GET /match/profile/{id} */
@@ -176,7 +180,7 @@ final class MatchController
         $b = Http::body(); $to = (int) ($b['to'] ?? 0); $action = (string) ($b['action'] ?? '');
         if (!in_array($action, ['like', 'pass', 'superlike'], true) || $to === (int) $u['id']) Http::json(['error' => 'validation', 'message' => 'Bad swipe.'], 422);
         if (!Db::one('SELECT 1 AS x FROM match_profiles WHERE user_id = ?', [$to])) Http::json(['error' => 'not_found'], 404);
-        if ($action === 'superlike' && $this->superlikesLeft((int) $u['id']) <= 0) Http::json(['error' => 'limit', 'message' => 'One super like a day on the free plan.'], 429);
+        if ($action === 'superlike' && $this->superlikesLeft((int) $u['id']) <= 0) Http::json(['error' => 'limit', 'message' => PayController::plusActive($u) ? 'You have used your five super likes for today.' : 'One super like a day on the free plan. Buja Plus gives five.'], 429);
         Db::run('DELETE FROM swipes WHERE from_user = ? AND to_user = ?', [$u['id'], $to]);
         Db::run('INSERT INTO swipes (from_user, to_user, action, created_at) VALUES (?,?,?,?)', [$u['id'], $to, $action, Db::now()]);
         $matched = null;
@@ -221,14 +225,14 @@ final class MatchController
         $u = Auth::require();
         $st = Db::pdo()->prepare("SELECT s.from_user, s.action, s.created_at FROM swipes s WHERE s.to_user = ? AND s.action IN ('like','superlike') AND NOT EXISTS (SELECT 1 FROM swipes r WHERE r.from_user = ? AND r.to_user = s.from_user) AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.blocker = ? AND b.blocked = s.from_user) OR (b.blocked = ? AND b.blocker = s.from_user)) ORDER BY s.created_at DESC LIMIT 30");
         $st->execute([$u['id'], $u['id'], $u['id'], $u['id']]);
-        $rows = []; $i = 0;
+        $rows = []; $i = 0; $plus = PayController::plusActive($u);
         foreach ($st->fetchAll() as $s) {
             $p = $this->profileRow((int) $s['from_user']); if (!$p) continue;
-            $free = $i === 0 || $s['action'] === 'superlike';
+            $free = $plus || $i === 0 || $s['action'] === 'superlike';
             $rows[] = ['id' => $free ? (int) $s['from_user'] : null, 'name' => $free ? explode(' ', $p['name'])[0] : null, 'age' => $free ? MatchRules::age($p['birthdate']) : null, 'district' => $free ? $p['district'] : null, 'photo' => $free ? ($this->photos((int) $s['from_user'])[0]['url'] ?? null) : null, 'superlike' => $s['action'] === 'superlike', 'locked' => !$free];
             $i++;
         }
-        Http::json(['likes' => $rows, 'total' => count($rows)]);
+        Http::json(['likes' => $rows, 'total' => count($rows), 'plus' => $plus]);
     }
 
     /** POST /match/block { user } and POST /match/report { user, reason } */

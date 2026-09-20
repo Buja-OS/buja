@@ -54,10 +54,10 @@ final class SeekerController
         if (!isset($ok[$mime])) Http::json(['error' => 'validation', 'fields' => ['cv' => 'PDF or Word only.']], 422);
         $name = preg_replace('/[^\w .()-]+/u', '_', (string) $f['name']) ?: 'cv';
         $name = mb_substr($name, 0, 120);
-        if (Db::one('SELECT id FROM cv_files WHERE user_id = ?', [$u['id']]))
-            Db::run('UPDATE cv_files SET name = ?, mime = ?, size = ?, data = ?, updated_at = ? WHERE user_id = ?', [$name, $mime, strlen($data), $data, Db::now(), $u['id']]);
-        else
-            Db::run('INSERT INTO cv_files (user_id, name, mime, size, data, updated_at) VALUES (?,?,?,?,?,?)', [$u['id'], $name, $mime, strlen($data), $data, Db::now()]);
+        $key = Media::put('cv', $data, $mime, $ok[$mime]);
+        $old = Db::one('SELECT id, storage_key FROM cv_files WHERE user_id = ?', [$u['id']]);
+        if ($old) { if ($old['storage_key']) Media::delete($old['storage_key']); Db::run('UPDATE cv_files SET name = ?, mime = ?, size = ?, data = ?, storage_key = ?, updated_at = ? WHERE user_id = ?', [$name, $mime, strlen($data), $key ? null : $data, $key, Db::now(), $u['id']]); }
+        else Db::run('INSERT INTO cv_files (user_id, name, mime, size, data, storage_key, updated_at) VALUES (?,?,?,?,?,?,?)', [$u['id'], $name, $mime, strlen($data), $key ? null : $data, $key, Db::now()]);
         Http::json(['profile' => $this->profile((int) $u['id'])], 201);
     }
 
@@ -81,6 +81,7 @@ final class SeekerController
             $allowed = $c && Db::one('SELECT a.id FROM applications a JOIN jobs j ON j.id = a.job_id WHERE a.user_id = ? AND j.company_id = ?', [$cv['user_id'], $c['id']]) !== null;
         }
         if (!$allowed) Http::json(['error' => 'forbidden', 'message' => 'You can only see CVs from people who applied to you.'], 403);
+        if ($cv['storage_key']) { header('Location: ' . Media::url($cv['storage_key'], 300)); header('Cache-Control: private, no-store'); exit; }
         header('Content-Type: ' . $cv['mime']);
         header('Content-Length: ' . (int) $cv['size']);
         header('Content-Disposition: inline; filename="' . str_replace('"', '', $cv['name']) . '"');

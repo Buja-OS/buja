@@ -141,7 +141,8 @@ final class HomesController
         $data = file_get_contents($f['tmp_name']) ?: ''; $mime = (new finfo(FILEINFO_MIME_TYPE))->buffer($data) ?: '';
         if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) Http::json(['error' => 'validation', 'fields' => ['photo' => 'JPEG, PNG or WebP only.']], 422);
         $dim = @getimagesizefromstring($data); if (!$dim || $dim[0] > 2400 || $dim[1] > 2400) Http::json(['error' => 'validation', 'fields' => ['photo' => 'Photo could not be read. Try another.']], 422);
-        Db::run('INSERT INTO property_photos (property_id, position, mime, size, data, created_at) VALUES (?,?,?,?,?,?)', [$id, $n, $mime, strlen($data), $data, Db::now()]);
+        $key = Media::put('homes', $data, $mime, $mime === 'image/png' ? 'png' : ($mime === 'image/webp' ? 'webp' : 'jpg'));
+        Db::run('INSERT INTO property_photos (property_id, position, mime, size, data, storage_key, created_at) VALUES (?,?,?,?,?,?,?)', [$id, $n, $mime, strlen($data), $key ? null : $data, $key, Db::now()]);
         Http::json(['photos' => $this->photos($id)], 201);
     }
     public function deletePhoto(int $photoId): void
@@ -156,6 +157,7 @@ final class HomesController
     {
         Auth::require();
         $p = Db::one('SELECT * FROM property_photos WHERE id = ?', [$photoId]); if (!$p) Http::json(['error' => 'not_found'], 404);
+        if ($p['storage_key']) { header('Location: ' . Media::url($p['storage_key'])); header('Cache-Control: private, max-age=300'); exit; }
         header('Content-Type: ' . $p['mime']); header('Content-Length: ' . (int) $p['size']); header('Cache-Control: private, max-age=86400'); header('X-Content-Type-Options: nosniff');
         echo $p['data']; exit;
     }

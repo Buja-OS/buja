@@ -119,3 +119,21 @@ $router->get('/spots',                       [AskController::class, 'index']);
 $router->post('/spots',                      [AskController::class, 'create']);
 $router->get('/spots/{id}',                  [AskController::class, 'show']);
 $router->post('/spots/{id}/rate',            [AskController::class, 'rate']);
+
+// Trust and money
+$router->get('/pay/status',                  [PayController::class, 'status']);
+$router->post('/pay/plus',                   [PayController::class, 'plus']);
+$router->get('/pay/callback',                [PayController::class, 'callback']);
+$router->post('/pay/webhook',                [PayController::class, 'webhook']);
+$router->get('/verify/status',               [VerifyController::class, 'status']);
+$router->post('/verify/{kind}',              [VerifyController::class, 'submit']);
+$router->get('/admin/overview',              [AdminController::class, 'overview']);
+$router->get('/admin/verifications',         [AdminController::class, 'verifications']);
+$router->get('/admin/verifications/{id}/file', [AdminController::class, 'verificationFile']);
+$router->post('/admin/verifications/{id}',   [AdminController::class, 'decide']);
+$router->get('/admin/reports',               [AdminController::class, 'reports']);
+$router->post('/admin/reports/{id}',         [AdminController::class, 'decideReport']);
+$router->get('/admin/spots',                 [AdminController::class, 'spots']);
+$router->post('/admin/spots/{id}',           [AdminController::class, 'decideSpot']);
+$router->post('/admin/storage/test',         [AdminController::class, 'storageTest']);
+$router->post('/admin/storage/migrate',      [AdminController::class, 'migrate']);

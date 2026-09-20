@@ -1,4 +1,4 @@
-# Buja, Phase 7: all six modules
+# Buja, Phase 8a: trust and money
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -108,6 +108,14 @@ Note on tiles: OpenStreetMap's public tile server is fine for testing and early 
 - Every place card has Waka there, which opens the planner with the destination district pre-filled. Home's Ask bar sends the question straight in. Questions are logged with the returned ids so gaps in the directory are visible. Daily limit per user (`ASK_DAILY_LIMIT`, default 40).
 - New: `api/controllers/AskController.php`, `js/ask.js`, `migrations/008_ask.sql`.
 
+## Phase 8a: trust and money
+
+- **Admin panel** (`/#/admin`, for users with `is_admin`; migration 009 makes the first account the admin): overview counters, verification queue with the submitted selfie beside the first Match photo, reports queue with dismiss or suspend (signs the user out everywhere and hides their listings), places-to-verify queue for Ask, storage test and one-click migration of files to R2.
+- **Verification**: selfie for Match (badge on cards and profiles) and a title document for landlords (Verified badge on listings). Submissions are private to admins and the file is deleted on approval. Rejections carry a note back to the user.
+- **Buja Plus** through Paystack (`PAYSTACK_SECRET`; `PAYSTACK_MOCK=true` simulates success for local tests): ₦3,500 for 30 days, no auto-renewal. Unlocks everyone who liked you, five super likes a day, invisible mode. Paid via the callback and confirmed again by the signed webhook (`/api/pay/webhook`, register it in Paystack).
+- **Object storage**: `api/src/Media.php` speaks S3 Signature V4 to Cloudflare R2 (`R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`). When configured, new photos and CVs go to the bucket and are served through short-lived signed URLs; existing files can be moved in batches from the admin panel. Not configured, everything stays in the database as before.
+- New: `api/src/Paystack.php`, `api/src/Media.php`, `api/controllers/PayController.php`, `VerifyController.php`, `AdminController.php`, `js/trust.js`, `migrations/009_trust.sql`.
+
 ## What is next
 
-All six modules are live. Next is the trust and money phase across the whole app: selfie verification for Match, verified landlord and seller badges, Buja Plus with Paystack, Declutter escrow, and moving photos and CVs from the database to Cloudflare R2. After that, growth work: Waka rider GPS and driver mode, Protomaps tiles, admin panel for verifying places and landlords, and moving off Render's free plan.
+Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.
