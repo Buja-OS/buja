@@ -137,3 +137,15 @@ $router->get('/admin/spots',                 [AdminController::class, 'spots']);
 $router->post('/admin/spots/{id}',           [AdminController::class, 'decideSpot']);
 $router->post('/admin/storage/test',         [AdminController::class, 'storageTest']);
 $router->post('/admin/storage/migrate',      [AdminController::class, 'migrate']);
+
+// Notifications, avatars, admin users and analytics
+$router->get('/notifications',               [NotificationsController::class, 'index']);
+$router->post('/notifications/read',         [NotificationsController::class, 'read']);
+$router->post('/me/avatar',                  [AvatarController::class, 'upload']);
+$router->delete('/me/avatar',                [AvatarController::class, 'delete']);
+$router->get('/avatar/{id}',                 [AvatarController::class, 'show']);
+$router->get('/admin/users',                 [AdminController::class, 'users']);
+$router->get('/admin/users/{id}',            [AdminController::class, 'user']);
+$router->post('/admin/users/{id}',           [AdminController::class, 'userAction']);
+$router->post('/admin/invite',               [AdminController::class, 'invite']);
+$router->get('/admin/analytics',             [AdminController::class, 'analytics']);

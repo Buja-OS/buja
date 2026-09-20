@@ -70,6 +70,7 @@ final class DeclutterController
         $u = Auth::require(); RateLimit::hit('listing', 30, 3600);
         [$e, $v] = $this->validate(Http::body()); if ($e) Http::json(['error' => 'validation', 'fields' => $e], 422);
         Db::run('INSERT INTO listings (seller_id, title, category, cond, price, negotiable, district, description, delivery, escrow_ok, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', [$u['id'], $v['title'], $v['category'], $v['cond'], $v['price'], $v['negotiable'], $v['district'], $v['description'], $v['delivery'], $v['escrow'], 'active', Db::now(), Db::now()]);
+        Track::hit($u, 'declutter', 'list');
         Http::json(['listing' => $this->shape(Db::one('SELECT * FROM listings WHERE id = ?', [Db::lastId()]), $u, true)], 201);
     }
 
@@ -141,7 +142,7 @@ final class DeclutterController
         if ($amt < (int) $l['price'] * 0.3) Http::json(['error' => 'validation', 'fields' => ['amount' => 'That is too far below the asking price to send.']], 422);
         $meta = ['amount' => $amt, 'asking' => (int) $l['price'], 'status' => 'pending'];
         Db::run('INSERT INTO messages (thread_id, sender_id, type, body, meta, created_at) VALUES (?,?,?,?,?,?)', [$threadId, $u['id'], 'offer', 'Offer', json_encode($meta), Db::now()]);
-        $mid = Db::lastId(); Db::run('UPDATE threads SET last_message_at = ? WHERE id = ?', [Db::now(), $threadId]);
+        $mid = Db::lastId(); Db::run('UPDATE threads SET last_message_at = ? WHERE id = ?', [Db::now(), $threadId]); Track::hit($u, 'declutter', 'offer');
         Notify::user((int) $t['user_a'], 'work', $u['name'] . ' offered ₦' . number_format($amt) . ' for ' . $l['title'], 'Asking ₦' . number_format((int) $l['price']) . '. Accept or decline.', '/#/inbox/' . $threadId);
         Http::json(['message' => ['id' => $mid, 'mine' => true, 'type' => 'offer', 'body' => 'Offer', 'meta' => $meta, 'createdAt' => Db::now()]], 201);
     }

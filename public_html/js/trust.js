@@ -42,29 +42,36 @@ export function registerTrust({ route, go, state, setState, api, ui, failed }) {
   }, { mount(el) { el.querySelectorAll('[data-verify]').forEach((i) => i.addEventListener('change', async () => { const f = i.files[0]; if (!f) return; toast('Uploading…'); try { await api.verifySubmit(i.dataset.verify, f); toast('Sent for review'); location.reload(); } catch (err) { failed(el, err); } })); } });
 
   /* ---------- Admin ---------- */
-  const guard = () => state.user.admin ? null : `${topbar('Admin', '/me')}<div class="placeholder"><div class="mi card">${icon('shield-halved')}</div><div class="h-md">Admins only</div></div>`;
+  const guard = (adminOnly = false) => (state.user.admin || (!adminOnly && state.user.role === 'moderator')) ? null : `${topbar('Admin', '/me')}<div class="placeholder"><div class="mi card">${icon('shield-halved')}</div><div class="h-md">${adminOnly ? 'Admins only' : 'Admins and moderators only'}</div></div>`;
+  const ago = (iso) => { if (!iso) return 'never'; const d = (Date.now() - new Date(iso.replace(' ', 'T') + 'Z')) / 1000; return d < 3600 ? Math.max(1, Math.round(d / 60)) + ' min ago' : d < 86400 ? Math.round(d / 3600) + ' h ago' : Math.round(d / 86400) + ' d ago'; };
   route('/admin', { auth: true, tabs: 'Me' }, async () => {
     const g = guard(); if (g) return g;
     const o = await api.adminOverview();
     const tile = (l, v, c) => `<div class="card" style="padding:12px 14px"><div class="small muted" style="font-weight:600">${l}</div><div style="font-size:24px;font-weight:700;margin-top:2px;color:${c || 'var(--ink)'}">${v}</div></div>`;
     const inDb = Object.values(o.storage.inDb).reduce((a, b) => a + b, 0);
-    return `${topbar('Buja admin', '/me')}
+    return `${topbar(state.user.admin ? 'Buja admin' : 'Moderation', '/me')}
     <main class="pad stack" style="gap:14px">
+      ${state.user.admin ? `<div class="section">RUN BUJA</div>
+      <div class="card list">
+        <a class="item" href="#/admin/analytics"><div class="mi">${icon('chart-simple')}</div><div class="grow"><div class="t">Analytics</div><div class="s">Active users, sign-ups, usage by module</div></div>${icon('chevron-right')}</a>
+        <a class="item" href="#/admin/users"><div class="mi">${icon('users')}</div><div class="grow"><div class="t">Users</div><div class="s">${o.counts.users} accounts · search, roles, suspend</div></div>${icon('chevron-right')}</a>
+        <a class="item" href="#/admin/invite"><div class="mi">${icon('paper-plane')}</div><div class="grow"><div class="t">Invite a moderator or admin</div><div class="s">By email, with a sign-up link</div></div>${icon('chevron-right')}</a>
+      </div>` : ''}
       <div class="section">QUEUES</div>
       <div class="card list">
         <a class="item" href="#/admin/verifications"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">Verifications</div><div class="s">Selfies and landlord documents</div></div>${o.queues.verifications ? `<span class="tag orange">${o.queues.verifications}</span>` : ''}${icon('chevron-right')}</a>
         <a class="item" href="#/admin/reports"><div class="mi">${icon('triangle-exclamation')}</div><div class="grow"><div class="t">Reports</div><div class="s">Blocked and reported users</div></div>${o.queues.reports ? `<span class="tag orange">${o.queues.reports}</span>` : ''}${icon('chevron-right')}</a>
         <a class="item" href="#/admin/spots"><div class="mi">${icon('wand-magic-sparkles')}</div><div class="grow"><div class="t">Places to verify</div><div class="s">Community-added Ask places</div></div>${o.queues.spots ? `<span class="tag orange">${o.queues.spots}</span>` : ''}${icon('chevron-right')}</a>
       </div>
-      <div class="section">BUJA TODAY</div>
-      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">${tile('Users', o.counts.users)}${tile('Plus', o.counts.plus, 'var(--green-dark)')}${tile('Revenue', naira(o.payments.revenue), 'var(--green-dark)')}${tile('Open jobs', o.counts.jobs)}${tile('Applications', o.counts.applications)}${tile('Matches', o.counts.matches)}${tile('Homes', o.counts.properties)}${tile('Listings', o.counts.listings)}${tile('Fare reports', o.counts.fareReports)}${tile('Asks', o.counts.asks)}${tile('Places', o.counts.spots)}</div>
-      <div class="section">STORAGE AND PAYMENTS</div>
+      ${state.user.admin ? `<div class="section">BUJA TODAY</div>` : ''}
+      ${state.user.admin ? `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">${tile('Users', o.counts.users)}${tile('Plus', o.counts.plus, 'var(--green-dark)')}${tile('Revenue', naira(o.payments.revenue), 'var(--green-dark)')}${tile('Open jobs', o.counts.jobs)}${tile('Applications', o.counts.applications)}${tile('Matches', o.counts.matches)}${tile('Homes', o.counts.properties)}${tile('Listings', o.counts.listings)}${tile('Fare reports', o.counts.fareReports)}${tile('Asks', o.counts.asks)}${tile('Places', o.counts.spots)}</div>` : ''}
+      ${state.user.admin ? `<div class="section">STORAGE AND PAYMENTS</div>
       <div class="card stack" style="padding:16px;gap:10px">
         <div class="row"><div class="grow"><div style="font-size:14px;font-weight:600">Object storage (R2)</div><div class="small muted">${o.storage.configured ? 'Configured' : 'Not configured; files stay in the database'} · ${inDb} file${inDb === 1 ? '' : 's'} still in the database</div></div>${o.storage.configured ? `<span class="tag green">On</span>` : `<span class="tag" style="background:var(--surface);color:var(--ink-3)">Off</span>`}</div>
         <div class="row" style="gap:8px"><button class="btn btn-sm btn-outline" id="stest">Test storage</button>${o.storage.configured && inDb ? `<button class="btn btn-sm btn-ink" id="smig">Move 20 files to R2</button>` : ''}</div>
         <div class="small muted" id="sout"></div>
         <div class="row" style="padding-top:8px;border-top:1px solid var(--line)"><div class="grow"><div style="font-size:14px;font-weight:600">Paystack</div><div class="small muted">${o.payments.configured ? `Configured · ${o.payments.paid} paid` : 'Not configured; Plus shows as coming soon'}</div></div>${o.payments.configured ? `<span class="tag green">On</span>` : `<span class="tag" style="background:var(--surface);color:var(--ink-3)">Off</span>`}</div>
-      </div>
+      </div>` : ''}
     </main>`;
   }, { mount(el) { el.querySelector('#stest')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { const r = await api.adminStorageTest(); el.querySelector('#sout').textContent = r.message; } catch (err) { failed(el, err); } busy(e.currentTarget, false); }); el.querySelector('#smig')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { const r = await api.adminMigrate(); el.querySelector('#sout').textContent = `Moved ${r.moved}. ${r.remaining} remaining.`; } catch (err) { failed(el, err); } busy(e.currentTarget, false); }); } });
 
@@ -87,4 +94,70 @@ export function registerTrust({ route, go, state, setState, api, ui, failed }) {
     const g = guard(); if (g) return g; const { items } = await api.adminSpots();
     return `${topbar('Places to verify', '/admin')}<main class="pad stack" style="gap:12px">${items.length ? items.map((i) => `<div class="card stack" style="padding:14px;gap:8px" data-s="${i.id}"><div class="h-sm">${h(i.name)}</div><div class="small muted">${i.category} · ${h(i.district)}${i.area ? ' · ' + h(i.area) : ''} · added by ${h(i.addedBy || 'Buja')} · ${i.createdAt.slice(0, 10)}</div><div class="small" style="line-height:1.5">${h(i.description)}</div>${i.tags.length ? `<div class="row" style="flex-wrap:wrap;gap:6px">${i.tags.map((t) => `<span class="tag" style="background:var(--surface);color:var(--ink-2)">${h(t)}</span>`).join('')}</div>` : ''}<div class="row" style="gap:8px"><button class="btn btn-sm btn-ink" data-act="verify" style="flex:1">${icon('circle-check')} Verify</button><button class="btn btn-sm btn-outline" data-act="remove" style="flex:1">Remove</button></div></div>`).join('') : `<div class="placeholder" style="padding:50px 0"><div class="h-md">Nothing to verify</div></div>`}</main>`;
   }, { mount(el) { el.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => { const card = b.closest('[data-s]'); busy(b, true); try { await api.adminDecideSpot(card.dataset.s, b.dataset.act); card.remove(); toast('Done'); } catch (err) { busy(b, false); failed(el, err); } })); } });
+
+  /* ---------- Users ---------- */
+  route('/admin/users', { auth: true, tabs: 'Me' }, async () => {
+    const g = guard(true); if (g) return g;
+    const f = Object.fromEntries(new URLSearchParams(location.hash.split('?')[1] || '').entries());
+    const r = await api.adminUsers(f);
+    const chip = (k, v) => `<a class="chip ${(f.kind || '') === k ? 'on' : ''}" href="#/admin/users?${new URLSearchParams({ ...f, kind: k, page: 1 })}">${v}</a>`;
+    return `${topbar('Users', '/admin')}
+    <form id="s" class="pad" style="padding-bottom:0"><div class="card row" style="height:48px;padding:0 16px;gap:10px">${icon('magnifying-glass')}<label for="uq" style="position:absolute;left:-9999px">Search users</label><input id="uq" name="q" type="search" placeholder="Name, email or phone" value="${h(f.q || '')}" style="flex:1;border:none;background:transparent;outline:none;font-size:14px;color:var(--ink)"></div></form>
+    <div class="row" style="gap:8px;padding:10px 16px 0;overflow-x:auto;scrollbar-width:none">${chip('', 'All')}${chip('resident', 'Residents')}${chip('company', 'Companies')}${chip('landlord', 'Landlords')}${chip('staff', 'Staff')}${chip('suspended', 'Suspended')}</div>
+    <main class="pad stack" style="gap:10px;padding-top:12px"><div class="small muted">${r.total} account${r.total === 1 ? '' : 's'}</div>
+      <div class="card list">${r.users.map((u) => `<a class="item" href="#/admin/users/${u.id}" style="gap:12px">${u.avatar ? `<img src="${u.avatar}" alt="" style="width:40px;height:40px;border-radius:20px;object-fit:cover">` : avatar(u.name, 40, '#3E5C76')}<div class="grow" style="min-width:0"><div class="t row" style="gap:6px">${h(u.name)}${u.role !== 'user' ? `<span class="tag orange">${u.role}</span>` : ''}${u.plus ? `<span class="tag green">Plus</span>` : ''}${u.suspended ? `<span class="tag" style="background:#D92D20;color:#fff">Suspended</span>` : ''}</div><div class="s" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.kind} · ${h(u.district || 'no district')} · ${h(u.email)} · seen ${ago(u.lastSeenAt)}</div></div>${icon('chevron-right')}</a>`).join('') || `<div class="item"><div class="s">No accounts match.</div></div>`}</div>
+      ${r.total > 30 ? `<div class="row" style="justify-content:space-between">${r.page > 1 ? `<a class="btn btn-sm btn-outline" href="#/admin/users?${new URLSearchParams({ ...f, page: r.page - 1 })}" style="width:auto">Previous</a>` : '<span></span>'}${r.page * 30 < r.total ? `<a class="btn btn-sm btn-outline" href="#/admin/users?${new URLSearchParams({ ...f, page: r.page + 1 })}" style="width:auto">Next</a>` : ''}</div>` : ''}
+    </main>`;
+  }, { mount(el) { el.querySelector('#s')?.addEventListener('submit', (e) => { e.preventDefault(); const p = new URLSearchParams(location.hash.split('?')[1] || ''); p.set('q', e.target.q.value); p.set('page', '1'); go('/admin/users?' + p); }); } });
+
+  route('/admin/users/:id', { auth: true, tabs: 'Me' }, async ({ id }) => {
+    const g = guard(true); if (g) return g;
+    const { user: u, activity, sessions } = await api.adminUser(id);
+    const act = Object.entries(activity).filter(([k, v]) => v);
+    return `${topbar(u.name, '/admin/users')}
+    <main class="pad stack" style="gap:14px">
+      <div class="card row" style="padding:14px;gap:12px">${u.avatar ? `<img src="${u.avatar}" alt="" style="width:52px;height:52px;border-radius:26px;object-fit:cover">` : avatar(u.name, 52, '#3E5C76')}<div class="grow"><div class="h-sm row" style="gap:6px">${h(u.name)}${u.suspended ? `<span class="tag" style="background:#D92D20;color:#fff">Suspended</span>` : ''}</div><div class="small muted">${u.kind} · ${h(u.district || 'no district')} · joined ${u.createdAt.slice(0, 10)} · seen ${ago(u.lastSeenAt)}</div></div></div>
+      <div class="card list">
+        <div class="item"><div class="grow"><div class="t" style="font-size:13px">Email</div><div class="s">${h(u.email || '')} ${u.emailVerified ? '· confirmed' : '· not confirmed'}${u.google ? ' · Google' : ''}</div></div></div>
+        <div class="item"><div class="grow"><div class="t" style="font-size:13px">Phone</div><div class="s">${h(u.phone || 'none')}</div></div></div>
+        <div class="item"><div class="grow"><div class="t" style="font-size:13px">Trust</div><div class="s">${u.selfieVerified ? 'Selfie verified' : 'Not selfie verified'} · ${u.plusUntil && u.plusUntil > new Date().toISOString() ? 'Plus until ' + u.plusUntil.slice(0, 10) : 'Free'} · ${sessions} active session${sessions === 1 ? '' : 's'}</div></div></div>
+        ${act.length ? `<div class="item"><div class="grow"><div class="t" style="font-size:13px">Activity</div><div class="s">${act.map(([k, v]) => `${v} ${k.replace(/([A-Z])/g, ' $1').toLowerCase()}`).join(' · ')}</div></div></div>` : ''}
+      </div>
+      <div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Role</div><div class="seg" id="role">${['user', 'moderator', 'admin'].map((r) => `<button type="button" data-role="${r}" class="${u.role === r ? 'on' : ''}">${r[0].toUpperCase() + r.slice(1)}</button>`).join('')}</div><div class="small muted">Moderators work the queues. Admins see everything, including this page.</div></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-outline" data-act="signout" style="flex:1">Sign out everywhere</button>
+        ${u.suspended ? `<button class="btn btn-sm btn-ink" data-act="restore" style="flex:1">Restore account</button>` : `<button class="btn btn-sm btn-ink" data-act="suspend" style="flex:1;background:#D92D20">Suspend</button>`}
+        <button class="btn btn-sm btn-outline" data-act="delete" style="flex-basis:100%;color:#D92D20;border-color:#D92D20">Delete account and all their data</button>
+      </div>
+    </main>`;
+  }, { mount(el, { id }) {
+    el.querySelectorAll('#role button').forEach((b) => b.addEventListener('click', async () => { try { await api.adminUserAction(id, { role: b.dataset.role }); el.querySelectorAll('#role button').forEach((x) => x.classList.toggle('on', x === b)); toast('Role updated'); } catch (err) { failed(el, err); } }));
+    el.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => { const a = b.dataset.act; if ((a === 'suspend' || a === 'delete') && !confirm(a === 'delete' ? 'Delete this account permanently, with their listings, photos, messages and matches? This cannot be undone.' : 'Suspend this account? They are signed out and their listings are hidden.')) return; busy(b, true); try { const r = await api.adminUserAction(id, { action: a }); toast('Done'); if (r.deleted) go('/admin/users'); else location.reload(); } catch (err) { busy(b, false); failed(el, err); } }));
+  } });
+
+  route('/admin/invite', { auth: true, tabs: 'Me' }, async () => { const g = guard(true); if (g) return g; return `${topbar('Invite', '/admin')}
+    <form id="inv" class="pad stack" style="gap:14px"><div class="muted small" style="line-height:1.5">They get an email with a sign-up link that carries the role. If they already have a Buja account, the role is applied straight away.</div>
+      <div class="field"><label for="email">Email</label><input class="input" id="email" type="email" placeholder="person@example.com" autocomplete="off"><div class="error" data-error="email"></div></div>
+      <div class="field"><label>Role</label><div class="seg" id="irole"><button type="button" data-v="moderator" class="on">Moderator</button><button type="button" data-v="admin">Admin</button></div></div>
+      <button class="btn btn-primary" type="submit">${icon('paper-plane')} Send invitation</button>
+      <div class="card" id="out" style="padding:12px 14px;display:none;font-size:13px;line-height:1.5;word-break:break-all"></div></form>`; },
+    { mount(el) { el.querySelectorAll('#irole button').forEach((b) => b.addEventListener('click', () => el.querySelectorAll('#irole button').forEach((x) => x.classList.toggle('on', x === b)))); el.querySelector('#inv').addEventListener('submit', async (e) => { e.preventDefault(); const btn = e.target.querySelector('[type=submit]'); busy(btn, true); try { const r = await api.adminInvite(el.querySelector('#email').value, el.querySelector('#irole button.on').dataset.v); const out = el.querySelector('#out'); out.style.display = ''; out.innerHTML = h(r.message) + (r.link ? `<br><strong>Link:</strong> ${h(r.link)}` : ''); toast(r.message); busy(btn, false); } catch (err) { busy(btn, false); failed(el, err); } }); } });
+
+  /* ---------- Analytics ---------- */
+  route('/admin/analytics', { auth: true, tabs: 'Me' }, async () => {
+    const g = guard(true); if (g) return g;
+    const days = +(new URLSearchParams(location.hash.split('?')[1] || '').get('days') || 30);
+    const a = await api.adminAnalytics(days);
+    const bars = (key, color) => { const max = Math.max(1, ...a.series.map((s) => s[key])); return `<div style="display:flex;align-items:flex-end;gap:2px;height:90px">${a.series.map((s) => `<div title="${s.d}: ${s[key]}" style="flex:1;height:${Math.max(2, s[key] / max * 90)}px;background:${color};border-radius:3px 3px 0 0;opacity:${s[key] ? 1 : .25}"></div>`).join('')}</div><div class="row small muted" style="justify-content:space-between"><span>${a.series[0].d.slice(5)}</span><span>peak ${max}</span><span>${a.series[a.series.length - 1].d.slice(5)}</span></div>`; };
+    const mods = Object.entries(a.modules).sort((x, y) => y[1].events - x[1].events);
+    return `${topbar('Analytics', '/admin', `<div class="seg" style="height:36px">${[7, 30, 90].map((d) => `<a href="#/admin/analytics?days=${d}" class="${days === d ? 'on' : ''}" style="padding:0 10px;text-decoration:none;display:flex;align-items:center;font-size:12px">${d}d</a>`).join('')}</div>`)}
+    <main class="pad stack" style="gap:14px">
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">${[['Active today', a.active.today], ['Active 7 days', a.active.week], ['Active 30 days', a.active.month]].map(([l, v]) => `<div class="card" style="padding:12px 14px"><div class="small muted" style="font-weight:600">${l}</div><div style="font-size:24px;font-weight:700">${v}</div></div>`).join('')}</div>
+      <div class="card stack" style="padding:14px;gap:8px"><div class="row" style="justify-content:space-between"><span class="h-sm">Active users per day</span><span class="small muted">${a.totalUsers} accounts in total</span></div>${bars('active', 'var(--green)')}</div>
+      <div class="card stack" style="padding:14px;gap:8px"><div class="row" style="justify-content:space-between"><span class="h-sm">Sign-ups per day</span><span class="small muted">${a.signupsInRange} in ${a.days} days</span></div>${bars('signups', 'var(--orange)')}</div>
+      <div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Usage by module, last ${a.days} days</div>${mods.length ? mods.map(([m, v]) => `<div><div class="row" style="justify-content:space-between;font-size:13px"><strong>${m}</strong><span class="muted">${v.events} actions</span></div><div style="height:6px;border-radius:3px;background:var(--line);margin:4px 0"><div style="width:${Math.round(v.events / mods[0][1].events * 100)}%;height:100%;border-radius:3px;background:var(--ink)"></div></div><div class="small muted">${Object.entries(v.actions).map(([k, x]) => `${k} ${x.events} (${x.users} people)`).join(' · ')}</div></div>`).join('') : `<div class="small muted">No activity recorded yet. Events start counting from this version.</div>`}</div>
+      <div class="row" style="gap:8px"><div class="card stack" style="padding:14px;gap:6px;flex:1"><div class="h-sm">Accounts</div>${Object.entries(a.kinds).map(([k, v]) => `<div class="row small" style="justify-content:space-between"><span>${k}</span><strong>${v}</strong></div>`).join('')}</div><div class="card stack" style="padding:14px;gap:6px;flex:1"><div class="h-sm">Top districts</div>${a.districts.slice(0, 6).map((d) => `<div class="row small" style="justify-content:space-between"><span>${h(d.district)}</span><strong>${d.users}</strong></div>`).join('') || '<div class="small muted">none yet</div>'}</div></div>
+      ${a.revenueByMonth.length ? `<div class="card stack" style="padding:14px;gap:6px"><div class="h-sm">Revenue by month</div>${a.revenueByMonth.map((r) => `<div class="row small" style="justify-content:space-between"><span>${r.month}</span><strong>${naira(r.naira)} · ${r.payments} payment${r.payments === 1 ? '' : 's'}</strong></div>`).join('')}</div>` : ''}
+    </main>`;
+  });
 }

@@ -72,7 +72,7 @@ final class JobsController
         $score = Work::score($reqs, $met);
         Db::run('INSERT INTO applications (job_id, user_id, cv_file_id, note, met_ids, match_score, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
             [$id, $u['id'], $cv['id'], $note, json_encode($met), $score, 'new', Db::now(), Db::now()]);
-        $appId = Db::lastId();
+        $appId = Db::lastId(); Track::hit($u, 'work', 'apply');
         $owner = Db::one('SELECT owner_id FROM companies WHERE id = ?', [$j['company_id']]);
         if ($owner) Notify::user((int) $owner['owner_id'], 'work', $u['name'] . ' applied for ' . $j['title'], $score . '% match on your requirements. Tap to review the CV.', '/#/work/company/job/' . $id);
         Http::json(['application' => ['id' => $appId, 'status' => 'new', 'match' => $score]], 201);

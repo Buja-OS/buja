@@ -29,6 +29,8 @@ final class AuthController
         Db::run('INSERT INTO users (kind, name, email, phone, password_hash, created_at, updated_at) VALUES (?,?,?,?,?,?,?)',
             ['resident', $name, $email, $phone, password_hash($pass, PASSWORD_DEFAULT), Db::now(), Db::now()]);
         $id = Db::lastId();
+        if (!empty($b['invite'])) { $inv = Db::one('SELECT * FROM invites WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?', [hash('sha256', (string) $b['invite']), Db::now()]); if ($inv && strtolower($inv['email']) === $email) { Db::run('UPDATE users SET role = ?, is_admin = ?, email_verified_at = ? WHERE id = ?', [$inv['role'], $inv['role'] === 'admin' ? 1 : 0, Db::now(), $id]); Db::run('UPDATE invites SET used_at = ? WHERE id = ?', [Db::now(), $inv['id']]); } }
+        Track::hit(['id' => $id], 'account', 'register');
         Auth::signIn($id);
         $u = Db::one('SELECT * FROM users WHERE id = ?', [$id]);
         try { AccountController::sendVerification($u); } catch (Throwable $e) { error_log('[buja] verification email failed: ' . $e->getMessage()); }
@@ -54,7 +56,7 @@ final class AuthController
         if (password_needs_rehash($u['password_hash'], PASSWORD_DEFAULT)) {
             Db::run('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash($pass, PASSWORD_DEFAULT), $u['id']]);
         }
-        Auth::signIn((int) $u['id']);
+        Auth::signIn((int) $u['id']); Track::hit($u, 'account', 'login');
         Http::json(['user' => Auth::publicUser($u), 'next' => $u['district'] === null ? 'onboarding' : 'home']);
     }
 

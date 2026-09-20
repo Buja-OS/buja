@@ -30,7 +30,7 @@ final class AskController
         $result = $key !== '' ? $this->askModel($q, $spots, $u, $key) : null;
         if ($result === null) $result = $this->askRules($q, $spots, $u);
         $ids = array_map(fn($s) => $s['id'], $result['spots']);
-        Db::run('INSERT INTO ask_log (user_id, question, district, spot_ids, mode, created_at) VALUES (?,?,?,?,?,?)', [$u['id'], $q, $u['district'], json_encode($ids), $result['mode'], Db::now()]);
+        Db::run('INSERT INTO ask_log (user_id, question, district, spot_ids, mode, created_at) VALUES (?,?,?,?,?,?)', [$u['id'], $q, $u['district'], json_encode($ids), $result['mode'], Db::now()]); Track::hit($u, 'ask', 'ask');
         Http::json($result);
     }
 

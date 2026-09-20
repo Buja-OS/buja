@@ -77,6 +77,7 @@ final class AccountController
     public function today(): void
     {
         $u = Auth::require();
+        if (empty($u['last_seen_at']) || $u['last_seen_at'] < gmdate('Y-m-d H:i:s', time() - 300)) { Db::run('UPDATE users SET last_seen_at = ? WHERE id = ?', [Db::now(), $u['id']]); Track::hit($u, 'app', 'open'); }
         $st = Db::pdo()->prepare("SELECT m.id, m.type, m.meta, t.id AS thread_id, t.application_id, t.property_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.type IN ('interview','inspection') AND (t.user_a = ? OR t.user_b = ?) ORDER BY m.id DESC LIMIT 20");
         $st->execute([$u['id'], $u['id']]);
         $items = [];
@@ -91,6 +92,7 @@ final class AccountController
         usort($items, fn($x, $y) => strcmp($x['at'], $y['at']));
         $unread = (int) (Db::one('SELECT COUNT(*) AS n FROM messages m JOIN threads t ON t.id = m.thread_id WHERE (t.user_a = ? OR t.user_b = ?) AND m.sender_id <> ? AND m.id > COALESCE((SELECT last_read_id FROM thread_reads r WHERE r.thread_id = t.id AND r.user_id = ?), 0)', [$u['id'], $u['id'], $u['id'], $u['id']])['n'] ?? 0);
         $n = Db::one('SELECT notify_work, notify_match, notify_waka, notify_offers FROM users WHERE id = ?', [$u['id']]);
-        Http::json(['items' => array_slice($items, 0, 5), 'unread' => $unread, 'notifications' => ['work' => (bool) $n['notify_work'], 'match' => (bool) $n['notify_match'], 'waka' => (bool) $n['notify_waka'], 'offers' => (bool) $n['notify_offers']], 'pushEnabled' => Db::one('SELECT 1 AS x FROM push_subscriptions WHERE user_id = ?', [$u['id']]) !== null]);
+        $nu = (int) (Db::one('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL', [$u['id']])['n'] ?? 0);
+        Http::json(['items' => array_slice($items, 0, 5), 'unread' => $unread, 'notifications_unread' => $nu, 'notifications' => ['work' => (bool) $n['notify_work'], 'match' => (bool) $n['notify_match'], 'waka' => (bool) $n['notify_waka'], 'offers' => (bool) $n['notify_offers']], 'pushEnabled' => Db::one('SELECT 1 AS x FROM push_subscriptions WHERE user_id = ?', [$u['id']]) !== null]);
     }
 }

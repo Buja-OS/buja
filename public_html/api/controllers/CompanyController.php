@@ -88,7 +88,7 @@ final class CompanyController
         $pdo = Db::pdo(); $pdo->beginTransaction();
         Db::run('INSERT INTO jobs (company_id, title, district, type, salary_min, salary_max, description, deadline, openings, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
             [$c['id'], $v['title'], $v['district'], $v['type'], $v['min'], $v['max'], $v['desc'], $v['deadline'] ?: null, $v['openings'], 'open', Db::now(), Db::now()]);
-        $id = Db::lastId();
+        $id = Db::lastId(); Track::hit(Auth::user(), 'work', 'post_job');
         foreach ($v['reqs'] as $r) Db::run('INSERT INTO job_requirements (job_id, label, weight) VALUES (?,?,?)', [$id, $r['label'], $r['weight']]);
         $pdo->commit();
         Http::json(['job' => Work::job(Db::one('SELECT * FROM jobs WHERE id = ?', [$id]), $c, ['requirements' => Work::requirements($id)])], 201);

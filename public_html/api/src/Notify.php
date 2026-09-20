@@ -9,6 +9,7 @@ final class Notify
         try {
             $u = Db::one('SELECT id, email, name, notify_work, notify_match, notify_waka, notify_offers FROM users WHERE id = ?', [$userId]);
             if ($u === null) return;
+            Db::run('INSERT INTO notifications (user_id, category, title, body, url, created_at) VALUES (?,?,?,?,?,?)', [$userId, $category, mb_substr($title, 0, 120), mb_substr($body, 0, 300), $url, Db::now()]);
             $col = 'notify_' . $category;
             if (isset($u[$col]) && !(int) $u[$col]) return;
             $pushed = 0;

@@ -1,4 +1,4 @@
-# Buja, Phase 8a: trust and money
+# Buja, Phase 9a: notifications, profiles, admin
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -116,6 +116,16 @@ Note on tiles: OpenStreetMap's public tile server is fine for testing and early 
 - **Object storage**: `api/src/Media.php` speaks S3 Signature V4 to Cloudflare R2 (`R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`). When configured, new photos and CVs go to the bucket and are served through short-lived signed URLs; existing files can be moved in batches from the admin panel. Not configured, everything stays in the database as before.
 - New: `api/src/Paystack.php`, `api/src/Media.php`, `api/controllers/PayController.php`, `VerifyController.php`, `AdminController.php`, `js/trust.js`, `migrations/009_trust.sql`.
 
+## Phase 9a: notification centre, profile pictures, real admin
+
+- **Notification centre** behind the bell on Home: every push or email Buja sends is also stored in-app (`notifications`), with an unread dot, a list that deep-links to the thread, listing or screen, and mark-all-read. Fixes the bell that was only decorative.
+- **Profile pictures** for every account: square-cropped on the phone, stored in R2 when configured, shown on Me and in the admin user list.
+- **Admin, properly**: Users (search by name, email or phone; filter by kind, staff, suspended; paging), a user page with contact, trust status, activity counts and sessions, role control (user, moderator, admin), sign out everywhere, suspend and restore, delete with all data. Invite by email with a sign-up link that carries the role, or instant promotion for an existing account. Analytics: active users today, 7 days and 30 days, active users and sign-ups per day for 7, 30 or 90 days, usage by module and action with distinct people, accounts by kind, top districts, revenue by month. Moderators see only the queues.
+- Activity is recorded in `events` from this version on (`api/src/Track.php`), so analytics start counting at deploy.
+- New: `api/src/Track.php`, `api/controllers/NotificationsController.php`, `AvatarController.php`, `migrations/010_admin_notifications.sql`.
+
 ## What is next
+
+Phase 9b: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

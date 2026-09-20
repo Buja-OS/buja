@@ -48,7 +48,7 @@ async function render() {
 }
 window.addEventListener('hashchange', render);
 let lastKey = '';
-const stateKey = () => JSON.stringify([state.user && [state.user.id, state.user.kind, state.user.district, state.user.name, state.user.verified, state.user.plus, state.user.selfieVerified], state.theme]);
+const stateKey = () => JSON.stringify([state.user && [state.user.id, state.user.kind, state.user.district, state.user.name, state.user.verified, state.user.plus, state.user.selfieVerified, state.user.avatar], state.theme]);
 subscribe(() => { const k = stateKey(); if (k === lastKey) return; lastKey = k; if (['/home', '/me', '/settings'].includes(current())) render(); });
 
 /* ---------------- Screens ---------------- */
@@ -189,7 +189,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
   <header class="topbar" style="padding-top:8px">
     ${markAuto(30)}<h1 style="letter-spacing:1px;font-size:22px">Buja</h1>
     <a class="iconbtn" href="#/settings" aria-label="Settings">${icon('gear')}</a>
-    <button class="iconbtn" aria-label="Notifications">${icon('regular/bell')}<span class="dot"></span></button>
+    <a class="iconbtn" href="#/notifications" aria-label="Notifications" style="position:relative">${icon('regular/bell')}<span class="dot" id="belldot" style="display:none"></span></a>
   </header>
   <main class="pad stack" style="gap:16px;padding-top:4px">
     <div><div class="h-lg">${greet}, ${h(u.name.split(' ')[0])}</div><div class="muted small" style="margin-top:3px;display:flex;align-items:center;gap:6px">${icon('location-dot')} ${h(u.district || 'Abuja')}${api.isMock() ? ' · preview mode' : ''}</div></div>
@@ -202,6 +202,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
   el.querySelector('#homeask')?.addEventListener('submit', (e) => { e.preventDefault(); const v = el.querySelector('#hq').value.trim(); go('/ask' + (v ? '?q=' + encodeURIComponent(v) : '')); });
   try {
     const t = await api.today(); state.unread = t.unread; setBadge(t.unread);
+    const dot = el.querySelector('#belldot'); if (dot) dot.style.display = t.notifications_unread ? '' : 'none';
     const box = el.querySelector('#today'); const items = [];
     if (t.unread) items.push(`<a class="card row" href="#/inbox" style="padding:13px 16px">${icon('message')}<div class="grow"><div style="font-size:14px;font-weight:600">${t.unread} unread message${t.unread === 1 ? '' : 's'}</div><div class="small muted">Open your inbox</div></div>${icon('chevron-right')}</a>`);
     for (const i of t.items) items.push(`<a class="card row" href="#${i.url}" style="padding:13px 16px">${icon('calendar-check')}<div class="grow"><div style="font-size:14px;font-weight:600">${h(i.title)}</div><div class="small muted">${h(i.sub)}</div></div>${icon('chevron-right')}</a>`);
@@ -218,8 +219,8 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
   return `
   ${topbar('Me', '', `<a class="iconbtn" href="#/settings" aria-label="Settings">${icon('gear')}</a>`)}
   <main class="pad stack" style="gap:14px">
-    <div class="card dark row" style="padding:16px;gap:14px">${avatar(u.name, 56)}<div class="grow"><div class="h-md">${h(u.name)}</div><div class="small" style="color:#B5B5BC;margin-top:2px">${h(u.district || 'Abuja')} · ${h(kindLabel(u.kind))}</div><div class="row" style="gap:6px;margin-top:8px">${u.verified ? `<span class="tag green">${icon('circle-check')} Email verified</span>` : `<span class="tag orange">Email not verified</span>`}${u.plus ? `<span class="tag" style="background:#7ED957;color:#101014">${icon('bolt')} Plus</span>` : ''}${u.selfieVerified ? `<span class="tag" style="background:rgba(255,255,255,.12);color:#fff">${icon('circle-check')} Selfie verified</span>` : ''}</div></div></div>
-    ${u.admin ? `<a class="card row" href="#/admin" style="padding:12px 14px;border-color:var(--orange)">${icon('shield-halved')}<div class="grow"><div style="font-size:14px;font-weight:600">Buja admin</div><div class="small muted">Verifications, reports, places, storage</div></div>${icon('chevron-right')}</a>` : ''}
+    <div class="card dark row" style="padding:16px;gap:14px"><label style="position:relative;cursor:pointer;flex-shrink:0">${u.avatar ? `<img src="${u.avatar}" alt="" style="width:56px;height:56px;border-radius:28px;object-fit:cover;display:block">` : avatar(u.name, 56)}<span style="position:absolute;right:-4px;bottom:-4px;width:24px;height:24px;border-radius:12px;background:var(--orange);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;border:2px solid var(--night)">${icon('camera')}</span><input type="file" accept="image/*" id="avatarpick" style="display:none"></label><div class="grow"><div class="h-md">${h(u.name)}</div><div class="small" style="color:#B5B5BC;margin-top:2px">${h(u.district || 'Abuja')} · ${h(kindLabel(u.kind))}</div><div class="row" style="gap:6px;margin-top:8px">${u.verified ? `<span class="tag green">${icon('circle-check')} Email verified</span>` : `<span class="tag orange">Email not verified</span>`}${u.plus ? `<span class="tag" style="background:#7ED957;color:#101014">${icon('bolt')} Plus</span>` : ''}${u.selfieVerified ? `<span class="tag" style="background:rgba(255,255,255,.12);color:#fff">${icon('circle-check')} Selfie verified</span>` : ''}</div></div></div>
+    ${u.admin || u.role === 'moderator' ? `<a class="card row" href="#/admin" style="padding:12px 14px;border-color:var(--orange)">${icon('shield-halved')}<div class="grow"><div style="font-size:14px;font-weight:600">${u.admin ? 'Buja admin' : 'Moderation'}</div><div class="small muted">${u.admin ? 'Users, analytics, verifications, reports' : 'Verifications, reports, places'}</div></div>${icon('chevron-right')}</a>` : ''}
     ${state.user.verified ? '' : `<div class="card row" style="padding:12px 14px;border-color:var(--orange)">${icon('triangle-exclamation')}<div class="grow"><div style="font-size:14px;font-weight:600">Confirm your email</div><div class="small muted">Check your inbox for the link from Buja.</div></div><button class="btn btn-sm btn-outline" data-resend>Resend</button></div>`}
     <div class="card list">
       <div class="item"><div class="mi">${icon('user')}</div><div class="grow"><div class="t">Account</div><div class="s">${h(u.email)}${u.phone ? ' · ' + h(u.phone) : ''}</div></div></div>
@@ -236,6 +237,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
   </main>`;
 }, { mount(el) {
   el.querySelector('[data-logout]').addEventListener('click', async () => { await api.logout(); setState({ user: null }); toast('Signed out'); go('/welcome'); });
+  el.querySelector('#avatarpick')?.addEventListener('change', async (e) => { const f = e.target.files[0]; if (!f) return; try { const bmp = await createImageBitmap(f); const s = 320; const c = document.createElement('canvas'); c.width = s; c.height = s; const m = Math.min(bmp.width, bmp.height); c.getContext('2d').drawImage(bmp, (bmp.width - m) / 2, (bmp.height - m) / 2, m, m, 0, 0, s, s); const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85)); const r = await api.uploadAvatar(new File([blob], 'avatar.jpg', { type: 'image/jpeg' })); setState({ user: r.user }); toast('Photo updated'); } catch (err) { failed(el, err); } });
   el.querySelector('[data-resend]')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { const r = await api.resendVerify(); toast(r.configured ? 'Confirmation email sent' : 'Email is not set up on this server yet'); } catch (err) { failed(el, err); } busy(e.currentTarget, false); });
 } });
 
@@ -287,6 +289,17 @@ registerMatch({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, sh
 const push = registerMessages({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
 
 route('/404', {}, async () => `${topbar('Not found', '/home')}<div class="placeholder"><div class="h-md">That page does not exist</div><a class="btn btn-ink" href="#/home" style="width:auto">Go home</a></div>`);
+
+route('/notifications', { auth: true, tabs: '' }, async () => {
+  const { notifications } = await api.notifications();
+  const icons = { work: 'briefcase', match: 'heart', waka: 'route', offers: 'bolt' };
+  const when = (iso) => { const d = new Date(iso.replace(' ', 'T') + 'Z'); return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); };
+  return `${topbar('Notifications', '/home', notifications.some((n) => !n.read) ? `<button class="btn btn-sm btn-outline" id="readall" style="height:36px">Mark all read</button>` : '')}
+  <main class="pad stack" style="gap:10px">${notifications.length ? `<div class="card list">${notifications.map((n) => `<a class="item" href="${n.url ? n.url.replace(/^\/#/, '#') : '#/home'}" data-nid="${n.id}" style="${n.read ? '' : 'background:var(--orange-tint)'}"><div class="mi" style="${n.read ? '' : 'background:var(--orange);color:#fff'}">${icon(icons[n.category] || 'bell')}</div><div class="grow"><div class="t" style="font-weight:${n.read ? 600 : 700}">${h(n.title)}</div>${n.body ? `<div class="s">${h(n.body)}</div>` : ''}<div class="s" style="font-size:11px;margin-top:2px">${when(n.at)}</div></div>${icon('chevron-right')}</a>`).join('')}</div>` : `<div class="placeholder" style="padding:60px 0"><div class="mi card">${icon('bell')}</div><div class="h-md">Nothing yet</div><div class="small muted" style="max-width:280px;line-height:1.5">Interviews, matches, offers, inspections and fare updates land here, and on your phone if push is on.</div></div>`}</main>`;
+}, { mount(el) {
+  el.querySelector('#readall')?.addEventListener('click', async () => { await api.readNotifications({ all: true }); location.reload(); });
+  el.querySelectorAll('[data-nid]').forEach((n) => n.addEventListener('click', () => { api.readNotifications({ ids: [+n.dataset.nid] }).catch(() => {}); }));
+} });
 
 /* ---------------- Helpers ---------------- */
 function setBadge(n) { const tab = document.querySelector('.tab[aria-label="Inbox"]'); if (!tab) return; tab.querySelector('.tab-badge')?.remove(); if (n) tab.insertAdjacentHTML('beforeend', `<span class="tab-badge">${n}</span>`); }

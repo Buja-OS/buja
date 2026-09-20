@@ -109,6 +109,7 @@ final class WakaController
         usort($options, fn($x, $y) => [$x['fare'], $x['minutes']] <=> [$y['fare'], $y['minutes']]);
         $options = array_slice($options, 0, 4);
         if ($options) { $options[0]['tag'] = 'cheapest'; $fi = 0; foreach ($options as $i => $o) if ($o['minutes'] < $options[$fi]['minutes']) $fi = $i; if ($fi !== 0 || count($options) === 1) $options[$fi]['tag'] = $options[$fi]['tag'] ?? 'fastest'; if (count($options) > 1 && $fi === 0) $options[0]['tag'] = 'cheapest and fastest'; }
+        Track::hit(Auth::user(), 'waka', 'plan');
         $km = WakaRules::km((float) $a['lat'], (float) $a['lng'], (float) $b['lat'], (float) $b['lng']);
         $taxi = ['legs' => [['mode' => 'taxi', 'modeLabel' => 'Taxi', 'routeName' => 'Taxi drop, direct', 'from' => $this->place($a), 'to' => $this->place($b), 'km' => round($km, 1), 'minutes' => WakaRules::minutes($km, 'taxi'), 'fare' => ['amount' => (int) (round(max(1500, 400 + $km * 350) / 100) * 100), 'reports' => 0, 'confirmed' => false], 'path' => [$this->place($a), $this->place($b)], 'say' => 'Agree the price before you enter', 'color' => '#1B1B1F', 'ridersNow' => 0]], 'transfers' => 0, 'tag' => 'direct', 'taxi' => true];
         $taxi['fare'] = $taxi['legs'][0]['fare']['amount']; $taxi['minutes'] = $taxi['legs'][0]['minutes']; $taxi['confirmed'] = false; $taxi['ridersNow'] = 0;
@@ -123,7 +124,7 @@ final class WakaController
         if ($amt < 50 || $amt > 50000) Http::json(['error' => 'validation', 'fields' => ['amount' => 'Enter what you paid, between ₦50 and ₦50,000.']], 422);
         $ok = Db::one('SELECT 1 AS x FROM route_stops a JOIN route_stops b ON b.route_id = a.route_id WHERE a.route_id = ? AND a.place_id = ? AND b.place_id = ? AND a.position <> b.position', [$rid, $from, $to]);
         if (!$ok) Http::json(['error' => 'validation', 'message' => 'Those two stops are not both on this route.'], 422);
-        Db::run('INSERT INTO fare_reports (route_id, from_place, to_place, amount, user_id, created_at) VALUES (?,?,?,?,?,?)', [$rid, $from, $to, $amt, $u['id'], Db::now()]);
+        Db::run('INSERT INTO fare_reports (route_id, from_place, to_place, amount, user_id, created_at) VALUES (?,?,?,?,?,?)', [$rid, $from, $to, $amt, $u['id'], Db::now()]); Track::hit($u, 'waka', 'fare_report');
         Http::json(['fare' => WakaRules::fare($rid, $from, $to)], 201);
     }
 

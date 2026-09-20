@@ -87,7 +87,7 @@ final class MessagesController
         if (Db::one('SELECT 1 AS x FROM blocks WHERE (blocker = ? AND blocked = ?) OR (blocker = ? AND blocked = ?)', [$u['id'], $o, $o, $u['id']])) Http::json(['error' => 'blocked', 'message' => 'You cannot message this person.'], 403);
         $body = trim((string) (Http::body()['body'] ?? '')); if ($body === '' || mb_strlen($body) > 2000) Http::json(['error' => 'validation', 'fields' => ['body' => 'Write something, up to 2000 characters.']], 422);
         Db::run('INSERT INTO messages (thread_id, sender_id, type, body, created_at) VALUES (?,?,?,?,?)', [$id, $u['id'], 'text', $body, Db::now()]);
-        $mid = Db::lastId();
+        $mid = Db::lastId(); Track::hit($u, 'inbox', 'message');
         Db::run('UPDATE threads SET last_message_at = ? WHERE id = ?', [Db::now(), $id]);
         Notify::user($o, $t['kind'] === 'match' ? 'match' : 'work', $t['kind'] === 'match' ? explode(' ', $u['name'])[0] . ' sent you a message' : ($u['kind'] === 'company' ? ($this->companyName($u) . ' sent you a message') : $u['name'] . ' sent you a message'), mb_substr($body, 0, 120), '/#/inbox/' . $id);
         Http::json(['message' => $this->shapeMessage(Db::one('SELECT * FROM messages WHERE id = ?', [$mid]), (int) $u['id'])], 201);

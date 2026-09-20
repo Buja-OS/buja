@@ -182,7 +182,7 @@ final class MatchController
         if (!Db::one('SELECT 1 AS x FROM match_profiles WHERE user_id = ?', [$to])) Http::json(['error' => 'not_found'], 404);
         if ($action === 'superlike' && $this->superlikesLeft((int) $u['id']) <= 0) Http::json(['error' => 'limit', 'message' => PayController::plusActive($u) ? 'You have used your five super likes for today.' : 'One super like a day on the free plan. Buja Plus gives five.'], 429);
         Db::run('DELETE FROM swipes WHERE from_user = ? AND to_user = ?', [$u['id'], $to]);
-        Db::run('INSERT INTO swipes (from_user, to_user, action, created_at) VALUES (?,?,?,?)', [$u['id'], $to, $action, Db::now()]);
+        Db::run('INSERT INTO swipes (from_user, to_user, action, created_at) VALUES (?,?,?,?)', [$u['id'], $to, $action, Db::now()]); Track::hit($u, 'match', 'swipe');
         $matched = null;
         if ($action !== 'pass') {
             $back = Db::one("SELECT id FROM swipes WHERE from_user = ? AND to_user = ? AND action IN ('like','superlike')", [$to, $u['id']]);
@@ -191,7 +191,7 @@ final class MatchController
                 if ($ex === null) {
                     Db::run('INSERT INTO threads (kind, application_id, user_a, user_b, last_message_at, created_at) VALUES (?,?,?,?,?,?)', ['match', null, $u['id'], $to, Db::now(), Db::now()]);
                     $tid = Db::lastId();
-                    Db::run('INSERT INTO matches (user_a, user_b, thread_id, created_at) VALUES (?,?,?,?)', [$u['id'], $to, $tid, Db::now()]);
+                    Db::run('INSERT INTO matches (user_a, user_b, thread_id, created_at) VALUES (?,?,?,?)', [$u['id'], $to, $tid, Db::now()]); Track::hit($u, 'match', 'match');
                     $ex = ['thread_id' => $tid];
                     $them = $this->profileRow($to);
                     Notify::user($to, 'match', "It's a match with " . explode(' ', $u['name'])[0], 'You liked each other. Say hello.', '/#/inbox/' . $tid);

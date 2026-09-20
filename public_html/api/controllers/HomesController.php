@@ -110,6 +110,7 @@ final class HomesController
         [$e, $v] = $this->validate(Http::body()); if ($e) Http::json(['error' => 'validation', 'fields' => $e], 422);
         Db::run('INSERT INTO properties (owner_id, kind, type, title, district, area, price, beds, baths, facilities, description, upfront_years, legal_fee, caution_fee, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
             [$u['id'], $v['kind'], $v['type'], $v['title'], $v['district'], $v['area'] ?: null, $v['price'], $v['beds'], $v['baths'], json_encode($v['fac']), $v['desc'], $v['upfront'], $v['legal'], $v['caution'], 'available', Db::now(), Db::now()]);
+        Track::hit($u, 'homes', 'post');
         Http::json(['property' => $this->shape(Db::one('SELECT * FROM properties WHERE id = ?', [Db::lastId()]), $u, true)], 201);
     }
 
@@ -188,7 +189,7 @@ final class HomesController
         $p = Db::one("SELECT * FROM properties WHERE id = ? AND status = 'available'", [$id]); if (!$p) Http::json(['error' => 'not_found', 'message' => 'This listing is no longer available.'], 404);
         if ((int) $p['owner_id'] === (int) $u['id']) Http::json(['error' => 'validation', 'message' => 'This is your own listing.'], 422);
         $t = Db::one('SELECT id FROM threads WHERE property_id = ? AND user_b = ?', [$id, $u['id']]);
-        if (!$t) { Db::run('INSERT INTO threads (kind, property_id, user_a, user_b, last_message_at, created_at) VALUES (?,?,?,?,?,?)', ['homes', $id, $p['owner_id'], $u['id'], Db::now(), Db::now()]); $t = ['id' => Db::lastId()]; Notify::user((int) $p['owner_id'], 'work', $u['name'] . ' is interested in your ' . $p['title'], 'Open the conversation to reply.', '/#/inbox/' . $t['id']); }
+        if (!$t) { Db::run('INSERT INTO threads (kind, property_id, user_a, user_b, last_message_at, created_at) VALUES (?,?,?,?,?,?)', ['homes', $id, $p['owner_id'], $u['id'], Db::now(), Db::now()]); $t = ['id' => Db::lastId()]; Track::hit($u, 'homes', 'enquire'); Notify::user((int) $p['owner_id'], 'work', $u['name'] . ' is interested in your ' . $p['title'], 'Open the conversation to reply.', '/#/inbox/' . $t['id']); }
         Http::json(['threadId' => (int) $t['id']]);
     }
 }

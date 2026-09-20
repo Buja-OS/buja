@@ -12,7 +12,7 @@ final class Auth
         if ($claims === null || !isset($claims['sub'], $claims['jti'])) return null;
         $session = Db::one('SELECT id FROM sessions WHERE jti = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?', [$claims['jti'], (int) $claims['sub'], Db::now()]);
         if ($session === null) return null;
-        return Db::one('SELECT id, kind, name, email, phone, district, avatar_url, google_sub, email_verified_at, created_at, is_admin, plus_until, selfie_verified_at FROM users WHERE id = ? AND deleted_at IS NULL', [(int) $claims['sub']]);
+        return Db::one('SELECT id, kind, name, email, phone, district, avatar_url, google_sub, email_verified_at, created_at, is_admin, plus_until, selfie_verified_at, role, avatar_url, last_seen_at FROM users WHERE id = ? AND deleted_at IS NULL', [(int) $claims['sub']]);
     }
 
     public static function require(): array
@@ -56,7 +56,8 @@ final class Auth
             'avatar'   => $u['avatar_url'],
             'verified' => $u['email_verified_at'] !== null,
             'google'   => $u['google_sub'] !== null,
-            'admin'    => !empty($u['is_admin']),
+            'admin'    => !empty($u['is_admin']) || ($u['role'] ?? '') === 'admin',
+            'role'     => $u['role'] ?? (!empty($u['is_admin']) ? 'admin' : 'user'),
             'plus'     => !empty($u['plus_until']) && $u['plus_until'] > Db::now(),
             'plusUntil'=> $u['plus_until'] ?? null,
             'selfieVerified' => !empty($u['selfie_verified_at']),
