@@ -1,4 +1,4 @@
-# Buja, Phase 18: what the city knows right now
+# Buja, Phase 19: Buja Learn
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -372,8 +372,36 @@ All six are the same shape: people report, Buja weighs it, everyone sees the ans
 
 New: `CityController.php`, `js/citysignals.js`, `migrations/026_city_signals.sql`, fuel-station import in `Osm.php`. Threads gain a `city` kind for lost-and-found chats.
 
+## Phase 19: Buja Learn
+
+Free, interactive courses with a real editor, tests that run on the phone, AI-graded prompt work, and a
+premium certificate with a QR code that verifies it.
+
+- **Five courses, 41 lessons**: Frontend Web Development (12), Backend Development with JavaScript (8),
+  Full-Stack Projects (7), Prompt Engineering (7), AI Fundamentals (7). Content lives in
+  `api/src/Curriculum.php` so it ships with deploys and is reviewed like code. Every lesson is progressive:
+  the next one unlocks when this one is passed.
+- **Four lesson kinds.** Read (with a check quiz, 60% to pass, wrong answers explained). Quiz. Code: an
+  editor with Run, a live preview for HTML or a console for JavaScript, and tests that execute in a sandboxed
+  iframe on the learner's phone, so they work on a poor connection and cost the server nothing. Prompt lab:
+  the learner writes a real prompt, the configured AI (Gemini, Groq or Anthropic, whichever Ask uses) grades
+  it against a rubric item by item with feedback; without a key a keyword check keeps the lesson usable.
+- **Certificate.** Issued once the last lesson passes: A4 landscape, drawn on a canvas with the Buja mark, the
+  holder's name in serif, the course, the score, the date, a 12-character code, and a QR code that opens
+  `#/cert/{code}`, a public page served by Buja that anyone can check without an account. Download as PNG
+  or PDF (jsPDF and the QR generator are bundled under `js/vendor/`, so it works offline). Revocable by
+  setting `revoked_at`.
+- **Thumbnails** as SVG under `assets/learn/`, in the brand. Canva exposes no tools in this session, so they
+  were designed by hand and can be redone there later.
+
+Verified in the browser: the whole Frontend course completed with reference solutions, every code exercise
+in all five courses passing with a correct solution, the certificate issued, drawn, downloaded as PNG and PDF,
+its QR decoded back to the verification address, the verification page confirming it, and a fake code refused.
+Bugs fixed on the way: a button reference used after an await, learner declarations hidden from tests by a
+wrapper, a learner's closing script tag cutting the harness short, and cumulative test steps.
+
 ## What is next
 
-Phase 19: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 20: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

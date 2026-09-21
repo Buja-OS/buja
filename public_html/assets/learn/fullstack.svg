@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#16161B"/><stop offset="1" stop-color="#0B0B0E"/></linearGradient>
+  <linearGradient id="acc" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1F5FBF"/><stop offset="1" stop-color="#7ED957"/></linearGradient>
+  <radialGradient id="glow" cx="0.85" cy="0.2" r="0.6"><stop offset="0" stop-color="#1F5FBF" stop-opacity="0.55"/><stop offset="1" stop-color="#1F5FBF" stop-opacity="0"/></radialGradient>
+  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity="0.05"/></pattern>
+</defs>
+<rect width="800" height="450" fill="url(#bg)"/>
+<rect width="800" height="450" fill="url(#grid)"/>
+<rect width="800" height="450" fill="url(#glow)"/>
+<rect x="0" y="0" width="800" height="10" fill="url(#acc)"/>
+<g transform="translate(560,120) scale(2.2)" fill="none" stroke="#1F5FBF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"><path d="M20 32h60v46H20zM20 42h60M40 78v-36M60 78v-36"/></g>
+<g transform="translate(52,52) scale(0.55)"><path d="M30 32h12v70H30zM72 32h12v70H72zM30 62h54v8H30z" fill="#7ED957"/><path d="M12 108c14-6 18-14 18-30h12c0 18 6 28 20 30zM102 108c-14-6-18-14-18-30H72c0 18-6 28-20 30z" fill="#FF7A1A"/><path d="M48 44l9 6-9 6zM66 44l-9 6 9 6z" fill="#fff"/></g>
+<text x="110" y="82" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="700" letter-spacing="1">Buja <tspan fill="#7ED957" font-weight="600" letter-spacing="4">LEARN</tspan></text>
+<text x="52" y="300" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="58" font-weight="800" letter-spacing="-1">Full-Stack</text>
+<text x="52" y="368" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="58" font-weight="800" letter-spacing="-1">Projects</text>
+<rect x="52" y="392" width="48" height="5" rx="2.5" fill="url(#acc)"/>
+<text x="112" y="401" fill="#B5B5BC" font-family="Inter, system-ui, sans-serif" font-size="19" font-weight="500">State · Forms · Deploy</text>
+<text x="748" y="416" text-anchor="end" fill="#6B6B73" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="600" letter-spacing="3">FREE · CERTIFICATE</text>
+</svg>

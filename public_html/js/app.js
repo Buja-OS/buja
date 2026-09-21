@@ -18,6 +18,7 @@ import { registerAlerts } from './alerts.js';
 import { registerTrustAlerts, ringer } from './trustalerts.js';
 import { registerCityServices } from './services.js';
 import { registerCitySignals } from './citysignals.js';
+import { registerLearn } from './learn.js';
 import { passkeyAvailable, registerPasskey, loginWithPasskey } from './passkey.js';
 import { registerRtc, watchIncoming } from './rtc.js';
 
@@ -263,6 +264,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/lostfound', 'magnifying-glass', '#EAF1FB', '#1F5FBF', 'Lost & found', 'Documents, keys, phones'],
     ['/plates', 'shield-halved', '#F1E9F7', '#7A3E96', 'Check a plate', 'Before you enter that taxi'],
     ['/prices', 'tags', '#FFF1E6', '#C85A10', 'Market prices', 'Rice, gas, tomatoes, by market'],
+    ['/learn', 'book-open', '#101014', '#7ED957', 'Buja Learn', 'Code, AI, certificates. Free.'],
   ];
   return `
   <header class="topbar" style="padding-top:8px">
@@ -403,6 +405,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerLearn({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
 registerCitySignals({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
 registerCityServices({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
 registerTrustAlerts({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });

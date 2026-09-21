@@ -284,3 +284,13 @@ $router->get('/plates/check',                [CityController::class, 'plateCheck
 $router->post('/plates/report',              [CityController::class, 'plateReport']);
 $router->get('/prices',                      [CityController::class, 'prices']);
 $router->post('/prices/report',              [CityController::class, 'priceReport']);
+
+// Buja Learn
+$router->get('/learn',                       [LearnController::class, 'index']);
+$router->get('/learn/certificates',          [LearnController::class, 'mine']);
+$router->get('/learn/{course}',              [LearnController::class, 'course']);
+$router->get('/learn/{course}/certificate',  [LearnController::class, 'certificate']);
+$router->get('/learn/{course}/{n}',          [LearnController::class, 'lesson']);
+$router->post('/learn/{course}/{n}/save',    [LearnController::class, 'save']);
+$router->post('/learn/{course}/{n}/complete',[LearnController::class, 'complete']);
+$router->get('/cert/{code}',                 [LearnController::class, 'verify']);
