@@ -32,8 +32,8 @@ final class MessagesController
         $st = Db::pdo()->prepare($sql); $st->execute([$u['id'], $u['id'], $u['id'], $u['id'], $u['id']]);
         $rows = array_map(fn($t) => [
             'id' => (int) $t['id'], 'kind' => $t['kind'], 'unread' => (int) $t['unread'], 'lastAt' => $t['last_message_at'],
-            'title' => $t['kind'] === 'match' || $t['kind'] === 'declutter' ? explode(' ', $t['other_name'])[0] : ($t['kind'] === 'homes' ? ((int) $t['user_a'] === (int) $u['id'] ? $t['other_name'] : ($t['landlord_name'] ?: $t['other_name'])) : ($u['kind'] === 'company' ? $t['other_name'] : ($t['company_name'] ?? $t['other_name']))),
-            'subtitle' => $t['kind'] === 'match' ? 'Match' : ($t['kind'] === 'declutter' ? 'Declutter · ' . ($t['listing_title'] ?? '') : ($t['kind'] === 'homes' ? 'Homes · ' . ($t['property_title'] ?? '') : ($t['job_title'] ? ($u['kind'] === 'company' ? 'Applied for ' . $t['job_title'] : $t['job_title']) : ''))),
+            'title' => in_array($t['kind'], ['match', 'declutter', 'artisan', 'event'], true) ? explode(' ', $t['other_name'])[0] : ($t['kind'] === 'homes' ? ((int) $t['user_a'] === (int) $u['id'] ? $t['other_name'] : ($t['landlord_name'] ?: $t['other_name'])) : ($u['kind'] === 'company' ? $t['other_name'] : ($t['company_name'] ?? $t['other_name']))),
+            'subtitle' => $t['kind'] === 'match' ? 'Match' : ($t['kind'] === 'artisan' ? 'Artisan' : ($t['kind'] === 'event' ? 'Meetup' : ($t['kind'] === 'declutter' ? 'Declutter · ' . ($t['listing_title'] ?? '') : ($t['kind'] === 'homes' ? 'Homes · ' . ($t['property_title'] ?? '') : ($t['job_title'] ? ($u['kind'] === 'company' ? 'Applied for ' . $t['job_title'] : $t['job_title']) : ''))))),
             'otherId' => (int) (($t['user_a'] == $u['id']) ? $t['user_b'] : $t['user_a']),
             'preview' => $t['last_type'] === 'interview' ? 'Interview invitation' : ($t['last_type'] === 'inspection' ? 'Inspection request' : ($t['last_type'] === 'offer' ? 'Offer' : ($t['last_type'] === 'media' ? ($t['last_body'] ?: 'Attachment') : ($t['last_body'] ?? '')))),
             'jobId' => $t['job_id'] ? (int) $t['job_id'] : null,
@@ -73,7 +73,8 @@ final class MessagesController
             $out['kind'] = $t['kind'];
             if ($t['kind'] === 'declutter') { $out['title'] = explode(' ', $o['name'])[0]; $out['context'] = $ctx; $out['canOffer'] = $ctx && !$ctx['isSeller'] && $ctx['status'] === 'active'; }
             if ($t['kind'] === 'homes') { $out['title'] = $ctx && !$ctx['isOwner'] ? ($ctx['landlord'] ?: $o['name']) : $o['name']; $out['context'] = $ctx; $out['canRequestInspection'] = $ctx && !$ctx['isOwner']; }
-            if ($t['kind'] !== 'homes' && $t['kind'] !== 'declutter') { $out['title'] = $t['kind'] === 'match' ? explode(' ', $o['name'])[0] : ($u['kind'] === 'company' ? $o['name'] : ($ctx['company'] ?? $o['name'])); $out['context'] = $ctx; $out['canSchedule'] = $u['kind'] === 'company' && $ctx !== null; }
+            if (in_array($t['kind'], ['artisan', 'event'], true)) { $out['title'] = explode(' ', $o['name'])[0]; $out['context'] = null; }
+            elseif ($t['kind'] !== 'homes' && $t['kind'] !== 'declutter') { $out['title'] = $t['kind'] === 'match' ? explode(' ', $o['name'])[0] : ($u['kind'] === 'company' ? $o['name'] : ($ctx['company'] ?? $o['name'])); $out['context'] = $ctx; $out['canSchedule'] = $u['kind'] === 'company' && $ctx !== null; }
         }
         Http::json($out);
     }

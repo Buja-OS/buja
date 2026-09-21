@@ -12,6 +12,8 @@ final class RatingController
         'declutter' => ['Item as described', 'Fair on price', 'On time', 'Easy to deal with', 'Item not as described', 'Did not turn up', 'Changed the price'],
         'work' => ['Clear about the role', 'Interview happened', 'Replied quickly', 'Never replied', 'Interview cancelled', 'Asked for money'],
         'match' => ['Photos were real', 'Respectful', 'Met in public', 'Photos were not real', 'Pushy', 'Did not turn up'],
+        'artisan' => ['Came quickly', 'Fixed it properly', 'Fair price', 'Honest about the problem', 'Overcharged', 'Did not fix it', 'Did not turn up', 'Damaged something'],
+        'event' => ['Well organised', 'Worth the money', 'As described', 'Started late', 'Not as described'],
     ];
     private const GOOD = ['Showed up on time', 'Property as described', 'No hidden fees', 'Answered questions', 'Item as described', 'Fair on price', 'On time', 'Easy to deal with', 'Clear about the role', 'Interview happened', 'Replied quickly', 'Photos were real', 'Respectful', 'Met in public'];
 

@@ -9,7 +9,7 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
   route('/rtc/:room', { auth: true, tabs: '' }, async ({ room }) => {
     let c;
     try { c = (await api.call(room)).call; }
-    catch (err) { return `<div class="placeholder" style="padding:60px 20px"><div class="mi card">${icon('phone-slash')}</div><div class="h-md">${h((err && err.message) || 'That call could not be opened')}</div><a class="btn btn-ink" href="#/inbox" style="width:auto">Back to inbox</a></div>`; }
+    catch (err) { const back = document.referrer || ''; return `<div class="placeholder" style="padding:60px 20px"><div class="mi card">${icon(err && err.error === 'early' ? 'clock' : 'phone-slash')}</div><div class="h-md" style="max-width:300px;line-height:1.35">${h((err && err.message) || 'That call could not be opened')}</div>${err && err.error === 'early' ? `<div class="small muted" style="max-width:280px;line-height:1.5">Come back at the time set. You can join up to 30 minutes late.</div>` : ''}<button class="btn btn-ink" onclick="history.length > 1 ? history.back() : (location.hash = '#/inbox')" style="width:auto">Back to the conversation</button></div>`; }
     const video = c.mode !== 'audio';
     const initial = h((c.with || '?')[0].toUpperCase());
     return `

@@ -119,7 +119,7 @@ export function registerCity({ route, go, state, api, ui, DISTRICTS, failed, rad
     const row = (s) => `<div class="item" style="gap:12px">
       <div style="width:52px;height:44px;border-radius:12px;background:${s.stream ? 'var(--night)' : 'var(--surface)'};color:${s.stream ? '#7ED957' : 'var(--ink-3)'};display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:14px;font-weight:700;line-height:1">${h(s.frequency)}</span><span style="font-size:8px;letter-spacing:1px;opacity:.7">FM</span></div>
       <div class="grow" style="min-width:0"><div class="t">${h(s.name)}</div><div class="s">${h(s.genre || '')}</div></div>
-      ${s.stream ? `<button class="iconbtn" data-station='${JSON.stringify({ id: s.id, name: s.name, frequency: s.frequency, stream: s.stream }).replace(/'/g, '&#39;')}' aria-label="Play ${h(s.name)}" style="background:var(--orange);border-color:var(--orange);color:#fff;width:40px;height:40px">${icon('bolt')}</button>`
+      ${s.stream ? `<button class="iconbtn" data-station='${JSON.stringify({ id: s.id, name: s.name, frequency: s.frequency, stream: s.stream }).replace(/'/g, '&#39;')}' aria-label="Play ${h(s.name)}" style="background:var(--orange);border-color:var(--orange);color:#fff;width:40px;height:40px">${icon('play')}</button>`
       : s.website ? `<a class="btn btn-sm btn-outline" href="${h(s.website)}" target="_blank" rel="noopener" style="width:auto;height:34px;font-size:12px">Site</a>` : `<span class="small muted">FM only</span>`}</div>`;
     return `${topbar('Abuja radio', '/home')}
     <main class="pad stack" style="gap:12px">
@@ -127,5 +127,5 @@ export function registerCity({ route, go, state, api, ui, DISTRICTS, failed, rad
       <div class="card list">${live.map(row).join('')}</div>
       ${off.length ? `<div class="section">NO STREAM YET</div><div class="card list">${off.map(row).join('')}</div><div class="small muted" style="line-height:1.5">These broadcast on FM but do not publish an online stream. If you find one that works, send it and it goes in.</div>` : ''}
     </main>`;
-  }, { mount(el) { el.querySelectorAll('[data-station]').forEach((b) => b.addEventListener('click', () => radio.play(JSON.parse(b.dataset.station)))); } });
+  }, { mount(el) { const all = [...el.querySelectorAll('[data-station]')].map((b) => JSON.parse(b.dataset.station)); el.querySelectorAll('[data-station]').forEach((b) => b.addEventListener('click', () => radio.play(JSON.parse(b.dataset.station), all))); } });
 }

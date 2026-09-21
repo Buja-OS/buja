@@ -108,7 +108,7 @@ export function registerSafety({ route, go, state, api, ui, failed }) {
   });
 
   /* ---------- The friend's page, no sign-in ---------- */
-  route('/trip/:token', { guest: true, tabs: '' }, async ({ token }) => {
+  route('/trip/:token', { tabs: '' }, async ({ token }) => {
     let t; try { t = (await api.publicTrip(token)).trip; } catch { return `<div class="placeholder" style="padding:60px 20px"><div class="mi card">${icon('triangle-exclamation')}</div><div class="h-md">This link is not valid</div><div class="small muted">Ask them to send it again.</div></div>`; }
     const tone = t.status === 'alarm' ? ['#D92D20', 'ALARM RAISED'] : t.status === 'overdue' ? ['#D92D20', 'OVERDUE'] : t.status === 'safe' ? ['#2E7D1E', 'HOME SAFE'] : ['#FF7A1A', 'ON A TRIP'];
     return `

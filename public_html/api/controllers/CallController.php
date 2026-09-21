@@ -20,7 +20,7 @@ final class CallController
         return ['id' => (int) $c['id'], 'room' => $c['room'], 'kind' => $c['kind'], 'mode' => $c['mode'],
             'engine' => $c['engine'] ?? ($c['kind'] === 'interview' ? 'jitsi' : 'rtc'), 'status' => $c['status'] ?? 'ringing',
             'startsAt' => $c['starts_at'], 'endedAt' => $c['ended_at'],
-            'joinable' => $c['ended_at'] === null && ($c['starts_at'] === null || $c['starts_at'] < gmdate('Y-m-d H:i:s', time() + 900))];
+            'joinable' => $c['ended_at'] === null && ($c['starts_at'] === null || ($c['starts_at'] <= gmdate('Y-m-d H:i:s', time() + 60) && $c['starts_at'] > gmdate('Y-m-d H:i:s', time() - 1800)))];
     }
 
     /**
@@ -41,7 +41,7 @@ final class CallController
         $u = Auth::require(); RateLimit::hit('call', 40, 3600);
         $t = $this->thread($id, $u); $b = Http::body();
         $mode = ($b['mode'] ?? 'video') === 'audio' ? 'audio' : 'video';
-        $kind = in_array($t['kind'], ['application', 'job'], true) ? 'interview' : 'match';
+        $kind = $t['kind'] === 'work' ? 'interview' : 'match';
         $startsAt = null;
         if (!empty($b['startsAt'])) { $ts = strtotime((string) $b['startsAt']); if (!$ts || $ts < time() - 3600) Http::json(['error' => 'validation', 'fields' => ['startsAt' => 'Pick a time in the future.']], 422); $startsAt = gmdate('Y-m-d H:i:s', $ts); }
         $room = 'buja-' . bin2hex(random_bytes(16));
@@ -70,7 +70,11 @@ final class CallController
         $c = Db::one('SELECT * FROM calls WHERE room = ?', [$room]); if (!$c) Http::json(['error' => 'not_found', 'message' => 'That call does not exist.'], 404);
         $t = $this->thread((int) $c['thread_id'], $u);
         if ($c['ended_at']) Http::json(['error' => 'ended', 'message' => 'That call has ended.'], 410);
-        if ($c['starts_at'] && $c['starts_at'] > gmdate('Y-m-d H:i:s', time() + 900)) Http::json(['error' => 'early', 'message' => 'That call opens 15 minutes before the scheduled time.'], 425);
+        if ($c['starts_at'] && $c['starts_at'] > gmdate('Y-m-d H:i:s', time() + 60)) {
+            $mins = (int) ceil((strtotime($c['starts_at'] . ' UTC') - time()) / 60);
+            Http::json(['error' => 'early', 'message' => 'This interview opens at ' . date('H:i', strtotime($c['starts_at'] . ' UTC')) . ', in ' . ($mins >= 60 ? floor($mins / 60) . ' h ' . ($mins % 60) . ' min' : $mins . ' min') . '.', 'opensAt' => $c['starts_at']], 425);
+        }
+        if ($c['starts_at'] && $c['starts_at'] < gmdate('Y-m-d H:i:s', time() - 1800) && !$c['joined_at']) Http::json(['error' => 'late', 'message' => 'This interview closed 30 minutes after its start time. Ask for it to be rescheduled.'], 410);
         if (($c['status'] ?? '') === 'declined') Http::json(['error' => 'declined', 'message' => 'That call was declined.'], 410);
         Db::run('UPDATE calls SET joined_at = COALESCE(joined_at, ?) WHERE id = ?', [Db::now(), $c['id']]);
         $o = Db::one('SELECT name FROM users WHERE id = ?', [$this->other($t, $u)]);

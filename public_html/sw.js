@@ -1,10 +1,10 @@
 /* Buja service worker, phase 1.
    Cache-first for the app shell and static assets, network-only for /api.
    Bump VERSION whenever a shell file changes so users get the update. */
-const VERSION = 'buja-shell-v28';
+const VERSION = 'buja-shell-v29';
 const SHELL = [
   '/', '/index.html', '/manifest.webmanifest', '/assets/icons/icon-192.png', '/assets/icons/icon-512.png', '/offline.html',
-  '/css/app.css', '/js/app.js', '/js/api.js', '/js/ui.js', '/js/store.js', '/js/icons.js', '/js/work.js', '/js/messages.js', '/js/match.js', '/js/waka.js', '/js/homes.js', '/js/declutter.js', '/js/ask.js', '/js/trust.js', '/js/city.js', '/js/safety.js', '/js/growth.js', '/js/call.js', '/js/rtc.js', '/js/alerts.js', '/js/trustalerts.js',
+  '/css/app.css', '/js/app.js', '/js/api.js', '/js/ui.js', '/js/store.js', '/js/icons.js', '/js/work.js', '/js/messages.js', '/js/match.js', '/js/waka.js', '/js/homes.js', '/js/declutter.js', '/js/ask.js', '/js/trust.js', '/js/city.js', '/js/safety.js', '/js/growth.js', '/js/call.js', '/js/rtc.js', '/js/alerts.js', '/js/trustalerts.js', '/js/services.js',
   '/assets/icons/mark-dark.svg', '/assets/icons/mark-light.svg', '/assets/icons/favicon.svg'
 ];
 

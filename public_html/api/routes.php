@@ -215,3 +215,21 @@ $router->post('/waka/alerts',                [WakaAlertController::class, 'creat
 $router->post('/waka/alerts/{id}/vote',      [WakaAlertController::class, 'vote']);
 $router->get('/me/digest',                   [DigestController::class, 'preview']);
 $router->get('/cron/digest',                 [DigestController::class, 'run']);
+
+// Meetup, Artisans, Citizen Report
+$router->get('/events',                      [MeetupController::class, 'index']);
+$router->post('/events',                     [MeetupController::class, 'create']);
+$router->get('/events/{id}',                 [MeetupController::class, 'show']);
+$router->post('/events/{id}/rsvp',           [MeetupController::class, 'rsvp']);
+$router->post('/events/{id}/posts',          [MeetupController::class, 'post']);
+$router->post('/events/{id}/cancel',         [MeetupController::class, 'cancel']);
+$router->post('/events/{id}/checkin',        [MeetupController::class, 'checkin']);
+$router->get('/events/{id}/ics',             [MeetupController::class, 'ics']);
+$router->get('/artisans',                    [ArtisanController::class, 'index']);
+$router->get('/artisans/me',                 [ArtisanController::class, 'me']);
+$router->post('/artisans/me',                [ArtisanController::class, 'save']);
+$router->get('/artisans/{id}',               [ArtisanController::class, 'show']);
+$router->post('/artisans/{id}/chat',         [ArtisanController::class, 'chat']);
+$router->get('/citizen/agencies',            [CitizenController::class, 'agencies']);
+$router->get('/citizen/reports',             [CitizenController::class, 'mine']);
+$router->post('/citizen/reports',            [CitizenController::class, 'create']);

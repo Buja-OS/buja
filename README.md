@@ -1,4 +1,4 @@
-# Buja, Phase 11: trust between strangers, live roads, weekly digest
+# Buja, Phase 12: Meetup, Artisans, Citizen Report, and six fixes
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -300,8 +300,26 @@ preview, the cron running and then skipping people already sent this week.
 Bugs fixed: a MySQL-only statement that broke alert merging on any other database, and the digest reading
 pay columns by the wrong name.
 
+## Phase 12: three new modules and a round of fixes
+
+**Fixes**
+- Virtual interviews open at the time set and stay open 30 minutes, then close. Early joins are told the time and how long to wait; late ones are told to ask for a reschedule. The card says so.
+- Trip Share links now open for a signed-in person too; they were being bounced to Home by the guest-only flag.
+- Weather shows on Home. The strip was never in the page (an edit that matched nothing), and Open-Meteo throttles Render's shared address, so wttr.in is a second source and a stale reading is kept for six hours.
+- Radio has previous, play/pause, next and stop in a redesigned bar, and the phone's lock screen controls work through the Media Session API.
+- The Meetup tables are named `meetups`, because `events` was already the analytics log; `CREATE TABLE IF NOT EXISTS` would have silently skipped it in production.
+- Interview scheduling and the notification toggles were calling the wrong API functions after a name collision (fixed in the previous patch); a duplicate-name check now runs on every build.
+
+**Meetup**: anyone posts an event (12 categories, venue or online, capacity, price, cover photo). People register with guests, a full event waitlists them and promotes the first in line when someone drops out, hosts post updates that notify everyone going, see who is coming, check people in at the door, and cancel with a notice to all. Add-to-calendar via .ics. Buja does not take payment; hosts collect at the door or by transfer.
+
+**Artisans**: 28 trades from mechanic and vulcanizer to CCTV, DStv, laundry and errand. Artisans list themselves with a phone, WhatsApp, base district, how far they travel, years, a photo and a pinned shop location. Searching uses the phone's position and returns the nearest first, inside their working radius, with distance shown. Call, WhatsApp, message in Buja or Buja audio call, straight from the card. Ratings come only from people who contacted them through Buja, with artisan-specific tags.
+
+**Citizen Report**: which agency handles what in Abuja, with contacts researched on 21 September 2026 against official sites and reputable outlets, tiered by how well verified they are. 112 sits at the top of every screen. Refuse and noise route to the FCTA central desk because AEPB publishes no working line. Pick the problem, call, WhatsApp or email straight from the card, or write it up: Buja saves it with a reference number and opens the phone or email with the text ready.
+
+New: `MeetupController.php`, `ArtisanController.php`, `CitizenController.php`, `js/services.js`, `migrations/022_meetup_artisans_report.sql`.
+
 ## What is next
 
-Phase 12: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 13: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

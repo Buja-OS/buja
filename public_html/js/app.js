@@ -16,35 +16,59 @@ import { registerGrowth } from './growth.js';
 import { registerCall } from './call.js';
 import { registerAlerts } from './alerts.js';
 import { registerTrustAlerts, ringer } from './trustalerts.js';
+import { registerCityServices } from './services.js';
 import { registerRtc, watchIncoming } from './rtc.js';
 
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__bujaInstall = e; });
 
 /* ---------------- Radio player, global so it keeps playing as you move around ---------------- */
 export const radio = {
-  audio: null, station: null,
-  play(station) {
+  audio: null, station: null, list: [],
+  play(station, list) {
+    if (list && list.length) this.list = list;
     if (this.audio && this.station && this.station.id === station.id) { this.audio.paused ? this.audio.play().catch(() => {}) : this.audio.pause(); this.render(); return; }
-    this.stop();
+    this.stop(false);
     this.audio = new Audio(station.stream); this.audio.preload = 'none'; this.station = station;
     this.audio.addEventListener('playing', () => this.render());
     this.audio.addEventListener('pause', () => this.render());
+    this.audio.addEventListener('waiting', () => this.render('Buffering…'));
     this.audio.addEventListener('error', () => { toast(station.name + ' would not play. The station may be offline.'); this.stop(); });
     this.audio.play().catch(() => { toast(station.name + ' would not play. The station may be offline.'); this.stop(); });
-    this.render();
+    this.render('Connecting…');
+    if ('mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: station.name, artist: station.frequency + ' FM · Buja radio', artwork: [{ src: '/assets/icons/icon-512.png', sizes: '512x512', type: 'image/png' }] });
+        navigator.mediaSession.setActionHandler('play', () => this.audio?.play());
+        navigator.mediaSession.setActionHandler('pause', () => this.audio?.pause());
+        navigator.mediaSession.setActionHandler('previoustrack', () => this.step(-1));
+        navigator.mediaSession.setActionHandler('nexttrack', () => this.step(1));
+      } catch {}
+    }
   },
-  stop() { if (this.audio) { this.audio.pause(); this.audio.src = ''; } this.audio = null; this.station = null; this.render(); },
-  render() {
+  step(dir) {
+    const live = this.list.filter((s) => s.stream); if (!live.length || !this.station) return;
+    const i = live.findIndex((s) => s.id === this.station.id);
+    this.play(live[(i + dir + live.length) % live.length]);
+  },
+  stop(rerender = true) { if (this.audio) { this.audio.pause(); this.audio.src = ''; } this.audio = null; this.station = null; if (rerender) this.render(); },
+  render(note) {
     let bar = document.getElementById('radiobar');
-    if (!this.station) { bar?.remove(); document.body.style.removeProperty('--radio-h'); return; }
+    if (!this.station) { bar?.remove(); return; }
     if (!bar) { bar = document.createElement('div'); bar.id = 'radiobar'; document.body.appendChild(bar); }
     const playing = this.audio && !this.audio.paused;
-    bar.innerHTML = `<div style="position:fixed;left:0;right:0;bottom:calc(var(--tab-h) + var(--safe-b));max-width:480px;margin:0 auto;background:var(--night);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:12px;z-index:25;box-shadow:0 -6px 20px rgba(0,0,0,.25)">
-      <span style="width:34px;height:34px;border-radius:17px;background:${playing ? 'var(--green)' : 'rgba(255,255,255,.15)'};color:${playing ? '#101014' : '#fff'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;font-weight:700">${this.station.frequency}</span>
-      <a href="#/radio" style="flex:1;min-width:0;color:#fff"><span style="display:block;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(this.station.name)}</span><span class="small" style="color:#B5B5BC">${playing ? 'Playing live' : 'Paused'}</span></a>
-      <button class="iconbtn" id="rtoggle" aria-label="${playing ? 'Pause' : 'Play'}" style="background:rgba(255,255,255,.12);border:none;color:#fff;width:36px;height:36px">${icon(playing ? 'circle-check' : 'bolt')}</button>
-      <button class="iconbtn" id="rclose" aria-label="Stop" style="background:rgba(255,255,255,.12);border:none;color:#fff;width:36px;height:36px">${icon('xmark')}</button></div>`;
+    const sub = note || (playing ? 'Playing live' : 'Paused');
+    bar.innerHTML = `<div style="position:fixed;left:10px;right:10px;bottom:calc(var(--tab-h) + var(--safe-b) + 8px);max-width:460px;margin:0 auto;background:linear-gradient(135deg,#16161B,#23262E);color:#fff;border-radius:18px;padding:10px 12px;display:flex;align-items:center;gap:10px;z-index:25;box-shadow:0 12px 32px rgba(0,0,0,.35)">
+      <a href="#/radio" style="width:44px;height:44px;border-radius:12px;background:${playing ? 'linear-gradient(145deg,#7ED957,#5FBF3D)' : 'rgba(255,255,255,.12)'};color:${playing ? '#101014' : '#fff'};display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none"><span style="font-size:12px;font-weight:800;line-height:1">${h(this.station.frequency)}</span><span style="font-size:8px;letter-spacing:1px;opacity:.75">FM</span></a>
+      <a href="#/radio" style="flex:1;min-width:0;color:#fff;text-decoration:none"><span style="display:block;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(this.station.name)}</span><span class="small" style="color:#AEB4BE">${h(sub)}${playing ? ' <span style="display:inline-block;width:6px;height:6px;border-radius:3px;background:#7ED957;margin-left:4px;animation:bjblink 1.2s infinite"></span>' : ''}</span></a>
+      <button class="rb" id="rprev" aria-label="Previous station">${icon('backward-step')}</button>
+      <button class="rb" id="rtoggle" aria-label="${playing ? 'Pause' : 'Play'}" style="background:#FF7A1A;width:42px;height:42px">${icon(playing ? 'pause' : 'play')}</button>
+      <button class="rb" id="rnext" aria-label="Next station">${icon('forward-step')}</button>
+      <button class="rb" id="rclose" aria-label="Stop" style="background:transparent">${icon('xmark')}</button>
+    </div>
+    <style>.rb{width:36px;height:36px;border-radius:18px;border:none;background:rgba(255,255,255,.12);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}@keyframes bjblink{50%{opacity:.2}}</style>`;
     bar.querySelector('#rtoggle').addEventListener('click', () => { this.audio.paused ? this.audio.play().catch(() => {}) : this.audio.pause(); });
+    bar.querySelector('#rprev').addEventListener('click', () => this.step(-1));
+    bar.querySelector('#rnext').addEventListener('click', () => this.step(1));
     bar.querySelector('#rclose').addEventListener('click', () => this.stop());
   },
 };
@@ -226,6 +250,9 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/news', 'circle-info', '#FDEBE3', '#C0392B', 'News', 'What is happening in Abuja'],
     ['/social', 'message', '#E7F0EA', '#2E7D1E', 'Social', 'Talk to the city'],
     ['/radio', 'bolt', '#F1E9F7', '#7A3E96', 'Radio', 'Every FCT station'],
+    ['/meetup', 'calendar-days', '#FFF1E6', '#C85A10', 'Meetup', 'Events people register for'],
+    ['/artisans', 'screwdriver-wrench', '#E7F0EA', '#2E7D1E', 'Artisans', 'Mechanic, plumber, nearest to you'],
+    ['/report', 'building-columns', '#FDEBE3', '#C0392B', 'Report', 'The right agency, real numbers'],
   ];
   return `
   <header class="topbar" style="padding-top:8px">
@@ -236,6 +263,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
   </header>
   <main class="pad stack" style="gap:16px;padding-top:4px">
     <div><div class="h-lg">${greet}, ${h(u.name.split(' ')[0])}</div><div class="muted small" style="margin-top:3px;display:flex;align-items:center;gap:6px">${icon('location-dot')} ${h(u.district || 'Abuja')}${api.isMock() ? ' · preview mode' : ''}</div></div>
+    <div id="weather"></div>
     <form class="card askbar" id="homeask" style="padding-right:8px">${icon('wand-magic-sparkles')}<label for="hq" style="position:absolute;left:-9999px">Ask Buja</label><input id="hq" placeholder="Ask Buja anything about Abuja" autocomplete="off" style="flex:1;border:none;background:transparent;outline:none;font-size:14px;color:var(--ink)"><button class="iconbtn" type="submit" aria-label="Ask" style="width:36px;height:36px;border:none;background:var(--orange);color:#fff;font-size:14px">${icon('paper-plane')}</button></form>
     <div class="grid2">${modules.map(([href, ic, bg, fg, t, s, dark]) => `<a class="card mod ${dark ? 'dark' : ''}" href="#${href}"><div class="mi" style="background:${bg};color:${fg}">${icon(ic)}</div><div><div class="t">${t}</div><div class="s">${s}</div></div></a>`).join('')}</div>
     <div class="section">TODAY</div>
@@ -343,6 +371,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerCityServices({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
 registerTrustAlerts({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerAlerts({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerRtc({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
