@@ -1,4 +1,4 @@
-# Buja, Phase 20: Buja Learn, three tiers
+# Buja, Phase 21: Public Buja, and the update fix
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -407,8 +407,38 @@ wrapper, a learner's closing script tag cutting the harness short, and cumulativ
 - **The quiz.** Tapping an option was working but looked like nothing happened: a thin border. Now an orange border, a tick, bold text, and the button counts "1 of 2 answered" before turning into "Check my answers". One delegated listener so timing cannot matter.
 - All 23 new coding exercises proven passable with reference solutions in the sandbox. Harness fixes: test strings containing a closing script tag no longer cut the harness short; a fake localStorage in a sandbox must be defined, not assigned.
 
+## Phase 21: Public Buja, instant updates, queues, commute share, rent index, Learn analytics
+
+- **The update bug, found at last.** The service worker never called `skipWaiting` or `clients.claim`, so a
+  new version only reached a phone once every Buja window was fully closed. Every "close and reopen" since
+  Phase 1 was working around this. Now a new worker takes over as soon as it is installed and the app reloads
+  itself once with a "Buja updated" toast. This deploy is the last one that needs a full close; after it,
+  updates land within a minute of Render going live.
+- **Public Buja** (`public_html/p/index.php`). Real, indexable URLs rendered by PHP with titles, descriptions,
+  Open Graph tags and schema.org structured data: a landing page at `/p/`, `/p/jobs` and `/p/jobs/{id}`
+  (JobPosting, with salary), `/p/homes` (with the asking-rent table) and `/p/homes/{id}` (Residence),
+  `/p/places` and `/p/places/{id}` (LocalBusiness with rating and geo), `/p/events` and `/p/events/{id}`
+  (Event, with offers), `/p/courses` and `/p/courses/{slug}` (Course). `/sitemap.xml` lists every live
+  listing; `/robots.txt` points at it. No phone numbers or contacts on public pages; every page links to the
+  action in the app. Routing lives in the Dockerfile (and `.htaccess` for cPanel). Submit the sitemap in
+  Google Search Console once the domain is set.
+- **Office queues** (`#/queues`): ten real FCT offices seeded (NIMC, Immigration, FRSC, DRTS, AMAC, courts,
+  tax). The wait shown is the median of the last 12 hours' reports; nearest first; anyone can add an office
+  while standing at it.
+- **Commute share** (`#/rides`): selfie-verified drivers offer seats along their own route at a time and cost
+  share; riders ask; the driver accepts or declines; both are notified and a chat opens. Seats left counts down.
+  Not a taxi and no payments in the app.
+- **Rent index** (`#/rent-index`, and the tags icon on Homes): median asking rent per year by district and
+  bedrooms from live listings, with the range and count.
+- **Learn analytics** (Admin → Learn analytics): learners, active in 7 days, certificates; per course, who
+  started and finished, and a bar per lesson with the drop-off flagged in red where more than 40% stopped.
+
+Verified: every public page renders with the right title, description and JSON-LD; the sitemap holds 56 URLs
+on the test data; the ride flow end to end with notifications; queue medians; the analytics screen.
+Bug fixed on the way: reading a new row's id after the analytics insert (the Phase 10 bug, again).
+
 ## What is next
 
-Phase 21: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 22: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

@@ -294,3 +294,15 @@ $router->get('/learn/{course}/{n}',          [LearnController::class, 'lesson'])
 $router->post('/learn/{course}/{n}/save',    [LearnController::class, 'save']);
 $router->post('/learn/{course}/{n}/complete',[LearnController::class, 'complete']);
 $router->get('/cert/{code}',                 [LearnController::class, 'verify']);
+
+// Queues, rides, rent index, learn analytics
+$router->get('/queues',                      [CityController2::class, 'queues']);
+$router->post('/queues/offices',             [CityController2::class, 'queueOffice']);
+$router->post('/queues/{id}/report',         [CityController2::class, 'queueReport']);
+$router->get('/rides',                       [CityController2::class, 'rides']);
+$router->post('/rides',                      [CityController2::class, 'rideCreate']);
+$router->post('/rides/{id}/ask',             [CityController2::class, 'rideAsk']);
+$router->post('/rides/{id}/decide',          [CityController2::class, 'rideDecide']);
+$router->post('/rides/{id}/stop',            [CityController2::class, 'rideStop']);
+$router->get('/rent-index',                  [CityController2::class, 'rentIndex']);
+$router->get('/admin/learn',                 [CityController2::class, 'learnStats']);

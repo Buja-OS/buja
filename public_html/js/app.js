@@ -19,6 +19,7 @@ import { registerTrustAlerts, ringer } from './trustalerts.js';
 import { registerCityServices } from './services.js';
 import { registerCitySignals } from './citysignals.js';
 import { registerLearn } from './learn.js';
+import { registerCityMore } from './citymore.js';
 import { passkeyAvailable, registerPasskey, loginWithPasskey } from './passkey.js';
 import { registerRtc, watchIncoming } from './rtc.js';
 
@@ -135,6 +136,7 @@ route('/welcome', { guest: true }, async () => `
     </button>
     <a class="btn btn-ink" href="#/signup">${icon('user')} Create an account</a>
     <a class="btn btn-ghost" href="#/signin">I already have an account</a>
+    <a class="small center" href="/p/" style="display:block;color:var(--ink-2);text-decoration:underline">Look around first: jobs, homes, places and courses, no account needed</a>
     <p class="small muted center" style="margin:0;line-height:1.5">By continuing you agree to Buja's Terms and Privacy Policy. Buja is for residents of Abuja and the FCT.</p>
   </div>`, { mount: mountGoogle });
 
@@ -265,6 +267,8 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/plates', 'shield-halved', '#F1E9F7', '#7A3E96', 'Check a plate', 'Before you enter that taxi'],
     ['/prices', 'tags', '#FFF1E6', '#C85A10', 'Market prices', 'Rice, gas, tomatoes, by market'],
     ['/learn', 'book-open', '#101014', '#7ED957', 'Buja Learn', 'Code, AI, certificates. Free.'],
+    ['/queues', 'building-columns', '#EAF1FB', '#1F5FBF', 'Office queues', 'NIN, passport, licence: how long now'],
+    ['/rides', 'car', '#E7F0EA', '#2E7D1E', 'Commute share', 'Split a seat along your route'],
   ];
   return `
   <header class="topbar" style="padding-top:8px">
@@ -405,6 +409,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerCityMore({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
 registerLearn({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
 registerCitySignals({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
 registerCityServices({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
@@ -514,6 +519,11 @@ function mountGoogle(el) {
   render();
   setInterval(() => { if (!state.user || document.hidden || api.isMock() || !navigator.geolocation) return; navigator.geolocation.getCurrentPosition((p) => { api.pingTrip(p.coords.latitude, p.coords.longitude).catch(() => {}); }, () => {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }); }, 120000);
   setInterval(async () => { if (state.user && !document.hidden && !api.isMock()) { try { const t = await api.today(); if (t.unread !== state.unread) { state.unread = t.unread; setBadge(t.unread); } } catch {} } }, 60000);
+  if ('serviceWorker' in navigator && !api.isMock() && location.protocol === 'https:') {
+    // When a new version takes control, reload once so the screen runs the code that was just deployed.
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloading) return; reloading = true; toast('Buja updated'); setTimeout(() => location.reload(), 600); });
+  }
   if ('serviceWorker' in navigator && !api.isMock() && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});
   if (!api.isMock()) watchIncoming({ api, go, state, ui: { icon, h }, ring: ringer() }); // starts now, waits for a signed-in user
 })();

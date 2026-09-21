@@ -18,6 +18,9 @@ RUN printf '%s\n' \
  '  RewriteEngine On' \
  '  RewriteCond %{HTTP:X-Forwarded-Proto} =http' \
  '  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]' \
+ '  RewriteRule ^p(/.*)?$ p/index.php [QSA,L]' \
+ '  RewriteRule ^sitemap\.xml$ p/index.php?path=sitemap [L]' \
+ '  RewriteRule ^robots\.txt$ p/index.php?path=robots [L]' \
  '  RewriteCond %{REQUEST_FILENAME} !-f' \
  '  RewriteCond %{REQUEST_FILENAME} !-d' \
  '  RewriteRule ^ index.html [L]' \

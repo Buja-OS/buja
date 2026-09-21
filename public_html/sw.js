@@ -1,19 +1,21 @@
 /* Buja service worker, phase 1.
    Cache-first for the app shell and static assets, network-only for /api.
    Bump VERSION whenever a shell file changes so users get the update. */
-const VERSION = 'buja-shell-v38';
+const VERSION = 'buja-shell-v39';
 const SHELL = [
   '/', '/index.html', '/manifest.webmanifest', '/assets/icons/icon-192.png', '/assets/icons/icon-512.png', '/offline.html',
-  '/css/app.css', '/js/app.js', '/js/api.js', '/js/ui.js', '/js/store.js', '/js/icons.js', '/js/work.js', '/js/messages.js', '/js/match.js', '/js/waka.js', '/js/homes.js', '/js/declutter.js', '/js/ask.js', '/js/trust.js', '/js/city.js', '/js/safety.js', '/js/growth.js', '/js/call.js', '/js/rtc.js', '/js/alerts.js', '/js/trustalerts.js', '/js/services.js', '/js/passkey.js', '/js/citysignals.js', '/js/learn.js', '/js/vendor/qrcode.js',
+  '/css/app.css', '/js/app.js', '/js/api.js', '/js/ui.js', '/js/store.js', '/js/icons.js', '/js/work.js', '/js/messages.js', '/js/match.js', '/js/waka.js', '/js/homes.js', '/js/declutter.js', '/js/ask.js', '/js/trust.js', '/js/city.js', '/js/safety.js', '/js/growth.js', '/js/call.js', '/js/rtc.js', '/js/alerts.js', '/js/trustalerts.js', '/js/services.js', '/js/passkey.js', '/js/citysignals.js', '/js/learn.js', '/js/citymore.js', '/js/vendor/qrcode.js',
   '/assets/icons/mark-dark.svg', '/assets/icons/mark-light.svg', '/assets/icons/favicon.svg'
 ];
 
 self.addEventListener('install', (e) => {
+  self.skipWaiting(); // a new version takes over as soon as it is ready, not when every window closes
   // cache: 'reload' skips the browser HTTP cache so a new worker never pre-fills itself with stale files.
   e.waitUntil(caches.open(VERSION).then((c) => Promise.all(SHELL.map((u) => fetch(u, { cache: 'reload' }).then((r) => { if (r.ok) return c.put(u, r); })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
+  e.waitUntil(self.clients.claim());
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 

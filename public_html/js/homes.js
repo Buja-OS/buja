@@ -40,7 +40,7 @@ export function registerHomes({ route, go, state, api, ui, DISTRICTS, failed }) 
     const r = await api.homes(f);
     const active = ['type', 'district', 'priceMax', 'beds', 'facilities', 'near'].filter((k) => f[k]).length;
     return `
-    ${topbar('Homes', '/home', `<a class="iconbtn" href="#/homes/saved" aria-label="Saved homes">${icon('regular/heart')}</a>`)}
+    ${topbar('Homes', '/home', `<a class="iconbtn" href="#/rent-index" aria-label="Rent index" style="margin-right:6px">${icon('tags')}</a><a class="iconbtn" href="#/homes/saved" aria-label="Saved homes">${icon('regular/heart')}</a>`)}
     <div class="pad row" style="gap:8px">
       <div class="seg" style="flex:1"><a href="#/homes?${new URLSearchParams({ ...f, kind: 'rent' })}" class="${f.kind === 'rent' ? 'on' : ''}" style="text-decoration:none;display:flex;align-items:center;justify-content:center">Rent</a><a href="#/homes?${new URLSearchParams({ ...f, kind: 'sale' })}" class="${f.kind === 'sale' ? 'on' : ''}" style="text-decoration:none;display:flex;align-items:center;justify-content:center">Buy</a></div>
       <button class="btn btn-sm btn-outline" id="filters" style="height:48px">${icon('sliders')} Filters${active ? ` <span class="tag orange">${active}</span>` : ''}</button>
