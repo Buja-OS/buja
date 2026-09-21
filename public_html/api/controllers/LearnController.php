@@ -17,7 +17,7 @@ final class LearnController
         $cert = Db::one('SELECT code, issued_at FROM certificates WHERE user_id = ? AND course = ? AND revoked_at IS NULL', [$userId, $slug]);
         return ['slug' => $slug, 'title' => $c['title'], 'track' => $c['track'], 'level' => $c['level'], 'hours' => $c['hours'], 'color' => $c['color'], 'blurb' => $c['blurb'], 'outcomes' => $c['outcomes'],
             'lessons' => $n, 'done' => count($done), 'pct' => $n ? (int) round(count($done) / $n * 100) : 0, 'next' => $this->nextLesson($c, $done),
-            'thumb' => '/assets/learn/' . $slug . '.svg', 'certificate' => $cert ? ['code' => $cert['code'], 'at' => $cert['issued_at']] : null,
+            'thumb' => is_file(__DIR__ . '/../../assets/learn/' . $slug . '.jpg') ? '/assets/learn/' . $slug . '.jpg' : '/assets/learn/' . $slug . '.svg', 'certificate' => $cert ? ['code' => $cert['code'], 'at' => $cert['issued_at']] : null,
             'minutes' => array_sum(array_column($c['lessons'], 'minutes'))];
     }
     private function nextLesson(array $c, array $done): int { foreach ($c['lessons'] as $i => $l) if (!isset($done[$i])) return $i; return count($c['lessons']) - 1; }
