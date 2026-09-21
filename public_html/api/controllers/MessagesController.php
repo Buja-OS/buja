@@ -32,6 +32,7 @@ final class MessagesController
         $st = Db::pdo()->prepare($sql); $st->execute([$u['id'], $u['id'], $u['id'], $u['id'], $u['id']]);
         $rows = array_map(fn($t) => [
             'id' => (int) $t['id'], 'kind' => $t['kind'], 'unread' => (int) $t['unread'], 'lastAt' => $t['last_message_at'],
+            'avatar' => Auth::picture((int) ((int) $t['user_a'] === (int) $u['id'] ? $t['user_b'] : $t['user_a'])),
             'title' => in_array($t['kind'], ['match', 'declutter', 'artisan', 'event'], true) ? explode(' ', $t['other_name'])[0] : ($t['kind'] === 'homes' ? ((int) $t['user_a'] === (int) $u['id'] ? $t['other_name'] : ($t['landlord_name'] ?: $t['other_name'])) : ($u['kind'] === 'company' ? $t['other_name'] : ($t['company_name'] ?? $t['other_name']))),
             'subtitle' => $t['kind'] === 'match' ? 'Match' : ($t['kind'] === 'artisan' ? 'Artisan' : ($t['kind'] === 'event' ? 'Meetup' : ($t['kind'] === 'declutter' ? 'Declutter · ' . ($t['listing_title'] ?? '') : ($t['kind'] === 'homes' ? 'Homes · ' . ($t['property_title'] ?? '') : ($t['job_title'] ? ($u['kind'] === 'company' ? 'Applied for ' . $t['job_title'] : $t['job_title']) : ''))))),
             'otherId' => (int) (($t['user_a'] == $u['id']) ? $t['user_b'] : $t['user_a']),
@@ -69,7 +70,7 @@ final class MessagesController
                 $li = Db::one('SELECT id, title, price, status, seller_id FROM listings WHERE id = ?', [$t['listing_id']]);
                 if ($li) $ctx = ['listingId' => (int) $li['id'], 'title' => $li['title'], 'price' => (int) $li['price'], 'status' => $li['status'], 'isSeller' => (int) $li['seller_id'] === (int) $u['id']];
             }
-            $out['other'] = ['id' => (int) $o['id'], 'name' => $o['name'], 'kind' => $o['kind']];
+            $out['other'] = ['id' => (int) $o['id'], 'name' => $o['name'], 'kind' => $o['kind'], 'avatar' => Auth::picture((int) $o['id'])];
             $out['kind'] = $t['kind'];
             if ($t['kind'] === 'declutter') { $out['title'] = explode(' ', $o['name'])[0]; $out['context'] = $ctx; $out['canOffer'] = $ctx && !$ctx['isSeller'] && $ctx['status'] === 'active'; }
             if ($t['kind'] === 'homes') { $out['title'] = $ctx && !$ctx['isOwner'] ? ($ctx['landlord'] ?: $o['name']) : $o['name']; $out['context'] = $ctx; $out['canRequestInspection'] = $ctx && !$ctx['isOwner']; }

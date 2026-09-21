@@ -127,6 +127,7 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
       </div></div>`;
   }
   route('/waka/plan', { auth: true, tabs: '' }, async () => {
+    { const qq = new URLSearchParams(location.hash.split('?')[1] || ''); if (!qq.get('from') || !qq.get('to') || qq.get('from') === qq.get('to')) { go('/waka'); return ''; } }
     const from = +q().get('from'), to = +q().get('to');
     const d = await api.wakaPlan(from, to);
     const all = [...d.options, d.taxi];
@@ -151,9 +152,11 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
   }, {
     mount(el) {
       const from = +q().get('from'), to = +q().get('to');
-      api.wakaPlan(from, to).then((d) => drawMap(el, (d.options[0] || d.taxi).legs));
+      if (!from || !to || from === to) return;
+      api.wakaPlan(from, to).then((d) => drawMap(el, (d.options[0] || d.taxi).legs)).catch(() => {});
       el.querySelectorAll('[data-expand]').forEach((b) => b.addEventListener('click', () => { const box = b.closest('[data-opt]').querySelector('[data-legs]'); const open = box.style.display === 'none'; box.style.display = open ? '' : 'none'; b.textContent = open ? 'Hide steps' : 'Show steps'; if (open) { const i = +b.closest('[data-opt]').dataset.opt; api.wakaPlan(from, to).then((d) => drawMap(el, [...d.options, d.taxi][i].legs)); } }));
       bindLegActions(el);
+      if (!el.querySelector('#save')) return;
       el.querySelector('#save').addEventListener('click', async () => { const label = prompt('Name this route (optional), e.g. Home to work') ?? null; if (label === null) return; try { await api.wakaSave(from, to, label); toast('Route saved'); } catch (err) { failed(el, err); } });
     }
   });

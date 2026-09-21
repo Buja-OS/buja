@@ -122,6 +122,31 @@ final class WakaController
             usort($pairs, fn($a, $b) => $a[0] <=> $b[0]);
             foreach (array_slice($pairs, 0, 3) as $pair) $options[] = $pair[1];
         }
+        // Two transfers, only when nothing else works: Maitama to the Airport is Wuse, then Berger, then the airport road.
+        if (!$options) {
+            $triples = [];
+            foreach ($routes as $r1) {
+                if ($pos((int) $r1['id'], $from) === null) continue;
+                foreach ($stopsBy[$r1['id']] as $m1) {
+                    if ((int) $m1['id'] === $from || (int) $m1['id'] === $to) continue;
+                    foreach ($routes as $r2) {
+                        if ((int) $r2['id'] === (int) $r1['id'] || $pos((int) $r2['id'], (int) $m1['id']) === null) continue;
+                        foreach ($stopsBy[$r2['id']] as $m2) {
+                            if (in_array((int) $m2['id'], [$from, $to, (int) $m1['id']], true)) continue;
+                            foreach ($routes as $r3) {
+                                if (in_array((int) $r3['id'], [(int) $r1['id'], (int) $r2['id']], true)) continue;
+                                if ($pos((int) $r3['id'], (int) $m2['id']) === null || $pos((int) $r3['id'], $to) === null) continue;
+                                $cand = ['legs' => [$leg($r1, $from, (int) $m1['id']), $leg($r2, (int) $m1['id'], (int) $m2['id']), $leg($r3, (int) $m2['id'], $to)], 'transfers' => 2];
+                                $cost = array_sum(array_map(fn($l) => $l['fare']['amount'] ?? 99999, $cand['legs'])) + array_sum(array_map(fn($l) => $l['minutes'] ?? 0, $cand['legs']));
+                                $triples[] = [$cost, $cand];
+                            }
+                        }
+                    }
+                }
+            }
+            usort($triples, fn($a, $b) => $a[0] <=> $b[0]);
+            foreach (array_slice($triples, 0, 2) as $t3) $options[] = $t3[1];
+        }
         foreach ($options as &$o) { $o['fare'] = array_sum(array_map(fn($l) => $l['fare']['amount'] ?? 0, $o['legs'])); $o['minutes'] = array_sum(array_column($o['legs'], 'minutes')) + $o['transfers'] * 8; $o['confirmed'] = !in_array(false, array_map(fn($l) => $l['fare']['confirmed'], $o['legs']), true); $o['ridersNow'] = array_sum(array_column($o['legs'], 'ridersNow')); }
         unset($o);
         usort($options, fn($x, $y) => [$x['fare'], $x['minutes']] <=> [$y['fare'], $y['minutes']]);

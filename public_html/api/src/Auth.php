@@ -44,6 +44,14 @@ final class Auth
         Http::clearSessionCookie();
     }
 
+    /** A URL for somebody's picture, or null. Uploaded avatar first, then the Google one. */
+    public static function picture(int $userId, ?string $googleUrl = null): ?string
+    {
+        if (Db::one('SELECT 1 AS x FROM avatars WHERE user_id = ?', [$userId])) return '/api/avatar/' . $userId;
+        if ($googleUrl === null) { $r = Db::one('SELECT avatar_url FROM users WHERE id = ?', [$userId]); $googleUrl = $r ? $r['avatar_url'] : null; }
+        return $googleUrl ?: null;
+    }
+
     public static function publicUser(array $u): array
     {
         return [

@@ -70,8 +70,9 @@ final class AskController
     private bool $meLoaded = false;
 
     /** How far this place is from them, when both positions are known. */
-    private function away(array $s, array $u): ?float
+    private function away(array $s, ?array $u): ?float
     {
+        if (!$u) return null;
         if ($s['lat'] === null) return null;
         if ($this->me === null && !$this->meLoaded) {
             $this->meLoaded = true;

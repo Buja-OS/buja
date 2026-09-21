@@ -1,4 +1,4 @@
-# Buja, Phase 16: Buja carries itself
+# Buja, Phase 17: pictures in chat, and a sweep of every screen
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -352,8 +352,15 @@ Verified: ping without a session, tidy refusing without the key and reporting wh
 - Checklist updated: "Server kept awake" now reads the ping, TURN passes on the default relay, and the digest check reflects that it runs itself.
 - Interview time bug fixed (the phone sent Abuja wall-clock and the server read it as UTC, so every interview showed an hour late), and the room is open from creation until ended, no clock-watching.
 
+## Phase 17: profile pictures in chat, and what a full sweep found
+
+- **Pictures in the inbox and the chat header.** Uploaded avatar first, then the Google picture, then the initials. The chat header now shows the picture beside the name, and the name opens the person's ratings page.
+- **A crawl of all 76 screens** as a signed-in user, catching script errors, server errors and broken pages. It found: the Ask directory returning a 500 when opened before sign-in (a helper insisted on a user), the landlord profile and the Waka planner binding controls that were not on the page, and the planner showing a server error when opened with no places chosen (it now returns you to the picker).
+- **Ten real Waka journeys planned and checked.** Fares and distances were sane on all of them. Two places had no route at all, so nothing could start or end there: Maitama (Transcorp Hilton), which the Mpape bus even claimed to pass through in its notes, and Gwarinpa 3rd Avenue. Migration 025 adds a Wuse to Maitama along, puts Maitama on the Mpape bus, and extends the Berger along to 3rd Avenue. Maitama to the Airport is now one transfer at ₦300 instead of a ₦9,800 taxi. The planner also tries two transfers when one is not enough.
+- The position shift in that migration is done in two steps because (route, position) is unique and a single +1 collides with itself, on TiDB as much as on SQLite.
+
 ## What is next
 
-Phase 17: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 18: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.
