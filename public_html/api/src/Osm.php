@@ -98,6 +98,44 @@ final class Osm
      * Which district a point is in. Buja's Waka stops are real surveyed points, so the nearest one is a
      * better answer than a district centroid; the centroids are only a fallback.
      */
+    /** Imports every named place of a category across the city in one pass. Returns how many were new. */
+    public static function importCategory(string $category, int $limit = 400): array
+    {
+        if (!isset(self::TAGS[$category])) return ['added' => 0, 'seen' => 0, 'error' => 'unknown category'];
+        // The FCT's built-up area, roughly: Bwari and Kubwa in the north to Kuje and the airport in the south.
+        $bbox = '8.85,7.15,9.25,7.65';
+        $clauses = '';
+        foreach (self::TAGS[$category] as $key => $values) { $v = implode('|', $values); foreach (['node', 'way'] as $type) $clauses .= sprintf('%s["%s"~"^(%s)$"]["name"](%s);', $type, $key, $v, $bbox); }
+        $query = '[out:json][timeout:25];(' . $clauses . ');out center ' . $limit . ';';
+        $raw = null; $err = '';
+        foreach (self::ENDPOINTS as $url) {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_POSTFIELDS => 'data=' . urlencode($query), CURLOPT_USERAGENT => self::UA]);
+            $body = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+            if ($code === 200 && $body) { $raw = $body; break; }
+            $err = 'overpass ' . parse_url($url, PHP_URL_HOST) . ' returned ' . $code;
+        }
+        if ($raw === null) return ['added' => 0, 'seen' => 0, 'error' => $err ?: 'no map server answered'];
+        $els = json_decode($raw, true)['elements'] ?? [];
+        $added = 0; $seen = 0;
+        foreach ($els as $e) {
+            $name = trim((string) ($e['tags']['name'] ?? '')); if ($name === '' || mb_strlen($name) > 70) continue;
+            $plat = (float) ($e['lat'] ?? $e['center']['lat'] ?? 0); $plng = (float) ($e['lon'] ?? $e['center']['lon'] ?? 0);
+            if (!$plat || !$plng) continue;
+            $seen++;
+            $osmId = ($e['type'] ?? 'node') . '/' . ($e['id'] ?? '');
+            $district = self::districtFor($plat, $plng);
+            if (Db::one('SELECT id FROM spots WHERE osm_id = ? OR (name = ? AND district = ?)', [$osmId, $name, $district])) continue;
+            $t = $e['tags'];
+            $desc = trim(implode('. ', array_filter([$t['cuisine'] ? 'Serves ' . str_replace([';', '_'], [', ', ' '], (string) $t['cuisine']) : null, $t['addr:street'] ?? null, $t['phone'] ?? $t['contact:phone'] ?? null])));
+            Db::run('INSERT INTO spots (name, category, district, area, tags, price_level, description, hours, lat, lng, source, osm_id, active, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?)',
+                [$name, $category, $district, $t['addr:street'] ?? null, json_encode(array_values(array_filter([$t['cuisine'] ?? null, $t['amenity'] ?? $t['shop'] ?? $t['leisure'] ?? $t['tourism'] ?? null]))), 2,
+                 mb_substr($desc !== '' ? $desc : 'Found on OpenStreetMap. Nobody on Buja has reviewed it yet.', 0, 400), isset($t['opening_hours']) ? mb_substr((string) $t['opening_hours'], 0, 60) : null, $plat, $plng, 'osm', $osmId, Db::now()]);
+            $added++;
+        }
+        return ['added' => $added, 'seen' => $seen, 'error' => null];
+    }
+
     public static function districtFor(float $lat, float $lng): string
     {
         $best = null; $bestKm = 1e9;

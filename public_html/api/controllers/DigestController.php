@@ -13,7 +13,12 @@ final class DigestController
     {
         $key = (string) Http::config('admin_key', '');
         if ($key === '' || (string) ($_GET['key'] ?? '') !== $key) Http::json(['error' => 'forbidden'], 403);
-        $limit = max(1, min(100, (int) ($_GET['limit'] ?? 40)));
+        Http::json($this->runBatch(max(1, min(100, (int) ($_GET['limit'] ?? 40)))));
+    }
+
+    /** The same work, callable from the self-running cron. */
+    public function runBatch(int $limit): array
+    {
         $st = Db::pdo()->prepare('SELECT * FROM users WHERE deleted_at IS NULL AND notify_digest = 1 AND email_verified_at IS NOT NULL
                                   AND (digest_sent_at IS NULL OR digest_sent_at < ?) ORDER BY digest_sent_at IS NULL DESC, digest_sent_at ASC LIMIT ?');
         $st->execute([gmdate('Y-m-d H:i:s', time() - 6 * 86400), $limit]);
@@ -25,7 +30,7 @@ final class DigestController
             Mail::send((string) $u['email'], (string) $u['name'], 'Buja · ' . $d['subject'], $this->html($u, $d));
             $sent++;
         }
-        Http::json(['sent' => $sent, 'skipped' => $skipped]);
+        return ['sent' => $sent, 'skipped' => $skipped];
     }
 
     /** GET /me/digest : the same content, shown in the app so it can be checked without waiting a week */

@@ -76,6 +76,7 @@ final class AccountController
     /** GET /me/today : confirmed interviews coming up, unread messages */
     public function today(): void
     {
+        Cron::maybe();
         $u = Auth::require();
         if (empty($u['last_seen_at']) || $u['last_seen_at'] < gmdate('Y-m-d H:i:s', time() - 300)) { Db::run('UPDATE users SET last_seen_at = ? WHERE id = ?', [Db::now(), $u['id']]); Track::hit($u, 'app', 'open'); }
         $st = Db::pdo()->prepare("SELECT m.id, m.type, m.meta, t.id AS thread_id, t.application_id, t.property_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.type IN ('interview','inspection') AND (t.user_a = ? OR t.user_b = ?) ORDER BY m.id DESC LIMIT 20");

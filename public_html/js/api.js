@@ -230,6 +230,7 @@ export const api = {
   adminCitizen:    () => request('GET', '/admin/citizen'),
   passkeys:        () => request('GET', '/auth/passkeys'),
   launch:          () => request('GET', '/admin/launch'),
+  importSpots:     (category) => request('POST', '/admin/spots-import', { category }),
   passkeyRegisterOptions: () => request('POST', '/auth/passkey/register/options'),
   passkeyRegister: (b) => request('POST', '/auth/passkey/register', b),
   passkeyLoginOptions: (identifier) => request('POST', '/auth/passkey/login/options', { identifier }),

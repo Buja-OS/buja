@@ -1,4 +1,4 @@
-# Buja, Phase 15: launch readiness
+# Buja, Phase 16: Buja carries itself
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -344,8 +344,16 @@ Verified with Chrome's virtual authenticator: registering from Settings, a real 
 
 Verified: ping without a session, tidy refusing without the key and reporting what it removed with it, the checklist scoring and sorting correctly.
 
+## Phase 16: three checklist items closed from the code side
+
+- **Calls relay by default.** Every call now carries Metered's free public Open Relay (TURN over UDP and TCP on 80 and 443) alongside Google STUN, so calls on restrictive mobile networks connect without anyone setting TURN_ variables. Set your own TURN_URL later to override it.
+- **Housekeeping and the digest run themselves.** The app polls `/me/today` every half minute while open; the first poll after a job is due runs it, bounded. Tidy at most hourly. The digest on Monday mornings from 7am Abuja time, five people per poll until everyone due is done. No external scheduler is needed for either. The only job left for a scheduler is `/api/ping` every ten minutes, because nothing inside a sleeping server can wake it.
+- **The Ask directory fills from OpenStreetMap.** Admin → Places to verify → one button per category pulls every named place of that kind across the FCT (about 8.85 to 9.25 N, 7.15 to 7.65 E): real names, real coordinates, district resolved from the nearest Waka stop, marked as unreviewed until somebody rates them. Run each once.
+- Checklist updated: "Server kept awake" now reads the ping, TURN passes on the default relay, and the digest check reflects that it runs itself.
+- Interview time bug fixed (the phone sent Abuja wall-clock and the server read it as UTC, so every interview showed an hour late), and the room is open from creation until ended, no clock-watching.
+
 ## What is next
 
-Phase 16: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 17: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

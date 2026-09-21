@@ -273,6 +273,17 @@ final class AdminController
             'recent' => array_map(fn($r) => ['ref' => 'BJ-' . strtoupper(base_convert((string) ((int) $r['id'] * 7919), 10, 36)), 'by' => explode(' ', trim((string) $r['name']))[0], 'agency' => $names[$r['agency']] ?? $r['agency'], 'category' => CitizenController::CATS[$r['category']] ?? $r['category'], 'district' => $r['district'], 'body' => mb_substr($r['body'], 0, 160), 'channel' => $r['channel'], 'at' => $r['created_at']], $recent)]);
     }
 
+    /** POST /admin/spots/import { category } : fill the Ask directory from OpenStreetMap, one category per call */
+    public function importSpots(): void
+    {
+        $this->staff();
+        set_time_limit(60);
+        $cat = (string) (Http::body()['category'] ?? '');
+        $r = Osm::importCategory($cat, 400);
+        $total = (int) (Db::one('SELECT COUNT(*) AS n FROM spots WHERE active = 1')['n'] ?? 0);
+        Http::json(['result' => $r, 'category' => $cat, 'total' => $total]);
+    }
+
     /** POST /admin/storage/test and POST /admin/storage/migrate { batch } */
     public function storageTest(): void { $this->admin(); Http::json(Media::selfTest()); }
     public function migrate(): void

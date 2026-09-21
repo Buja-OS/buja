@@ -259,3 +259,5 @@ $router->delete('/auth/passkeys/{id}',       [PasskeyController::class, 'remove'
 $router->get('/ping',                        [OpsController::class, 'ping']);
 $router->get('/cron/tidy',                   [OpsController::class, 'tidy']);
 $router->get('/admin/launch',                [OpsController::class, 'launch']);
+
+$router->post('/admin/spots-import',         [AdminController::class, 'importSpots']);
