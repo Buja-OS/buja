@@ -15,7 +15,7 @@ final class ArtisanController
         $out = ['id' => (int) $a['user_id'], 'name' => $a['business'] ?: explode(' ', trim((string) ($u['name'] ?? 'Artisan')))[0], 'person' => explode(' ', trim((string) ($u['name'] ?? '')))[0],
             'trade' => $a['trade'], 'tradeLabel' => self::TRADES[$a['trade']] ?? $a['trade'], 'about' => $a['about'], 'phone' => $a['phone'], 'whatsapp' => $a['whatsapp'] ?: $a['phone'],
             'district' => $a['base_district'], 'radiusKm' => (int) $a['radius_km'], 'years' => (int) $a['years'], 'available' => (bool) $a['available'],
-            'verified' => !empty($u['selfie_verified_at']), 'photo' => $a['photo_upload'] ? '/api/uploads/' . (int) $a['photo_upload'] : (Db::one('SELECT 1 AS x FROM avatars WHERE user_id = ?', [$a['user_id']]) ? '/api/avatar/' . (int) $a['user_id'] : null),
+            'verified' => !empty($a['verified_at']) || !empty($u['selfie_verified_at']), 'bujaVerified' => !empty($a['verified_at']), 'photo' => $a['photo_upload'] ? '/api/uploads/' . (int) $a['photo_upload'] : (Db::one('SELECT 1 AS x FROM avatars WHERE user_id = ?', [$a['user_id']]) ? '/api/avatar/' . (int) $a['user_id'] : null),
             'rating' => RatingController::summary((int) $a['user_id']), 'jobs' => (int) $a['jobs_done'], 'lat' => $a['lat'] !== null ? (float) $a['lat'] : null, 'lng' => $a['lng'] !== null ? (float) $a['lng'] : null];
         if ($at && $a['lat'] !== null) { $km = WakaRules::km($at[0], $at[1], (float) $a['lat'], (float) $a['lng']); $out['km'] = $km < 1 ? round($km, 1) : round($km); }
         return $out;
@@ -26,7 +26,7 @@ final class ArtisanController
     {
         $u = Auth::require(); $q = $_GET;
         $at = (!empty($q['lat']) && !empty($q['lng'])) ? [(float) $q['lat'], (float) $q['lng']] : null;
-        $where = ['a.available = 1', 'u.deleted_at IS NULL']; $p = [];
+        $where = ['a.available = 1', 'a.hidden_at IS NULL', 'u.deleted_at IS NULL']; $p = [];
         if (!empty($q['trade']) && isset(self::TRADES[$q['trade']])) { $where[] = 'a.trade = ?'; $p[] = $q['trade']; }
         if (!empty($q['district'])) { $where[] = 'a.base_district = ?'; $p[] = $q['district']; }
         if (!empty($q['q'])) { $where[] = '(a.business LIKE ? OR a.about LIKE ? OR u.name LIKE ?)'; $like = '%' . $q['q'] . '%'; array_push($p, $like, $like, $like); }

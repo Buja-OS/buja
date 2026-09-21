@@ -233,3 +233,16 @@ $router->post('/artisans/{id}/chat',         [ArtisanController::class, 'chat'])
 $router->get('/citizen/agencies',            [CitizenController::class, 'agencies']);
 $router->get('/citizen/reports',             [CitizenController::class, 'mine']);
 $router->post('/citizen/reports',            [CitizenController::class, 'create']);
+
+// Tickets
+$router->post('/events/{id}/tickets',        [TicketController::class, 'buy']);
+$router->post('/events/{id}/scan',           [TicketController::class, 'scan']);
+$router->get('/events/{id}/sales',           [TicketController::class, 'sales']);
+$router->get('/tickets/mine',                [TicketController::class, 'mine']);
+
+// Admin: the new modules
+$router->get('/admin/meetups',               [AdminController::class, 'meetups']);
+$router->post('/admin/meetups/{id}',         [AdminController::class, 'decideMeetup']);
+$router->get('/admin/artisans',              [AdminController::class, 'artisans']);
+$router->post('/admin/artisans/{id}',        [AdminController::class, 'decideArtisan']);
+$router->get('/admin/citizen',               [AdminController::class, 'citizen']);

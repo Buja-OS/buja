@@ -209,6 +209,7 @@ export const api = {
   rsvpEvent:       (id, b) => request('POST', '/events/' + id + '/rsvp', b),
   eventPost:       (id, body) => request('POST', '/events/' + id + '/posts', { body }),
   cancelEvent:     (id) => request('POST', '/events/' + id + '/cancel'),
+  cancelEventSeries: (id, series) => request('POST', '/events/' + id + '/cancel', { series }),
   checkinEvent:    (id, userId) => request('POST', '/events/' + id + '/checkin', { userId }),
   artisans:        (f) => request('GET', '/artisans' + qs(f)),
   artisan:         (id) => request('GET', '/artisans/' + id),
@@ -218,6 +219,15 @@ export const api = {
   agencies:        (category) => request('GET', '/citizen/agencies' + qs({ category })),
   citizenReport:   (b) => request('POST', '/citizen/reports', b),
   myReports:       () => request('GET', '/citizen/reports'),
+  buyTicket:       (id, qty) => request('POST', '/events/' + id + '/tickets', { qty }),
+  scanTicket:      (id, code) => request('POST', '/events/' + id + '/scan', { code }),
+  eventSales:      (id) => request('GET', '/events/' + id + '/sales'),
+  myTickets:       () => request('GET', '/tickets/mine'),
+  adminMeetups:    () => request('GET', '/admin/meetups'),
+  adminMeetup:     (id, action) => request('POST', '/admin/meetups/' + id, { action }),
+  adminArtisans:   () => request('GET', '/admin/artisans'),
+  adminArtisan:    (id, action) => request('POST', '/admin/artisans/' + id, { action }),
+  adminCitizen:    () => request('GET', '/admin/citizen'),
 };
 
 /* Detect the API once at boot. If /api/health is not there, switch to mock mode and say so. */
@@ -273,7 +283,7 @@ async function mockRequest(method, path, body) {
     return { user: pub(u), next: u.district ? 'home' : 'onboarding' };
   }
   if (path === '/auth/logout') { d.session = null; msave(d); return { ok: true }; }
-  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter') || path.startsWith('/ask') || path.startsWith('/spots') || path.startsWith('/pay') || path.startsWith('/verify') || path.startsWith('/admin') || path.startsWith('/notifications') || path.startsWith('/avatar') || path.startsWith('/news') || path.startsWith('/social') || path.startsWith('/radio') || path.startsWith('/uploads') || path.startsWith('/safety') || path.startsWith('/search') || path.startsWith('/report') || path.startsWith('/invite') || path.startsWith('/call') || path.startsWith('/weather') || path.startsWith('/saved-searches') || path.startsWith('/spots') || path.startsWith('/users') || path.startsWith('/waka/alerts') || path.startsWith('/events') || path.startsWith('/artisans') || path.startsWith('/citizen')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
+  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter') || path.startsWith('/ask') || path.startsWith('/spots') || path.startsWith('/pay') || path.startsWith('/verify') || path.startsWith('/admin') || path.startsWith('/notifications') || path.startsWith('/avatar') || path.startsWith('/news') || path.startsWith('/social') || path.startsWith('/radio') || path.startsWith('/uploads') || path.startsWith('/safety') || path.startsWith('/search') || path.startsWith('/report') || path.startsWith('/invite') || path.startsWith('/call') || path.startsWith('/weather') || path.startsWith('/saved-searches') || path.startsWith('/spots') || path.startsWith('/users') || path.startsWith('/waka/alerts') || path.startsWith('/events') || path.startsWith('/artisans') || path.startsWith('/citizen') || path.startsWith('/tickets')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
   if (path === '/me' && method === 'PATCH') {
     const u = me(); if (!u) throw { error: 'unauthenticated', message: 'Please sign in.' };
     Object.assign(u, body); msave(d); return { user: pub(u) };

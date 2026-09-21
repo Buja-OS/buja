@@ -1,4 +1,4 @@
-# Buja, Phase 12: Meetup, Artisans, Citizen Report, and six fixes
+# Buja, Phase 13: tickets, recurring events, moderation, search
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -318,8 +318,18 @@ pay columns by the wrong name.
 
 New: `MeetupController.php`, `ArtisanController.php`, `CitizenController.php`, `js/services.js`, `migrations/022_meetup_artisans_report.sql`.
 
+## Phase 13: Meetup earns, admins can moderate, search knows everything
+
+- **Paid tickets** on Paystack. Buja keeps 5% plus ₦100 per ticket, the host gets the rest by transfer after the event. Each ticket has an eight-letter code shown on a dashed card; the host has a Door screen that checks a code once and refuses it a second time, and a Sales screen showing gross, fee and what they are owed. Both buyer and host are notified on every sale. A paid event refuses free registration. `PAYSTACK_MOCK=true` settles instantly for testing; with a real `PAYSTACK_SECRET` the existing callback and webhook route ticket references too.
+- **Recurring events**: weekly, fortnightly or monthly. Buja creates the next eight dates up front so they all appear in the list, and cancelling offers to remove the rest of the series.
+- **Admin**: Events (hide, show, cancel with notice; shows tickets sold and payout owed), Artisans (verify after a phone call, which puts a Buja verified badge on the card; hide), Citizen reports (last 30 days by problem, and the recent copies residents kept). Overview shows upcoming events, artisans listed, reports this month, ticket sales and Buja's fees.
+- **Search** now returns events, artisans (by name or trade) and the right agency for a problem.
+- My tickets under Me.
+
+Verified: a weekly series of nine dates; free RSVP refused on a paid event; buying two tickets; fee maths (₦600 on ₦10,000); buyer and host notified; second purchase refused; door scan accepting once and refusing the reuse with the time and name; a stranger refused at the door; series cancellation; search across the three new types; artisan verify and hide from the admin.
+
 ## What is next
 
-Phase 13: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 14: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

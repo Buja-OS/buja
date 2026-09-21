@@ -38,6 +38,20 @@ final class SearchController
         $st->execute([$like, $like]);
         $add('stop', array_map(fn($r) => ['id' => (int) $r['id'], 'title' => $r['name'], 'sub' => 'Waka stop · ' . $r['district'], 'url' => '/waka?toq=' . rawurlencode($r['district'])], $st->fetchAll()));
 
+        $st = Db::pdo()->prepare("SELECT id, title, district, starts_at FROM meetups WHERE status = 'live' AND hidden_at IS NULL AND starts_at > ? AND (title LIKE ? OR description LIKE ? OR venue LIKE ?) ORDER BY starts_at LIMIT 6");
+        $st->execute([gmdate('Y-m-d H:i:s', time() - 3 * 3600), $like, $like, $like]);
+        $add('event', array_map(fn($r) => ['id' => (int) $r['id'], 'title' => $r['title'], 'sub' => date('D j M, H:i', strtotime($r['starts_at'] . ' UTC')) . ' · ' . $r['district'], 'url' => '/meetup/' . (int) $r['id']], $st->fetchAll()));
+
+        $tradeIds = array_keys(array_filter(ArtisanController::TRADES, fn($label, $k) => str_contains(mb_strtolower($label), mb_strtolower($q)) || str_contains($k, mb_strtolower($q)), ARRAY_FILTER_USE_BOTH));
+        $tin = $tradeIds ? ' OR a.trade IN (' . implode(',', array_fill(0, count($tradeIds), '?')) . ')' : '';
+        $st = Db::pdo()->prepare("SELECT a.user_id, a.business, a.trade, a.base_district, u.name FROM artisans a JOIN users u ON u.id = a.user_id WHERE a.available = 1 AND a.hidden_at IS NULL AND (a.business LIKE ? OR a.about LIKE ? OR u.name LIKE ?$tin) LIMIT 6");
+        $st->execute(array_merge([$like, $like, $like], $tradeIds));
+        $add('artisan', array_map(fn($r) => ['id' => (int) $r['user_id'], 'title' => $r['business'] ?: explode(' ', trim((string) $r['name']))[0], 'sub' => (ArtisanController::TRADES[$r['trade']] ?? $r['trade']) . ' · ' . $r['base_district'], 'url' => '/artisans/' . (int) $r['user_id']], $st->fetchAll()));
+
+        $ql = mb_strtolower($q);
+        $ag = array_values(array_filter(CitizenController::AGENCIES, fn($a) => str_contains(mb_strtolower($a['name'] . ' ' . $a['note'] . ' ' . implode(' ', array_map(fn($c) => CitizenController::CATS[$c] ?? $c, $a['cats']))), $ql)));
+        $add('agency', array_map(fn($a) => ['id' => $a['id'], 'title' => $a['name'], 'sub' => $a['phones'][0] ?? 'see website', 'url' => '/report?category=' . ($a['cats'][0] ?? '')], array_slice($ag, 0, 4)));
+
         Track::hit($u, 'search', 'search');
         Http::json(['query' => $q, 'results' => $out]);
     }

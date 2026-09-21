@@ -93,6 +93,7 @@ final class AdminController
         Http::json(['counts' => ['users' => $n('SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL'), 'plus' => $n("SELECT COUNT(*) AS n FROM users WHERE plus_until > '" . Db::now() . "'"), 'jobs' => $n("SELECT COUNT(*) AS n FROM jobs WHERE status = 'open'"), 'applications' => $n('SELECT COUNT(*) AS n FROM applications'), 'matches' => $n('SELECT COUNT(*) AS n FROM matches'), 'properties' => $n("SELECT COUNT(*) AS n FROM properties WHERE status = 'available'"), 'listings' => $n("SELECT COUNT(*) AS n FROM listings WHERE status = 'active'"), 'fareReports' => $n('SELECT COUNT(*) AS n FROM fare_reports'), 'asks' => $n('SELECT COUNT(*) AS n FROM ask_log'), 'spots' => $n('SELECT COUNT(*) AS n FROM spots WHERE active = 1')],
             'queues' => ['verifications' => $n("SELECT COUNT(*) AS n FROM verifications WHERE status = 'pending'"), 'reports' => $n('SELECT COUNT(*) AS n FROM reports WHERE reviewed_at IS NULL'), 'spots' => $n('SELECT COUNT(*) AS n FROM spots WHERE active = 1 AND verified_at IS NULL')],
             'storage' => ['configured' => Media::configured(), 'inDb' => ['matchPhotos' => $n('SELECT COUNT(*) AS n FROM match_photos WHERE storage_key IS NULL'), 'propertyPhotos' => $n('SELECT COUNT(*) AS n FROM property_photos WHERE storage_key IS NULL'), 'listingPhotos' => $n('SELECT COUNT(*) AS n FROM listing_photos WHERE storage_key IS NULL'), 'cvs' => $n('SELECT COUNT(*) AS n FROM cv_files WHERE storage_key IS NULL')]],
+            'city' => ['meetups' => (int) (Db::one("SELECT COUNT(*) AS n FROM meetups WHERE status = 'live' AND starts_at > '" . gmdate('Y-m-d H:i:s') . "'")['n'] ?? 0), 'artisans' => (int) (Db::one('SELECT COUNT(*) AS n FROM artisans')['n'] ?? 0), 'reports30' => (int) (Db::one('SELECT COUNT(*) AS n FROM citizen_reports WHERE created_at > \'' . gmdate('Y-m-d H:i:s', time() - 30 * 86400) . '\'')['n'] ?? 0), 'ticketSales' => (int) (Db::one("SELECT COALESCE(SUM(amount),0) AS s FROM tickets WHERE status IN ('paid','used')")['s'] ?? 0), 'bujaFees' => (int) (Db::one("SELECT COALESCE(SUM(fee),0) AS s FROM tickets WHERE status IN ('paid','used')")['s'] ?? 0)],
             'ask' => ['provider' => (string) Http::config('ask_provider', 'gemini'),
                 'keys' => array_values(array_filter(['gemini', 'groq', 'anthropic'], fn($p) => Http::config($p . '_api_key', '') !== '')),
                 'today' => (int) (Db::one('SELECT COUNT(*) AS n FROM ask_log WHERE created_at >= ?', [gmdate('Y-m-d 00:00:00')])['n'] ?? 0),
@@ -220,6 +221,56 @@ final class AdminController
             else { Db::run('INSERT INTO radio_stations (name, frequency, genre, stream_url, active) VALUES (?,?,?,?,1)', [mb_substr(trim(preg_replace('/\s*\d{2,3}\.\d\s*(FM)?/i', ' ', $title)) ?: $title, 0, 60), $freq ?: '—', 'From Radio Garden', $stream]); $added++; $names[] = $title; }
         }
         return ['matched' => $matched, 'added' => $added, 'stations' => array_slice($names, 0, 40), 'message' => $matched + $added . ' stations now have a stream.'];
+    }
+
+    private function staff(): array
+    {
+        $u = Auth::require();
+        if (!in_array($u['role'] ?? '', ['admin', 'moderator'], true) && empty($u['is_admin'])) Http::json(['error' => 'forbidden', 'message' => 'Staff only.'], 403);
+        return $u;
+    }
+
+    /** GET /admin/meetups : everything upcoming, newest first, with the host */
+    public function meetups(): void
+    {
+        $this->staff();
+        $st = Db::pdo()->query("SELECT m.*, u.name AS host_name FROM meetups m JOIN users u ON u.id = m.host_id WHERE m.starts_at > '" . gmdate('Y-m-d H:i:s', time() - 86400) . "' ORDER BY m.id DESC LIMIT 80");
+        Http::json(['items' => array_map(fn($m) => ['id' => (int) $m['id'], 'title' => $m['title'], 'host' => $m['host_name'], 'hostId' => (int) $m['host_id'], 'startsAt' => $m['starts_at'], 'district' => $m['district'], 'price' => (int) $m['price'], 'going' => (int) $m['going'], 'tickets' => (int) $m['ticket_count'], 'status' => $m['status'], 'hidden' => $m['hidden_at'] !== null, 'sales' => (int) (Db::one("SELECT COALESCE(SUM(amount - fee),0) AS p FROM tickets WHERE event_id = ? AND status IN ('paid','used')", [$m['id']])['p'] ?? 0)], $st->fetchAll())]);
+    }
+    /** POST /admin/meetups/{id} { action: hide|show|cancel } */
+    public function decideMeetup(int $id): void
+    {
+        $this->staff(); $act = (string) (Http::body()['action'] ?? '');
+        if ($act === 'hide') Db::run('UPDATE meetups SET hidden_at = ? WHERE id = ?', [Db::now(), $id]);
+        elseif ($act === 'show') Db::run('UPDATE meetups SET hidden_at = NULL WHERE id = ?', [$id]);
+        elseif ($act === 'cancel') { Db::run("UPDATE meetups SET status = 'cancelled' WHERE id = ?", [$id]); $e = Db::one('SELECT title FROM meetups WHERE id = ?', [$id]); $st = Db::pdo()->prepare("SELECT user_id FROM meetup_rsvps WHERE event_id = ? AND status IN ('going','waitlist')"); $st->execute([$id]); foreach ($st->fetchAll() as $r) Notify::user((int) $r['user_id'], 'offers', 'Cancelled: ' . ($e['title'] ?? 'event'), 'Removed by Buja moderators.', '/#/meetup'); }
+        else Http::json(['error' => 'validation'], 422);
+        $this->meetups();
+    }
+    /** GET /admin/artisans and POST /admin/artisans/{id} { action: verify|unverify|hide|show } */
+    public function artisans(): void
+    {
+        $this->staff();
+        $st = Db::pdo()->query('SELECT a.*, u.name, u.phone AS user_phone, u.selfie_verified_at FROM artisans a JOIN users u ON u.id = a.user_id ORDER BY a.created_at DESC LIMIT 120');
+        Http::json(['items' => array_map(fn($x) => ['id' => (int) $x['user_id'], 'name' => $x['business'] ?: $x['name'], 'person' => $x['name'], 'trade' => ArtisanController::TRADES[$x['trade']] ?? $x['trade'], 'phone' => $x['phone'], 'district' => $x['base_district'], 'selfie' => $x['selfie_verified_at'] !== null, 'verified' => $x['verified_at'] !== null, 'hidden' => $x['hidden_at'] !== null, 'contacts' => (int) $x['jobs_done'], 'rating' => RatingController::summary((int) $x['user_id']), 'since' => substr((string) $x['created_at'], 0, 10)], $st->fetchAll())]);
+    }
+    public function decideArtisan(int $id): void
+    {
+        $this->staff(); $act = (string) (Http::body()['action'] ?? '');
+        $sql = ['verify' => 'verified_at = ?', 'unverify' => 'verified_at = NULL', 'hide' => 'hidden_at = ?', 'show' => 'hidden_at = NULL'][$act] ?? null; if (!$sql) Http::json(['error' => 'validation'], 422);
+        Db::run('UPDATE artisans SET ' . $sql . ' WHERE user_id = ?', str_contains($sql, '= ?') ? [Db::now(), $id] : [$id]);
+        if ($act === 'verify') Notify::user($id, 'offers', 'Your artisan listing is verified', 'Buja checked your details. The badge shows on your profile.', '/#/artisans/' . $id);
+        $this->artisans();
+    }
+    /** GET /admin/citizen : what residents have been reporting, by agency and category */
+    public function citizen(): void
+    {
+        $this->staff();
+        $by = Db::pdo()->query("SELECT category, COUNT(*) AS n FROM citizen_reports WHERE created_at > '" . gmdate('Y-m-d H:i:s', time() - 30 * 86400) . "' GROUP BY category ORDER BY n DESC")->fetchAll();
+        $recent = Db::pdo()->query('SELECT r.*, u.name FROM citizen_reports r JOIN users u ON u.id = r.user_id ORDER BY r.id DESC LIMIT 60')->fetchAll();
+        $names = array_column(CitizenController::AGENCIES, 'name', 'id');
+        Http::json(['byCategory' => array_map(fn($r) => ['category' => CitizenController::CATS[$r['category']] ?? $r['category'], 'n' => (int) $r['n']], $by),
+            'recent' => array_map(fn($r) => ['ref' => 'BJ-' . strtoupper(base_convert((string) ((int) $r['id'] * 7919), 10, 36)), 'by' => explode(' ', trim((string) $r['name']))[0], 'agency' => $names[$r['agency']] ?? $r['agency'], 'category' => CitizenController::CATS[$r['category']] ?? $r['category'], 'district' => $r['district'], 'body' => mb_substr($r['body'], 0, 160), 'channel' => $r['channel'], 'at' => $r['created_at']], $recent)]);
     }
 
     /** POST /admin/storage/test and POST /admin/storage/migrate { batch } */

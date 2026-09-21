@@ -24,6 +24,8 @@ final class MeetupController
             'capacity' => $e['capacity'] !== null ? (int) $e['capacity'] : null, 'going' => (int) $e['going'], 'price' => (int) $e['price'],
             'full' => $e['capacity'] !== null && (int) $e['going'] >= (int) $e['capacity'], 'status' => $e['status'],
             'cover' => $e['cover_upload'] ? '/api/uploads/' . (int) $e['cover_upload'] : null,
+            'repeat' => $e['repeat_rule'] ?? 'none', 'seriesId' => $e['series_id'] ? (int) $e['series_id'] : null, 'tickets' => (int) ($e['ticket_count'] ?? 0),
+            'myTicket' => $u ? (function () use ($e, $u) { $t = Db::one("SELECT code, qty, status FROM tickets WHERE event_id = ? AND user_id = ? AND status IN ('paid','used') ORDER BY id DESC LIMIT 1", [$e['id'], $u['id']]); return $t ? ['code' => $t['code'], 'qty' => (int) $t['qty'], 'status' => $t['status']] : null; })() : null,
             'host' => $this->host((int) $e['host_id']), 'isHost' => $u ? (int) $e['host_id'] === (int) $u['id'] : false,
             'my' => $mine ? ['status' => $mine['status'], 'guests' => (int) $mine['guests']] : null,
             'past' => $e['starts_at'] < gmdate('Y-m-d H:i:s', time() - 6 * 3600)];
@@ -42,7 +44,7 @@ final class MeetupController
     public function index(): void
     {
         $u = Auth::require(); $q = $_GET;
-        $where = ["e.status = 'live'"]; $p = [];
+        $where = ["e.status = 'live'", 'e.hidden_at IS NULL']; $p = [];
         $when = (string) ($q['when'] ?? 'upcoming');
         if ($when === 'mine') { $where[] = "e.id IN (SELECT event_id FROM meetup_rsvps WHERE user_id = ? AND status <> 'cancelled')"; $p[] = $u['id']; }
         elseif ($when === 'hosting') { $where = ['e.host_id = ?']; $p[] = $u['id']; }
@@ -83,6 +85,18 @@ final class MeetupController
             [$u['id'], $title, $cat, $desc, gmdate('Y-m-d H:i:s', $ts), $end ? gmdate('Y-m-d H:i:s', $end) : null, $venue ?: 'Online', $district,
              !empty($b['lat']) ? (float) $b['lat'] : null, !empty($b['lng']) ? (float) $b['lng'] : null, $online, !empty($b['capacity']) ? max(1, (int) $b['capacity']) : null, max(0, (int) ($b['price'] ?? 0)), $cover, Db::now()]);
         $id = (int) Db::lastId();
+        $repeat = in_array($b['repeat'] ?? 'none', ['weekly', 'fortnightly', 'monthly'], true) ? $b['repeat'] : 'none';
+        if ($repeat !== 'none') {
+            Db::run('UPDATE meetups SET repeat_rule = ?, series_id = ? WHERE id = ?', [$repeat, $id, $id]);
+            $step = ['weekly' => '+1 week', 'fortnightly' => '+2 weeks', 'monthly' => '+1 month'][$repeat];
+            $row = Db::one('SELECT * FROM meetups WHERE id = ?', [$id]);
+            $s = $ts; $e2 = $end;
+            for ($i = 0; $i < 7; $i++) {
+                $s = strtotime($step, $s); $e2 = $e2 ? strtotime($step, $e2) : null;
+                Db::run('INSERT INTO meetups (host_id, title, category, description, starts_at, ends_at, venue, district, lat, lng, online_url, capacity, price, cover_upload, repeat_rule, series_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    [$u['id'], $row['title'], $row['category'], $row['description'], gmdate('Y-m-d H:i:s', $s), $e2 ? gmdate('Y-m-d H:i:s', $e2) : null, $row['venue'], $row['district'], $row['lat'], $row['lng'], $row['online_url'], $row['capacity'], $row['price'], $row['cover_upload'], $repeat, $id, Db::now()]);
+            }
+        }
         Track::hit($u, 'meetup', 'create');
         Http::json(['event' => $this->shape(Db::one('SELECT * FROM meetups WHERE id = ?', [$id]), $u, true)], 201);
     }
@@ -93,6 +107,7 @@ final class MeetupController
         $u = Auth::require(); RateLimit::hit('rsvp', 60, 86400);
         $e = Db::one("SELECT * FROM meetups WHERE id = ? AND status = 'live'", [$id]); if (!$e) Http::json(['error' => 'not_found'], 404);
         $b = Http::body(); $going = !empty($b['going']); $guests = max(0, min(5, (int) ($b['guests'] ?? 0)));
+        if ($going && (int) $e['price'] > 0 && !Db::one("SELECT id FROM tickets WHERE event_id = ? AND user_id = ? AND status IN ('paid','used')", [$id, $u['id']])) Http::json(['error' => 'ticket', 'message' => 'This event is paid. Buy a ticket and you are in.'], 402);
         $cur = Db::one('SELECT * FROM meetup_rsvps WHERE event_id = ? AND user_id = ?', [$id, $u['id']]);
         if (!$going) {
             if ($cur && $cur['status'] !== 'cancelled') {
@@ -142,7 +157,9 @@ final class MeetupController
     {
         $u = Auth::require();
         $e = Db::one('SELECT * FROM meetups WHERE id = ? AND host_id = ?', [$id, $u['id']]); if (!$e) Http::json(['error' => 'not_found'], 404);
-        Db::run("UPDATE meetups SET status = 'cancelled' WHERE id = ?", [$id]);
+        $all = !empty(Http::body()['series']) && $e['series_id'];
+        if ($all) Db::run("UPDATE meetups SET status = 'cancelled' WHERE series_id = ? AND starts_at >= ?", [$e['series_id'], $e['starts_at']]);
+        else Db::run("UPDATE meetups SET status = 'cancelled' WHERE id = ?", [$id]);
         $st = Db::pdo()->prepare("SELECT user_id FROM meetup_rsvps WHERE event_id = ? AND status IN ('going','waitlist')"); $st->execute([$id]);
         foreach ($st->fetchAll() as $r) Notify::user((int) $r['user_id'], 'offers', 'Cancelled: ' . $e['title'], 'The host called it off. Sorry.', '/#/meetup');
         Http::json(['ok' => true]);
