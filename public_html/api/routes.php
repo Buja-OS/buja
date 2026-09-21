@@ -254,3 +254,8 @@ $router->post('/auth/passkey/register',      [PasskeyController::class, 'registe
 $router->post('/auth/passkey/login/options', [PasskeyController::class, 'loginOptions']);
 $router->post('/auth/passkey/login',         [PasskeyController::class, 'login']);
 $router->delete('/auth/passkeys/{id}',       [PasskeyController::class, 'remove']);
+
+// Operations
+$router->get('/ping',                        [OpsController::class, 'ping']);
+$router->get('/cron/tidy',                   [OpsController::class, 'tidy']);
+$router->get('/admin/launch',                [OpsController::class, 'launch']);

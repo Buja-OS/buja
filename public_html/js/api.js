@@ -229,6 +229,7 @@ export const api = {
   adminArtisan:    (id, action) => request('POST', '/admin/artisans/' + id, { action }),
   adminCitizen:    () => request('GET', '/admin/citizen'),
   passkeys:        () => request('GET', '/auth/passkeys'),
+  launch:          () => request('GET', '/admin/launch'),
   passkeyRegisterOptions: () => request('POST', '/auth/passkey/register/options'),
   passkeyRegister: (b) => request('POST', '/auth/passkey/register', b),
   passkeyLoginOptions: (identifier) => request('POST', '/auth/passkey/login/options', { identifier }),

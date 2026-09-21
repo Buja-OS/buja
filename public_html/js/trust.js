@@ -52,6 +52,7 @@ export function registerTrust({ route, go, state, setState, api, ui, failed }) {
     return `${topbar(state.user.admin ? 'Buja admin' : 'Moderation', '/me')}
     <main class="pad stack" style="gap:14px">
       ${state.user.admin ? `<div class="section">RUN BUJA</div>
+      <a class="card row" href="#/admin/launch" style="padding:14px;gap:12px;border:2px solid var(--orange)"><span style="width:40px;height:40px;border-radius:12px;background:var(--orange);color:#fff;display:flex;align-items:center;justify-content:center">${icon('circle-check')}</span><span class="grow"><span style="display:block;font-size:14px;font-weight:700">Launch checklist</span><span class="small muted">What is switched on, what is not, and the exact next step for each</span></span>${icon('chevron-right')}</a>
       <div class="card list">
         <a class="item" href="#/admin/meetups"><div class="mi">${icon('calendar-days')}</div><div class="grow"><div class="t">Events</div><div class="s">${o.city ? o.city.meetups + ' upcoming' : ''}${o.city && o.city.ticketSales ? ' · ₦' + o.city.ticketSales.toLocaleString() + ' in tickets · Buja earned ₦' + o.city.bujaFees.toLocaleString() : ''}</div></div>${icon('chevron-right')}</a>
         <a class="item" href="#/admin/artisans"><div class="mi">${icon('screwdriver-wrench')}</div><div class="grow"><div class="t">Artisans</div><div class="s">${o.city ? o.city.artisans + ' listed, verify the ones you have called' : ''}</div></div>${icon('chevron-right')}</a>
@@ -169,4 +170,27 @@ export function registerTrust({ route, go, state, setState, api, ui, failed }) {
       ${a.revenueByMonth.length ? `<div class="card stack" style="padding:14px;gap:6px"><div class="h-sm">Revenue by month</div>${a.revenueByMonth.map((r) => `<div class="row small" style="justify-content:space-between"><span>${r.month}</span><strong>${naira(r.naira)} · ${r.payments} payment${r.payments === 1 ? '' : 's'}</strong></div>`).join('')}</div>` : ''}
     </main>`;
   });
+}
+
+export function registerLaunch({ route, api, ui, failed }) {
+  const { h, topbar, icon, toast } = ui;
+  route('/admin/launch', { auth: true, tabs: '' }, async () => {
+    const d = await api.launch();
+    const pct = Math.round(d.score / d.max * 100);
+    const tone = pct >= 80 ? 'var(--green-dark)' : pct >= 50 ? 'var(--orange-dark)' : '#D92D20';
+    const sorted = [...d.checks].sort((a, b) => (a.ok - b.ok) || (b.weight - a.weight));
+    return `${topbar('Launch checklist', '/admin')}
+    <main class="pad stack" style="gap:12px">
+      <div class="card row" style="padding:16px;gap:16px;align-items:center"><div style="width:72px;height:72px;border-radius:36px;border:6px solid ${tone};display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:${tone}">${pct}%</div><div class="grow"><div class="h-md">${pct >= 80 ? 'Ready to invite people' : pct >= 50 ? 'Nearly there' : 'Not ready yet'}</div><div class="small muted">${d.people.users} accounts, ${d.people.active7} active this week. ${sorted.filter((c) => !c.ok).length} thing${sorted.filter((c) => !c.ok).length === 1 ? '' : 's'} to do, most important first.</div></div></div>
+      ${sorted.map((c) => `<div class="card stack" style="padding:14px;gap:6px;${c.ok ? 'opacity:.75' : (c.weight === 3 ? 'border-color:#D92D20' : 'border-color:var(--orange)')}">
+        <div class="row" style="gap:10px"><span style="color:${c.ok ? 'var(--green-dark)' : (c.weight === 3 ? '#D92D20' : 'var(--orange-dark)')};flex-shrink:0">${icon(c.ok ? 'circle-check' : 'triangle-exclamation')}</span><span style="font-size:14px;font-weight:700" class="grow">${h(c.title)}</span>${!c.ok && c.weight === 3 ? '<span class="tag" style="background:#FDECEA;color:#D92D20">Blocks launch</span>' : ''}</div>
+        <div class="small" style="color:var(--ink-2);line-height:1.5">${h(c.detail)}</div>
+        ${c.ok ? '' : `<div class="small" style="line-height:1.5;padding:8px 10px;background:var(--surface);border-radius:10px"><strong>Do this:</strong> ${h(c.fix)}</div>`}
+      </div>`).join('')}
+      <div class="card stack" style="padding:14px;gap:8px"><div class="h-sm">The three URLs a scheduler should call</div>
+        ${[['Every 10 minutes', d.urls.ping], ['Every hour', d.urls.tidy], ['Weekly, Monday 07:00', d.urls.digest]].map(([w, u]) => `<div><div class="small muted">${w}</div><div class="row" style="gap:6px"><code style="font-size:11px;word-break:break-all;flex:1">${h(u)}</code><button class="btn btn-sm btn-outline" data-copy="${h(u)}" style="width:auto;height:30px;font-size:11px">Copy</button></div></div>`).join('')}
+        <div class="small muted" style="line-height:1.5">Replace YOUR_ADMIN_KEY with the value in Render. cron-job.org is free and does all three.</div>
+      </div>
+    </main>`;
+  }, { mount(el) { el.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', () => { navigator.clipboard?.writeText(b.dataset.copy); toast('Copied'); })); } });
 }

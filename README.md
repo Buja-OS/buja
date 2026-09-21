@@ -1,4 +1,4 @@
-# Buja, Phase 14: Google sign-in switched on, fingerprint sign-in
+# Buja, Phase 15: launch readiness
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -336,8 +336,16 @@ Verified: a weekly series of nine dates; free RSVP refused on a paid event; buyi
 
 Verified with Chrome's virtual authenticator: registering from Settings, a real resident key stored on the authenticator, signing out, signing back in by touch as the right user, and a phone with no key being told what to do.
 
+## Phase 15: the launch checklist, housekeeping and keep-alive
+
+- **Launch checklist** in the admin panel, `#/admin/launch`. Twelve live checks with a score and, for each thing that is off, the exact next step: server kept awake, ADMIN_KEY, digest running, email, push, media storage (with how many files and MB still sit in the database), Ask AI, Google sign-in, Paystack (and a loud warning if mock mode is on), TURN relay, app address, and whether there is enough content for a first visitor. Sorted with what blocks launch first. Shows the three scheduler URLs with copy buttons.
+- **`/api/ping`**: no database, no session, the cheapest possible response for a scheduler to hit every ten minutes so the free server never sleeps.
+- **`/api/cron/tidy?key=…`**: hourly housekeeping. Deletes call signals older than a day, marks calls left ringing as missed, removes expired road alerts, unpaid ticket attempts, old rate-limit counters, stale sign-in challenges, analytics older than 120 days, news older than a month, Ask logs older than 90 days and expired sessions. The free database stays small. Its last run is what the "server kept awake" check reads.
+
+Verified: ping without a session, tidy refusing without the key and reporting what it removed with it, the checklist scoring and sorting correctly.
+
 ## What is next
 
-Phase 15: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 16: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

@@ -9,7 +9,7 @@ import { registerWaka } from './waka.js';
 import { registerHomes } from './homes.js';
 import { registerDeclutter } from './declutter.js';
 import { registerAsk } from './ask.js';
-import { registerTrust } from './trust.js';
+import { registerTrust, registerLaunch } from './trust.js';
 import { registerCity } from './city.js';
 import { registerSafety } from './safety.js';
 import { registerGrowth } from './growth.js';
@@ -402,6 +402,7 @@ registerCall({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, sho
 registerGrowth({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerSafety({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerCity({ route, go, state, api, radio, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerLaunch({ route, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
 registerTrust({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerAsk({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
 registerDeclutter({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
