@@ -11,14 +11,16 @@ export function registerLearn({ route, go, state, api, ui, failed }) {
     return `${topbar('Buja Learn', '/home', `<a class="iconbtn" href="#/learn/certificates" aria-label="My certificates">${icon('award')}</a>`)}
     <main class="pad stack" style="gap:14px">
       <div style="padding:4px 2px"><div class="h-lg" style="font-size:22px">Learn to build. For free.</div><div class="small muted" style="margin-top:4px;line-height:1.5">Write real code on your phone, pass the tests, earn a certificate anyone can verify. ${d.learners ? d.learners + ' people learning.' : ''}</div></div>
-      ${d.courses.map((c) => `<a class="card" href="#/learn/${c.slug}" style="display:block;overflow:hidden">
-        <div style="height:150px;background:url('${c.thumb}') center/cover"></div>
+      ${['frontend', 'backend', 'fullstack', 'prompt', 'ai'].map((track) => { const cs = d.courses.filter((c) => c.track === track); if (!cs.length) return ''; return `
+        <div class="section" style="margin-top:6px">${h(TRACK[track].toUpperCase())}${cs.length > 1 ? ' · ' + cs.length + ' levels' : ''}</div>
+        ${cs.map((c) => { const locked = c.after && !c.afterDone; return `<a class="card" href="${locked ? '#/learn/' + c.after : '#/learn/' + c.slug}" style="display:block;overflow:hidden;${locked ? 'opacity:.72' : ''}">
+        <div style="height:150px;background:url('${c.thumb}') center/cover;position:relative">${locked ? `<div style="position:absolute;inset:0;background:rgba(16,16,20,.35);display:flex;align-items:center;justify-content:center"><span style="background:#fff;color:#101014;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:700">${icon('lock')} Finish ${h(c.afterTitle)} first</span></div>` : ''}</div>
         <div class="stack" style="padding:14px;gap:8px">
-          <div class="row" style="gap:8px"><span class="tag" style="background:${c.color}1a;color:${c.color}">${h(TRACK[c.track])}</span><span class="small muted">${h(c.level)} · ${c.lessons} lessons · ${c.hours} h</span></div>
+          <div class="row" style="gap:8px"><span class="tag" style="background:${c.color}1a;color:${c.color}">${h(c.level)}</span><span class="small muted">${c.lessons} lessons · ${c.hours} h</span></div>
           <div style="font-size:16px;font-weight:700">${h(c.title)}</div>
           <div class="small" style="color:var(--ink-2);line-height:1.5">${h(c.blurb)}</div>
           ${c.certificate ? `<div class="row small" style="gap:6px;color:var(--green-dark);font-weight:650">${icon('award')} Certificate earned</div>` : c.done ? `<div><div style="height:6px;border-radius:3px;background:var(--surface)"><div style="height:6px;border-radius:3px;background:${c.color};width:${c.pct}%"></div></div><div class="small muted" style="margin-top:4px">${c.pct}% · ${c.done} of ${c.lessons} done</div></div>` : ''}
-        </div></a>`).join('')}
+        </div></a>`; }).join('')}`; }).join('')}
       <div class="small muted" style="line-height:1.5">Each lesson ends with a check. Exercises run in a sandbox on your phone, so they work on a poor connection. Prompt work is graded by an AI against a rubric.</div>
     </main>`;
   });
@@ -34,6 +36,7 @@ export function registerLearn({ route, go, state, api, ui, failed }) {
   route('/learn/:slug', { auth: true, tabs: '' }, async ({ slug }) => {
     if (slug === 'certificates') return '';
     const { course: c, lessons } = await api.learnCourse(slug);
+    if (c.after && !c.afterDone) return `${topbar('', '/learn')}<div class="placeholder" style="padding:60px 20px"><div class="mi card">${icon('lock')}</div><div class="h-md">${h(c.title)}</div><div class="small muted" style="max-width:290px;line-height:1.5">This is the ${h(c.level.toLowerCase())} tier. Earn the certificate for ${h(c.afterTitle)} first; everything here builds on it.</div><a class="btn btn-ink" href="#/learn/${c.after}" style="width:auto">Go to ${h(c.afterTitle)}</a></div>`;
     return `${topbar('', '/learn')}
     <div style="margin:0 16px;border-radius:18px;overflow:hidden;height:170px;background:url('${c.thumb}') center/cover"></div>
     <main class="pad stack" style="gap:14px">
@@ -122,7 +125,7 @@ export function registerLearn({ route, go, state, api, ui, failed }) {
         ${l.index > 0 ? `<a class="btn btn-outline" href="#/learn/${slug}/${l.index - 1}" style="width:auto">${icon('arrow-left')}</a>` : ''}
         <button class="btn btn-primary grow" id="next" style="background:${l.color}" ${l.done || (l.kind === 'read' && !l.check) ? '' : 'disabled'}>${l.done ? (l.nextTitle ? 'Next: ' + h(l.nextTitle) : 'Finish the course') : (l.kind === 'code' ? 'Pass the tests to continue' : l.kind === 'prompt' ? 'Submit for grading' : 'Answer to continue')}</button>
       </div>
-      <style>.lesson p{margin:0 0 12px}.lesson ul,.lesson ol{margin:0 0 12px;padding-left:20px}.lesson li{margin:4px 0}.lesson pre{background:#101014;color:#E8E8EC;padding:12px;border-radius:12px;overflow-x:auto;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;margin:0 0 12px}.lesson code{background:var(--surface);padding:1px 5px;border-radius:5px;font:.92em ui-monospace,monospace}.lesson pre code{background:none;padding:0}.opt.on{border-color:var(--ink);background:var(--surface)}.opt.right{border-color:var(--green);background:var(--green-tint)}.opt.wrong{border-color:#D92D20;background:#FDECEA}</style>
+      <style>.lesson p{margin:0 0 12px}.lesson ul,.lesson ol{margin:0 0 12px;padding-left:20px}.lesson li{margin:4px 0}.lesson pre{background:#101014;color:#E8E8EC;padding:12px;border-radius:12px;overflow-x:auto;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;margin:0 0 12px}.lesson code{background:var(--surface);padding:1px 5px;border-radius:5px;font:.92em ui-monospace,monospace}.lesson pre code{background:none;padding:0}.opt{position:relative;padding-right:44px !important;transition:all .12s}.opt.on{border-color:var(--orange);border-width:2px;background:var(--orange-tint);font-weight:700}.opt.on::after{content:'✓';position:absolute;right:12px;top:50%;transform:translateY(-50%);width:24px;height:24px;border-radius:12px;background:var(--orange);color:#fff;font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center}.opt.right{border-color:var(--green);background:var(--green-tint)}.opt.wrong{border-color:#D92D20;background:#FDECEA}</style>
     </main>`;
   }, {
     async mount(el, { slug, n }) {
@@ -141,7 +144,16 @@ export function registerLearn({ route, go, state, api, ui, failed }) {
       };
       // Quiz
       if (l.check) {
-        el.querySelectorAll('#quiz [data-q]').forEach((qb) => qb.querySelectorAll('.opt').forEach((o) => o.addEventListener('click', () => { qb.querySelectorAll('.opt').forEach((x) => x.classList.toggle('on', x === o)); answers[qb.dataset.q] = +o.dataset.o; if (Object.keys(answers).length === l.check.length && !passed) next.disabled = false; })));
+        const total = l.check.length;
+        el.querySelector('#quiz').addEventListener('click', (e) => {
+          const o = e.target.closest('.opt'); if (!o) return;
+          const qb = o.closest('[data-q]'); qb.querySelectorAll('.opt').forEach((x) => x.classList.toggle('on', x === o));
+          answers[qb.dataset.q] = +o.dataset.o;
+          const n = Object.keys(answers).length;
+          if (passed) return;
+          if (n >= total) { next.disabled = false; next.textContent = 'Check my answers'; }
+          else next.textContent = `${n} of ${total} answered`;
+        });
         if (!passed) next.onclick = () => finish();
       }
       // Read without a check
@@ -189,7 +201,7 @@ export function registerLearn({ route, go, state, api, ui, failed }) {
   function runInSandbox(el, l, code) {
     return new Promise((resolve) => {
       const id = 'run' + Date.now();
-      const tests = JSON.stringify(l.tests || []);
+      const tests = JSON.stringify(l.tests || []).replace(/<\//g, '<\\/');
       const harness = `<script>(async () => {
         const T = ${tests}; const out = []; const q = (s) => document.querySelector(s); const qa = (s) => document.querySelectorAll(s);
         const sleep = (ms) => new Promise(r => setTimeout(r, ms));

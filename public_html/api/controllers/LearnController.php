@@ -15,7 +15,9 @@ final class LearnController
     {
         $done = $this->progressFor($userId, $slug); $n = count($c['lessons']);
         $cert = Db::one('SELECT code, issued_at FROM certificates WHERE user_id = ? AND course = ? AND revoked_at IS NULL', [$userId, $slug]);
-        return ['slug' => $slug, 'title' => $c['title'], 'track' => $c['track'], 'level' => $c['level'], 'hours' => $c['hours'], 'color' => $c['color'], 'blurb' => $c['blurb'], 'outcomes' => $c['outcomes'],
+        $after = $c['after'] ?? null;
+        $afterDone = $after ? (bool) Db::one('SELECT code FROM certificates WHERE user_id = ? AND course = ? AND revoked_at IS NULL', [$userId, $after]) : true;
+        return ['slug' => $slug, 'title' => $c['title'], 'track' => $c['track'], 'level' => $c['level'], 'after' => $after, 'afterTitle' => $after ? (Curriculum::find($after)['title'] ?? $after) : null, 'afterDone' => $afterDone, 'hours' => $c['hours'], 'color' => $c['color'], 'blurb' => $c['blurb'], 'outcomes' => $c['outcomes'],
             'lessons' => $n, 'done' => count($done), 'pct' => $n ? (int) round(count($done) / $n * 100) : 0, 'next' => $this->nextLesson($c, $done),
             'thumb' => is_file(__DIR__ . '/../../assets/learn/' . $slug . '.jpg') ? '/assets/learn/' . $slug . '.jpg' : '/assets/learn/' . $slug . '.svg', 'certificate' => $cert ? ['code' => $cert['code'], 'at' => $cert['issued_at']] : null,
             'minutes' => array_sum(array_column($c['lessons'], 'minutes'))];
@@ -26,7 +28,7 @@ final class LearnController
     public function index(): void
     {
         $u = Auth::require();
-        $out = []; foreach (Curriculum::courses() as $slug => $c) $out[] = $this->courseShape($slug, $c, (int) $u['id']);
+        $out = []; foreach (Curriculum::all() as $slug => $c) $out[] = $this->courseShape($slug, $c, (int) $u['id']);
         $certs = (int) (Db::one('SELECT COUNT(*) AS n FROM certificates WHERE user_id = ? AND revoked_at IS NULL', [$u['id']])['n'] ?? 0);
         Http::json(['courses' => $out, 'certificates' => $certs, 'learners' => (int) (Db::one('SELECT COUNT(DISTINCT user_id) AS n FROM learn_progress')['n'] ?? 0)]);
     }
@@ -34,7 +36,7 @@ final class LearnController
     /** GET /learn/{course} */
     public function course(string $slug): void
     {
-        $u = Auth::require(); $c = Curriculum::course($slug); if (!$c) Http::json(['error' => 'not_found', 'message' => 'No such course.'], 404);
+        $u = Auth::require(); $c = Curriculum::find($slug); if (!$c) Http::json(['error' => 'not_found', 'message' => 'No such course.'], 404);
         $done = $this->progressFor((int) $u['id'], $slug);
         $lessons = [];
         foreach ($c['lessons'] as $i => $l) $lessons[] = ['index' => $i, 'title' => $l['title'], 'kind' => $l['kind'], 'minutes' => $l['minutes'], 'done' => isset($done[$i]), 'score' => $done[$i]['score'] ?? null, 'locked' => $i > 0 && !isset($done[$i - 1]) && !isset($done[$i])];
@@ -44,7 +46,8 @@ final class LearnController
     /** GET /learn/{course}/{n} : the lesson itself, with the learner's saved code if any */
     public function lesson(string $slug, int $n): void
     {
-        $u = Auth::require(); $c = Curriculum::course($slug); if (!$c || !isset($c['lessons'][$n])) Http::json(['error' => 'not_found'], 404);
+        $u = Auth::require(); $c = Curriculum::find($slug); if (!$c || !isset($c['lessons'][$n])) Http::json(['error' => 'not_found'], 404);
+        if (!empty($c['after']) && !Db::one('SELECT code FROM certificates WHERE user_id = ? AND course = ? AND revoked_at IS NULL', [$u['id'], $c['after']])) Http::json(['error' => 'locked', 'message' => 'Earn the ' . (Curriculum::find($c['after'])['title'] ?? '') . ' certificate first.'], 403);
         $done = $this->progressFor((int) $u['id'], $slug);
         if ($n > 0 && !isset($done[$n - 1]) && !isset($done[$n])) Http::json(['error' => 'locked', 'message' => 'Finish the previous lesson first.'], 403);
         $l = $c['lessons'][$n];
@@ -70,7 +73,7 @@ final class LearnController
     public function complete(string $slug, int $n): void
     {
         $u = Auth::require(); RateLimit::hit('learn', 300, 3600);
-        $c = Curriculum::course($slug); if (!$c || !isset($c['lessons'][$n])) Http::json(['error' => 'not_found'], 404);
+        $c = Curriculum::find($slug); if (!$c || !isset($c['lessons'][$n])) Http::json(['error' => 'not_found'], 404);
         $l = $c['lessons'][$n]; $b = Http::body(); $score = 100; $feedback = null; $detail = null;
         if (in_array($l['kind'], ['read', 'quiz'], true) && isset($l['check'])) {
             $answers = (array) ($b['answers'] ?? []); $right = 0; $detail = [];
@@ -133,7 +136,7 @@ final class LearnController
         $score = (int) round(array_sum(array_column($done, 'score')) / max(1, count($done)));
         for ($i = 0; $i < 5; $i++) { $code = 'BJ' . strtoupper(substr(str_replace(['0', 'O', '1', 'I'], '', base_convert(bin2hex(random_bytes(6)), 16, 36)), 0, 10)); if (strlen($code) === 12 && !Db::one('SELECT id FROM certificates WHERE code = ?', [$code])) break; }
         Db::run('INSERT INTO certificates (code, user_id, course, holder, score, issued_at) VALUES (?,?,?,?,?,?)', [$code, $uid, $slug, mb_substr(trim($name), 0, 90), $score, Db::now()]);
-        Notify::user($uid, 'offers', 'Certificate earned: ' . Curriculum::course($slug)['title'], 'Code ' . $code . '. Download it from Buja Learn.', '/#/learn/' . $slug . '/certificate');
+        Notify::user($uid, 'offers', 'Certificate earned: ' . Curriculum::find($slug)['title'], 'Code ' . $code . '. Download it from Buja Learn.', '/#/learn/' . $slug . '/certificate');
         Track::hit(['id' => $uid], 'learn', 'certificate:' . $slug);
         return ['code' => $code, 'at' => Db::now(), 'holder' => mb_substr(trim($name), 0, 90), 'score' => $score];
     }
@@ -141,7 +144,7 @@ final class LearnController
     /** GET /learn/{course}/certificate : mine, with what the certificate page needs */
     public function certificate(string $slug): void
     {
-        $u = Auth::require(); $c = Curriculum::course($slug); if (!$c) Http::json(['error' => 'not_found'], 404);
+        $u = Auth::require(); $c = Curriculum::find($slug); if (!$c) Http::json(['error' => 'not_found'], 404);
         $cert = Db::one('SELECT * FROM certificates WHERE user_id = ? AND course = ? AND revoked_at IS NULL', [$u['id'], $slug]);
         if (!$cert) Http::json(['error' => 'not_found', 'message' => 'Finish every lesson to earn this certificate.'], 404);
         Http::json(['certificate' => ['code' => $cert['code'], 'holder' => $cert['holder'], 'course' => $c['title'], 'track' => $c['track'], 'hours' => $c['hours'], 'score' => (int) $cert['score'], 'issuedAt' => $cert['issued_at'], 'lessons' => count($c['lessons']), 'color' => $c['color'],
@@ -155,7 +158,7 @@ final class LearnController
         $code = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $code));
         $cert = Db::one('SELECT c.*, u.deleted_at FROM certificates c JOIN users u ON u.id = c.user_id WHERE c.code = ?', [$code]);
         if (!$cert) Http::json(['valid' => false, 'message' => 'No certificate with this code was issued by Buja Learn.'], 404);
-        $course = Curriculum::course($cert['course']);
+        $course = Curriculum::find($cert['course']);
         Http::json(['valid' => $cert['revoked_at'] === null && $cert['deleted_at'] === null, 'code' => $cert['code'], 'holder' => $cert['holder'], 'course' => $course['title'] ?? $cert['course'], 'hours' => $course['hours'] ?? null, 'lessons' => isset($course['lessons']) ? count($course['lessons']) : null, 'score' => (int) $cert['score'], 'issuedAt' => $cert['issued_at'], 'revoked' => $cert['revoked_at'] !== null, 'outcomes' => $course['outcomes'] ?? []]);
     }
 
@@ -164,6 +167,6 @@ final class LearnController
     {
         $u = Auth::require();
         $st = Db::pdo()->prepare('SELECT * FROM certificates WHERE user_id = ? AND revoked_at IS NULL ORDER BY issued_at DESC'); $st->execute([$u['id']]);
-        Http::json(['certificates' => array_map(fn($c) => ['code' => $c['code'], 'course' => $c['course'], 'title' => Curriculum::course($c['course'])['title'] ?? $c['course'], 'score' => (int) $c['score'], 'at' => $c['issued_at']], $st->fetchAll())]);
+        Http::json(['certificates' => array_map(fn($c) => ['code' => $c['code'], 'course' => $c['course'], 'title' => Curriculum::find($c['course'])['title'] ?? $c['course'], 'score' => (int) $c['score'], 'at' => $c['issued_at']], $st->fetchAll())]);
     }
 }

@@ -1,4 +1,4 @@
-# Buja, Phase 19: Buja Learn
+# Buja, Phase 20: Buja Learn, three tiers
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -400,8 +400,15 @@ its QR decoded back to the verification address, the verification page confirmin
 Bugs fixed on the way: a button reference used after an await, learner declarations hidden from tests by a
 wrapper, a learner's closing script tag cutting the harness short, and cumulative test steps.
 
+## Phase 20: intermediate and advanced tiers, and the quiz fix
+
+- **Six new courses, 36 lessons**, in `api/src/Curriculum2.php`: Frontend Intermediate (components, accessibility, performance, debounce and throttle, browser APIs, PWA) and Advanced (a tiny virtual DOM, types, async that does not leak, testing, offline-first, an emitter and a store); Backend Intermediate (schema design, transactions and indexes, cursor pagination, caching with TTL and LRU, queues, a job queue) and Advanced (threat modelling, idempotent writes, token-bucket rate limiting, webhooks, observability, a redacting logger); AI Intermediate (RAG from scratch: chunking, embeddings and cosine, grounded prompts, evaluation, a full pipeline) and Advanced (tools and the agent loop, structured output with retries, guardrails, budgets and caching, a shippable feature design). Eleven courses and 77 lessons in all.
+- **Ladders.** The course list groups by track and shows the levels. A higher tier is locked, on the list, on its page and in the API, until the certificate for the tier below is earned. Their thumbnails reuse the track card with a level ribbon until real cards exist.
+- **The quiz.** Tapping an option was working but looked like nothing happened: a thin border. Now an orange border, a tick, bold text, and the button counts "1 of 2 answered" before turning into "Check my answers". One delegated listener so timing cannot matter.
+- All 23 new coding exercises proven passable with reference solutions in the sandbox. Harness fixes: test strings containing a closing script tag no longer cut the harness short; a fake localStorage in a sandbox must be defined, not assigned.
+
 ## What is next
 
-Phase 20: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 21: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

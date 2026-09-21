@@ -42,6 +42,10 @@ final class Curriculum
 
     public static function course(string $slug): ?array { return self::courses()[$slug] ?? null; }
 
+    /** The beginner courses live here; Curriculum2 adds the intermediate and advanced tiers. */
+    public static function all(): array { return self::courses() + Curriculum2::courses(); }
+    public static function find(string $slug): ?array { return self::all()[$slug] ?? null; }
+
     private static function q(string $q, array $opts, int $answer, string $why): array { return ['q' => $q, 'options' => $opts, 'answer' => $answer, 'why' => $why]; }
 
     /* ==================================================== FRONTEND ==================================================== */
