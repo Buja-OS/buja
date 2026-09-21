@@ -261,3 +261,26 @@ $router->get('/cron/tidy',                   [OpsController::class, 'tidy']);
 $router->get('/admin/launch',                [OpsController::class, 'launch']);
 
 $router->post('/admin/spots-import',         [AdminController::class, 'importSpots']);
+
+// City Pulse
+
+// City signals
+$router->get('/light',                       [CityController::class, 'light']);
+$router->post('/light/report',               [CityController::class, 'lightReport']);
+$router->get('/fuel',                        [CityController::class, 'fuel']);
+$router->post('/fuel/stations',              [CityController::class, 'fuelStation']);
+$router->post('/fuel/import',                [CityController::class, 'fuelImport']);
+$router->post('/fuel/{id}/report',           [CityController::class, 'fuelReport']);
+$router->get('/blood',                       [CityController::class, 'blood']);
+$router->post('/blood/me',                   [CityController::class, 'donorSave']);
+$router->post('/blood/request',              [CityController::class, 'bloodRequest']);
+$router->post('/blood/requests/{id}/respond',[CityController::class, 'bloodRespond']);
+$router->post('/blood/requests/{id}/close',  [CityController::class, 'bloodClose']);
+$router->get('/lostfound',                   [CityController::class, 'lostFound']);
+$router->post('/lostfound',                  [CityController::class, 'lostFoundCreate']);
+$router->post('/lostfound/{id}/close',       [CityController::class, 'lostFoundClose']);
+$router->post('/lostfound/{id}/contact',     [CityController::class, 'lostFoundContact']);
+$router->get('/plates/check',                [CityController::class, 'plateCheck']);
+$router->post('/plates/report',              [CityController::class, 'plateReport']);
+$router->get('/prices',                      [CityController::class, 'prices']);
+$router->post('/prices/report',              [CityController::class, 'priceReport']);

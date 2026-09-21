@@ -17,6 +17,7 @@ import { registerCall } from './call.js';
 import { registerAlerts } from './alerts.js';
 import { registerTrustAlerts, ringer } from './trustalerts.js';
 import { registerCityServices } from './services.js';
+import { registerCitySignals } from './citysignals.js';
 import { passkeyAvailable, registerPasskey, loginWithPasskey } from './passkey.js';
 import { registerRtc, watchIncoming } from './rtc.js';
 
@@ -256,6 +257,12 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/meetup', 'calendar-days', '#FFF1E6', '#C85A10', 'Meetup', 'Events people register for'],
     ['/artisans', 'screwdriver-wrench', '#E7F0EA', '#2E7D1E', 'Artisans', 'Mechanic, plumber, nearest to you'],
     ['/report', 'building-columns', '#FDEBE3', '#C0392B', 'Report', 'The right agency, real numbers'],
+    ['/light', 'bolt', '#FFF8E1', '#B7791F', 'Light Watch', 'Is there light in your area?'],
+    ['/fuel', 'car', '#E7F0EA', '#2E7D1E', 'Fuel', 'Who has fuel, at what price'],
+    ['/blood', 'heart', '#FDECEA', '#D92D20', 'Blood', 'Donors near the hospital'],
+    ['/lostfound', 'magnifying-glass', '#EAF1FB', '#1F5FBF', 'Lost & found', 'Documents, keys, phones'],
+    ['/plates', 'shield-halved', '#F1E9F7', '#7A3E96', 'Check a plate', 'Before you enter that taxi'],
+    ['/prices', 'tags', '#FFF1E6', '#C85A10', 'Market prices', 'Rice, gas, tomatoes, by market'],
   ];
   return `
   <header class="topbar" style="padding-top:8px">
@@ -276,6 +283,8 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
   el.querySelector('#homeask')?.addEventListener('submit', (e) => { e.preventDefault(); const v = el.querySelector('#hq').value.trim(); go('/ask' + (v ? '?q=' + encodeURIComponent(v) : '')); });
   api.matchSuggest?.().catch(() => {});
   offerPasskey();
+  if (window.bujaLightWatch && !window.__lw) { window.__lw = 1; window.bujaLightWatch(); }
+  lightPrompt();
   api.weather?.().then(({ weather: w }) => {
     const box = document.getElementById('weather'); if (!box || !w) return;
     const art = { sun: '#F5A524', cloud: '#7A8290', rain: '#2E7DD1', storm: '#6B4FA8' }[w.icon] || '#7A8290';
@@ -394,6 +403,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
 });
 
 registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+registerCitySignals({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
 registerCityServices({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
 registerTrustAlerts({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerAlerts({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
@@ -430,6 +440,18 @@ const val = (f, id) => (f.querySelector('#' + id) || {}).value || '';
 function kindLabel(k) { return k === 'company' ? 'Hiring' : k === 'landlord' ? 'Landlord' : 'Resident'; }
 
 async function signedIn(r) { setState({ user: r.user }); if (r.next === 'onboarding') sessionStorage.setItem('buja_offer_pk', '1'); go(r.next === 'onboarding' ? '/onboarding' : '/home'); }
+
+/** Once a day, in the evening: one tap tells the city whether your area has light. */
+function lightPrompt() {
+  const key = 'buja_lw_' + new Date().toISOString().slice(0, 10);
+  const hour = new Date().getHours();
+  if (localStorage.getItem(key) || hour < 17 || !state.user || !state.user.district) return;
+  const slot = document.getElementById('weather'); if (!slot) return;
+  const box = document.createElement('div');
+  box.innerHTML = `<div class="card row" style="padding:12px 14px;gap:10px;margin-bottom:10px;background:var(--night);color:#fff;border-color:var(--night)"><span style="font-size:14px;font-weight:650" class="grow">Light in ${h(state.user.district)} right now?</span><button class="btn btn-sm" data-lw="1" style="width:auto;background:var(--green);color:#101014;border:none">Yes</button><button class="btn btn-sm" data-lw="0" style="width:auto;background:#D92D20;color:#fff;border:none">No</button><button class="iconbtn" data-lw="x" style="width:30px;height:30px;background:transparent;border:none;color:#fff">${icon('xmark')}</button></div>`;
+  slot.after(box.firstElementChild);
+  document.querySelectorAll('[data-lw]').forEach((b) => b.addEventListener('click', async () => { localStorage.setItem(key, '1'); const v = b.dataset.lw; b.closest('.card').remove(); if (v === 'x') return; try { await api.lightReport({ state: v === '1', source: 'tap' }); toast('Thank you. Your neighbours can see it.'); } catch {} }));
+}
 
 /** After sign-up: one friendly offer to use the fingerprint next time. Never nags. */
 async function offerPasskey() {

@@ -1,4 +1,4 @@
-# Buja, Phase 17: pictures in chat, and a sweep of every screen
+# Buja, Phase 18: what the city knows right now
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -359,8 +359,21 @@ Verified: ping without a session, tidy refusing without the key and reporting wh
 - **Ten real Waka journeys planned and checked.** Fares and distances were sane on all of them. Two places had no route at all, so nothing could start or end there: Maitama (Transcorp Hilton), which the Mpape bus even claimed to pass through in its notes, and Gwarinpa 3rd Avenue. Migration 025 adds a Wuse to Maitama along, puts Maitama on the Mpape bus, and extends the Berger along to 3rd Avenue. Maitama to the Airport is now one transfer at ₦300 instead of a ₦9,800 taxi. The planner also tries two transfers when one is not enough.
 - The position shift in that migration is done in two steps because (route, position) is unique and a single +1 collides with itself, on TiDB as much as on SQLite.
 
+## Phase 18: six city signals
+
+All six are the same shape: people report, Buja weighs it, everyone sees the answer.
+
+- **Light Watch** (`#/light`). One tap: light is on, light is off. A report is worth 1 at five minutes old, a quarter at an hour, nothing after three; a charging-state signal (Android only) counts half, and only from within 400 m of home so an office charger cannot vote for Lugbe. A district needs three fresh reports before it shows a state; otherwise it says "no recent reports" rather than guessing. When the weighted vote flips, everyone in the district is notified. A week of history: share of reported hours with light. Home asks once a day in the evening, one tap, never nags.
+- **Fuel board** (`#/fuel`). Stations from OpenStreetMap (admin import) or added on the spot. The last person there reports petrol and diesel per litre and the queue: none, short, long, or no fuel. Nearest first from your position; reports older than six hours are shown faded.
+- **Blood donors** (`#/blood`). Register your group once. A request for A+ alerts every willing, compatible donor (O-, O+, A-, A+) within their radius, closest first, by push. Donors see the hospital and district, never the patient. When you offer, the requester gets your first name and, if you allow it, your phone. Requester closes it when they have enough.
+- **Lost and found** (`#/lostfound`). Documents, keys, phones, pets. When a found item carries a name that matches an open "lost" post of the same kind, the owner is told automatically. "That is mine" opens a Buja chat, so the handover is between rated, identifiable people.
+- **Check a plate** (`#/plates`). Type a plate before entering a taxi; Buja says how many reports it has, how recent, whether anyone was hurt, and what happened, never who reported. Reports are anonymous, one per person per plate, and moderators can hide false ones.
+- **Market prices** (`#/prices`). Sixteen staples across sixteen markets. Each shown price is the median of the last five reports at that market, so one typo cannot move it; verified with a ₦900,000 rice entry that left Wuse Market at ₦87,000. Cheapest market first, with the spread.
+
+New: `CityController.php`, `js/citysignals.js`, `migrations/026_city_signals.sql`, fuel-station import in `Osm.php`. Threads gain a `city` kind for lost-and-found chats.
+
 ## What is next
 
-Phase 18: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 19: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

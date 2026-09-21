@@ -136,6 +136,32 @@ final class Osm
         return ['added' => $added, 'seen' => $seen, 'error' => null];
     }
 
+    /** Every fuel station in the FCT, for the fuel board. */
+    public static function importFuelStations(): array
+    {
+        $query = '[out:json][timeout:25];(node["amenity"="fuel"](8.85,7.15,9.25,7.65);way["amenity"="fuel"](8.85,7.15,9.25,7.65););out center 600;';
+        $raw = null; $err = '';
+        foreach (self::ENDPOINTS as $url) {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_POSTFIELDS => 'data=' . urlencode($query), CURLOPT_USERAGENT => self::UA]);
+            $body = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+            if ($code === 200 && $body) { $raw = $body; break; }
+            $err = 'overpass returned ' . $code;
+        }
+        if ($raw === null) return ['added' => 0, 'seen' => 0, 'error' => $err ?: 'no map server answered'];
+        $added = 0; $seen = 0;
+        foreach (json_decode($raw, true)['elements'] ?? [] as $e) {
+            $plat = (float) ($e['lat'] ?? $e['center']['lat'] ?? 0); $plng = (float) ($e['lon'] ?? $e['center']['lon'] ?? 0); if (!$plat || !$plng) continue;
+            $seen++; $t = $e['tags'] ?? []; $osmId = ($e['type'] ?? 'node') . '/' . ($e['id'] ?? '');
+            if (Db::one('SELECT id FROM fuel_stations WHERE osm_id = ?', [$osmId])) continue;
+            $brand = $t['brand'] ?? $t['operator'] ?? null;
+            $name = trim((string) ($t['name'] ?? '')) ?: (($brand ?: 'Filling station') . ($t['addr:street'] ? ', ' . $t['addr:street'] : ''));
+            Db::run('INSERT INTO fuel_stations (name, brand, district, lat, lng, osm_id, created_at) VALUES (?,?,?,?,?,?,?)', [mb_substr($name, 0, 90), $brand ? mb_substr((string) $brand, 0, 40) : null, self::districtFor($plat, $plng) ?: 'Abuja', $plat, $plng, $osmId, Db::now()]);
+            $added++;
+        }
+        return ['added' => $added, 'seen' => $seen, 'error' => null];
+    }
+
     public static function districtFor(float $lat, float $lng): string
     {
         $best = null; $bestKm = 1e9;

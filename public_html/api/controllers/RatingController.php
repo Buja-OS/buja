@@ -13,6 +13,8 @@ final class RatingController
         'work' => ['Clear about the role', 'Interview happened', 'Replied quickly', 'Never replied', 'Interview cancelled', 'Asked for money'],
         'match' => ['Photos were real', 'Respectful', 'Met in public', 'Photos were not real', 'Pushy', 'Did not turn up'],
         'artisan' => ['Came quickly', 'Fixed it properly', 'Fair price', 'Honest about the problem', 'Overcharged', 'Did not fix it', 'Did not turn up', 'Damaged something'],
+        'lostfound' => ['Returned it honestly', 'Easy to reach', 'Asked for a reward first', 'Did not show up'],
+        'city' => ['Honest', 'Turned up', 'Returned it as promised', 'Asked for money', 'Did not turn up'],
         'event' => ['Well organised', 'Worth the money', 'As described', 'Started late', 'Not as described'],
     ];
     private const GOOD = ['Showed up on time', 'Property as described', 'No hidden fees', 'Answered questions', 'Item as described', 'Fair on price', 'On time', 'Easy to deal with', 'Clear about the role', 'Interview happened', 'Replied quickly', 'Photos were real', 'Respectful', 'Met in public'];
