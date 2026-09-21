@@ -21,7 +21,8 @@ final class OpsController
         $done = [];
         $do = function (string $label, string $sql, array $p) use (&$done) { try { $st = Db::pdo()->prepare($sql); $st->execute($p); $done[$label] = $st->rowCount(); } catch (Throwable $e) { $done[$label] = 'skipped: ' . substr($e->getMessage(), 0, 60); } };
         $do('call signals older than a day', 'DELETE FROM call_signals WHERE created_at < ?', [gmdate('Y-m-d H:i:s', time() - 86400)]);
-        $do('calls left ringing', "UPDATE calls SET status = 'missed', ended_at = ? WHERE status = 'ringing' AND created_at < ?", [Db::now(), gmdate('Y-m-d H:i:s', time() - 3600)]);
+        $do('chat calls left ringing', "UPDATE calls SET status = 'missed', ended_at = ? WHERE status = 'ringing' AND starts_at IS NULL AND created_at < ?", [Db::now(), gmdate('Y-m-d H:i:s', time() - 3600)]);
+        $do('interviews more than a week past', "UPDATE calls SET ended_at = ? WHERE starts_at IS NOT NULL AND ended_at IS NULL AND starts_at < ?", [Db::now(), gmdate('Y-m-d H:i:s', time() - 7 * 86400)]);
         $do('expired road alerts', 'DELETE FROM waka_alerts WHERE expires_at < ?', [gmdate('Y-m-d H:i:s', time() - 7 * 86400)]);
         $do('unpaid ticket attempts', "DELETE FROM tickets WHERE status = 'pending' AND created_at < ?", [gmdate('Y-m-d H:i:s', time() - 2 * 3600)]);
         $do('old rate-limit counters', 'DELETE FROM rate_limits WHERE window_id < ?', [(int) floor((time() - 86400) / 60)]);

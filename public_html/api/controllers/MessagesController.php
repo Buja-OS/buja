@@ -170,8 +170,8 @@ final class MessagesController
         if ($action === 'suggest' && $note === '') Http::json(['error' => 'validation', 'fields' => ['note' => 'Say which time works for you.']], 422);
         $meta = json_decode($m['meta'], true); $meta['status'] = $action === 'confirm' ? 'confirmed' : 'suggested';
         Db::run('UPDATE messages SET meta = ? WHERE id = ?', [json_encode($meta), $mid]);
-        $reply = $action === 'confirm' ? 'Confirmed. See you on ' . date('D j M \a\t H:i', strtotime($meta['at'])) . '.' : 'That time does not work for me. ' . $note;
-        if ($m['type'] === 'inspection') $reply = $action === 'confirm' ? 'Inspection confirmed for ' . date('D j M \a\t H:i', strtotime($meta['at'])) . '. See you there.' : 'That time does not work for me. ' . $note;
+        $reply = $action === 'confirm' ? 'Confirmed. See you on ' . date('D j M \a\t H:i', strtotime($meta['at'] . ' UTC')) . '.' : 'That time does not work for me. ' . $note;
+        if ($m['type'] === 'inspection') $reply = $action === 'confirm' ? 'Inspection confirmed for ' . date('D j M \a\t H:i', strtotime($meta['at'] . ' UTC')) . '. See you there.' : 'That time does not work for me. ' . $note;
         Db::run('INSERT INTO messages (thread_id, sender_id, type, body, created_at) VALUES (?,?,?,?,?)', [$m['thread_id'], $u['id'], 'text', $reply, Db::now()]);
         Db::run('UPDATE threads SET last_message_at = ? WHERE id = ?', [Db::now(), $m['thread_id']]);
         Notify::user((int) $m['sender_id'], 'work', $u['name'] . ($action === 'confirm' ? ($m['type'] === 'inspection' ? ' confirmed the inspection' : ' confirmed the interview') : ' suggested another time'), $reply, '/#/inbox/' . $m['thread_id']);

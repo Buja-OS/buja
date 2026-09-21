@@ -83,11 +83,11 @@ final class AccountController
         $items = [];
         foreach ($st->fetchAll() as $m) {
             $meta = json_decode($m['meta'], true);
-            if (($meta['status'] ?? '') !== 'confirmed' || strtotime($meta['at']) < time() - 3600) continue;
-            if ($m['type'] === 'inspection') { $pr = Db::one('SELECT title, owner_id FROM properties WHERE id = ?', [$m['property_id']]); if (!$pr) continue; $items[] = ['kind' => 'inspection', 'title' => 'Inspection: ' . $pr['title'], 'sub' => date('D j M · H:i', strtotime($meta['at'])) . ((int) $pr['owner_id'] === (int) $u['id'] ? ' · with the enquirer' : ' · landlord confirmed'), 'url' => '/inbox/' . $m['thread_id'], 'at' => $meta['at']]; continue; }
+            if (($meta['status'] ?? '') !== 'confirmed' || strtotime($meta['at'] . ' UTC') < time() - 3600) continue;
+            if ($m['type'] === 'inspection') { $pr = Db::one('SELECT title, owner_id FROM properties WHERE id = ?', [$m['property_id']]); if (!$pr) continue; $items[] = ['kind' => 'inspection', 'title' => 'Inspection: ' . $pr['title'], 'sub' => date('D j M · H:i', strtotime($meta['at'] . ' UTC')) . ((int) $pr['owner_id'] === (int) $u['id'] ? ' · with the enquirer' : ' · landlord confirmed'), 'url' => '/inbox/' . $m['thread_id'], 'at' => $meta['at']]; continue; }
             $a = Db::one('SELECT j.title, c.name, us.name AS applicant FROM applications a JOIN jobs j ON j.id = a.job_id JOIN companies c ON c.id = j.company_id JOIN users us ON us.id = a.user_id WHERE a.id = ?', [$m['application_id']]);
             if (!$a) continue;
-            $items[] = ['kind' => 'interview', 'title' => $u['kind'] === 'company' ? 'Interview: ' . $a['applicant'] : 'Interview with ' . $a['name'], 'sub' => date('D j M · H:i', strtotime($meta['at'])) . ' · ' . $meta['place'], 'url' => '/inbox/' . $m['thread_id'], 'at' => $meta['at']];
+            $items[] = ['kind' => 'interview', 'title' => $u['kind'] === 'company' ? 'Interview: ' . $a['applicant'] : 'Interview with ' . $a['name'], 'sub' => date('D j M · H:i', strtotime($meta['at'] . ' UTC')) . ' · ' . $meta['place'], 'url' => '/inbox/' . $m['thread_id'], 'at' => $meta['at']];
         }
         usort($items, fn($x, $y) => strcmp($x['at'], $y['at']));
         $unread = (int) (Db::one('SELECT COUNT(*) AS n FROM messages m JOIN threads t ON t.id = m.thread_id WHERE (t.user_a = ? OR t.user_b = ?) AND m.sender_id <> ? AND m.id > COALESCE((SELECT last_read_id FROM thread_reads r WHERE r.thread_id = t.id AND r.user_id = ?), 0)', [$u['id'], $u['id'], $u['id'], $u['id']])['n'] ?? 0);

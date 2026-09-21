@@ -26,7 +26,7 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
         <div class="stack" style="padding:14px;gap:8px;font-size:14px">
           <div class="row" style="gap:10px">${icon('clock')}<strong>${h(pretty(m.meta.at))}</strong></div>
           <div class="row" style="gap:10px">${icon(m.meta.virtual ? 'video' : 'location-dot')}<span>${h(m.meta.place)}</span></div>
-          ${m.meta.virtual && m.meta.room ? `<a class="btn btn-sm btn-primary" href="#/rtc/${h(m.meta.room)}" style="margin-top:2px">${icon('video')} Join the call</a><div class="small muted">Opens at the time set; you can join up to 30 minutes late.</div>` : ''}
+          ${m.meta.virtual && m.meta.room ? `<a class="btn btn-sm btn-primary" href="#/rtc/${h(m.meta.room)}" style="margin-top:2px">${icon('video')} Join the call</a><div class="small muted">Open any time. Both of you can join early or late.</div>` : ''}
           ${m.meta.with ? `<div class="row" style="gap:10px">${icon('users')}<span>With ${h(m.meta.with)}</span></div>` : ''}
           ${m.meta.note ? `<div class="small muted" style="line-height:1.5">${h(m.meta.note)}</div>` : ''}
           ${!mine && s === 'pending' ? `<div class="row" style="gap:8px;margin-top:6px"><button class="btn btn-sm btn-ink" style="flex:1" data-respond="confirm">Confirm</button><button class="btn btn-sm btn-outline" style="flex:1" data-respond="suggest">Suggest time</button></div>` : ''}
@@ -44,10 +44,10 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
     if (m.type === 'call') {
       const meta = m.meta || {};
       const started = meta.startsAt ? new Date(meta.startsAt.replace(' ', 'T') + 'Z') : null;
-      const soon = !started || started.getTime() - Date.now() < 60000;
+      const soon = true;
       return `<div class="card stack" style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px;padding:14px;gap:10px;border-color:var(--orange)">
         <div class="row" style="gap:10px"><span style="width:34px;height:34px;border-radius:17px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center">${icon(meta.mode === 'audio' ? 'phone' : 'video')}</span><div class="grow"><div style="font-size:14px;font-weight:700">${h(m.body)}</div>${started ? `<div class="small muted">${started.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>` : '<div class="small muted">Now</div>'}</div></div>
-        ${soon ? `<a class="btn btn-sm btn-primary" href="#/rtc/${h(meta.room)}">${icon(meta.mode === 'audio' ? 'phone' : 'video')} Join the call</a>` : `<div class="small muted">Opens at the time set</div>`}
+        <a class="btn btn-sm btn-primary" href="#/rtc/${h(meta.room)}">${icon(meta.mode === 'audio' ? 'phone' : 'video')} Join the call</a>
         <div class="small" style="opacity:.6;text-align:right">${when(m.createdAt)}</div></div>`;
     }
     const att = m.attachment ? attachmentHtml(m.attachment, { max: 260 }) : '';
@@ -188,7 +188,7 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
         el.querySelector('#closeins').addEventListener('click', () => { el.querySelector('#sheet').innerHTML = ''; });
         el.querySelector('#ins').addEventListener('submit', async (e) => {
           e.preventDefault(); const f = e.target; const btn = f.querySelector('[type=submit]'); showErrors(el, {}); busy(btn, true);
-          const localAt = new Date(f.date.value + 'T' + f.time.value); const at = new Date(localAt.getTime() - localAt.getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' ');
+          const localAt = new Date(f.date.value + 'T' + f.time.value); const at = localAt.toISOString();
           try { await api.requestInspection(id, { at, note: f.note.value }); toast('Request sent'); if (location.hash === '#/inbox/' + id) location.reload(); else location.hash = '#/inbox/' + id; } catch (err) { busy(btn, false); failed(el, err); }
         });
       });
@@ -219,7 +219,7 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
         });
         el.querySelector('#inv').addEventListener('submit', async (e) => {
           e.preventDefault(); const f = e.target; const btn = f.querySelector('[type=submit]'); showErrors(el, {}); busy(btn, true);
-          const localAt = new Date(f.date.value + 'T' + f.time.value); const at = new Date(localAt.getTime() - localAt.getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' ');
+          const localAt = new Date(f.date.value + 'T' + f.time.value); const at = localAt.toISOString();
           const virtual = el.querySelector('#how button.on')?.dataset.v === '1';
           try { await api.scheduleInterview(id, { at, virtual, place: f.place.value, with: f.with.value, note: f.note.value }); toast('Invitation sent'); if (location.hash === '#/inbox/' + id) location.reload(); else location.hash = '#/inbox/' + id; } catch (err) { busy(btn, false); failed(el, err); }
         });

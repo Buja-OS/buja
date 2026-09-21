@@ -6,6 +6,7 @@ declare(strict_types=1);
  * Every /api/* request lands here. No framework, no Composer: plain PHP 8.1+.
  */
 
+date_default_timezone_set('Africa/Lagos'); // everyone here is in Abuja; storage stays UTC via gmdate()
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
 header('Content-Type: application/json; charset=utf-8');
