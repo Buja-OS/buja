@@ -246,3 +246,11 @@ $router->post('/admin/meetups/{id}',         [AdminController::class, 'decideMee
 $router->get('/admin/artisans',              [AdminController::class, 'artisans']);
 $router->post('/admin/artisans/{id}',        [AdminController::class, 'decideArtisan']);
 $router->get('/admin/citizen',               [AdminController::class, 'citizen']);
+
+// Passkeys (fingerprint / face)
+$router->get('/auth/passkeys',               [PasskeyController::class, 'index']);
+$router->post('/auth/passkey/register/options', [PasskeyController::class, 'registerOptions']);
+$router->post('/auth/passkey/register',      [PasskeyController::class, 'register']);
+$router->post('/auth/passkey/login/options', [PasskeyController::class, 'loginOptions']);
+$router->post('/auth/passkey/login',         [PasskeyController::class, 'login']);
+$router->delete('/auth/passkeys/{id}',       [PasskeyController::class, 'remove']);

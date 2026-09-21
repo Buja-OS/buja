@@ -1,4 +1,4 @@
-# Buja, Phase 13: tickets, recurring events, moderation, search
+# Buja, Phase 14: Google sign-in switched on, fingerprint sign-in
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -328,8 +328,16 @@ New: `MeetupController.php`, `ArtisanController.php`, `CitizenController.php`, `
 
 Verified: a weekly series of nine dates; free RSVP refused on a paid event; buying two tickets; fee maths (₦600 on ₦10,000); buyer and host notified; second purchase refused; door scan accepting once and refusing the reuse with the time and name; a stranger refused at the door; series cancellation; search across the three new types; artisan verify and hide from the admin.
 
+## Phase 14: Google, and sign in with a touch
+
+- **Google sign-in works now.** The server side and the email linking were already built; the page just never received the client ID, so the button always said "not set up". The ID now travels from `GOOGLE_CLIENT_ID` in Render to the page through `/api/health`, the Google script loads on demand, and the official button is used rather than the One Tap prompt, which phones often block. Someone who signed up with an email and later taps Google with the same address is linked to their existing account, and a brand-new Google account still goes through onboarding to choose resident or company.
+- **Fingerprint and face sign-in** (WebAuthn passkeys), with no library: a small CBOR reader for the registration blob and OpenSSL for the signature at sign-in. Supports ES256 (every modern phone) and RS256 (Windows Hello). After sign-up, one sheet offers to turn it on; never nagged again. Settings lists devices, up to five, and removes them. The sign-in screen shows a fingerprint button only on phones that can do it. Keys are bound to the site and to the phone; nothing about the fingerprint itself ever leaves the device.
+- New: `api/src/WebAuthn.php`, `api/controllers/PasskeyController.php`, `js/passkey.js`, `migrations/024_passkeys.sql`.
+
+Verified with Chrome's virtual authenticator: registering from Settings, a real resident key stored on the authenticator, signing out, signing back in by touch as the right user, and a phone with no key being told what to do.
+
 ## What is next
 
-Phase 14: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 15: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

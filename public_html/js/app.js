@@ -1,6 +1,6 @@
 // Buja app: hash router and Phase 1 screens.
 import { state, setState, subscribe, applyTheme } from './store.js';
-import { api, detectApi } from './api.js';
+import { api, detectApi, serverInfo } from './api.js';
 import { h, toast, mark, markAuto, topbar, tabbar, field, showErrors, bindEyes, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify } from './ui.js';
 import { registerWork } from './work.js';
 import { registerMessages } from './messages.js';
@@ -17,6 +17,7 @@ import { registerCall } from './call.js';
 import { registerAlerts } from './alerts.js';
 import { registerTrustAlerts, ringer } from './trustalerts.js';
 import { registerCityServices } from './services.js';
+import { passkeyAvailable, registerPasskey, loginWithPasskey } from './passkey.js';
 import { registerRtc, watchIncoming } from './rtc.js';
 
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__bujaInstall = e; });
@@ -140,6 +141,7 @@ route('/signin', { guest: true }, async () => `
   <main class="pad stack" style="gap:22px;padding-top:8px">
     <div>${markAuto(40)}<div class="h-xl" style="margin-top:16px">Welcome back</div><div class="muted" style="margin-top:4px">Sign in to pick up where you left off.</div></div>
     <button class="btn btn-outline" data-google><span class="gmark">G</span>Continue with Google</button>
+    <button class="btn btn-outline" id="pkbtn" type="button" style="display:none">${icon('shield-halved')} Sign in with fingerprint</button>
     <div class="divider">OR</div>
     <form id="f" class="stack" style="gap:16px" novalidate>
       ${field({ id: 'identifier', label: 'Email or phone', placeholder: 'you@example.com or 0803 000 0000', autocomplete: 'username' })}
@@ -154,6 +156,7 @@ route('/signin', { guest: true }, async () => `
   </main>`, {
   mount(el) {
     mountGoogle(el); bindEyes(el); clearOnInput(el);
+    passkeyAvailable().then((ok) => { const b = el.querySelector('#pkbtn'); if (ok && b) { b.style.display = ''; b.addEventListener('click', async () => { busy(b, true); try { const r = await loginWithPasskey(api, el.querySelector('#identifier')?.value || ''); await signedIn(r); } catch (err) { busy(b, false); if (err && err.name === 'NotAllowedError') toast('No fingerprint sign-in on this phone yet, or it was cancelled. Use your password once, then turn it on in Settings.', 4000); else failed(el, err); } }); } });
     el.querySelector('#f').addEventListener('submit', async (e) => {
       e.preventDefault(); const f = e.target; const btn = f.querySelector('[type=submit]');
       showErrors(el, {}); busy(btn, true);
@@ -272,6 +275,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
 }, { async mount(el) {
   el.querySelector('#homeask')?.addEventListener('submit', (e) => { e.preventDefault(); const v = el.querySelector('#hq').value.trim(); go('/ask' + (v ? '?q=' + encodeURIComponent(v) : '')); });
   api.matchSuggest?.().catch(() => {});
+  offerPasskey();
   api.weather?.().then(({ weather: w }) => {
     const box = document.getElementById('weather'); if (!box || !w) return;
     const art = { sun: '#F5A524', cloud: '#7A8290', rain: '#2E7DD1', storm: '#6B4FA8' }[w.icon] || '#7A8290';
@@ -340,6 +344,9 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
         <div class="small muted" style="line-height:1.5">System follows your phone. Waka's map stays dark in both modes so vehicles read clearly.</div>
       </div>
     </div>
+    <div class="stack" style="gap:10px"><div class="section">FINGERPRINT SIGN-IN</div>
+      <div class="card list" id="pklist"><div class="item"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">Checking this phone…</div></div></div></div>
+    </div>
     <div class="stack" style="gap:10px"><div class="section">ABOUT</div>
       <div class="card list">
         <a class="item" href="#/terms"><div class="mi">${icon('file-arrow-up')}</div><div class="grow"><div class="t">Terms of use</div></div>${icon('chevron-right')}</a>
@@ -353,6 +360,9 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
       </div>
       <div class="small muted" id="pushhint">Push works in Chrome on Android and on iPhone once Buja is added to the Home Screen.</div>
     </div>
+    <div class="stack" style="gap:10px"><div class="section">FINGERPRINT SIGN-IN</div>
+      <div class="card list" id="pklist"><div class="item"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">Checking this phone…</div></div></div></div>
+    </div>
     <div class="stack" style="gap:10px"><div class="section">ABOUT</div>
       <div class="card list"><div class="item"><div class="mi">${icon('circle-info')}</div><div class="grow"><div class="t">Buja</div><div class="s">Phase 1 · ${api.isMock() ? 'preview mode, data stays on this device' : 'connected to your API'}</div></div></div></div>
     </div>
@@ -362,6 +372,18 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
     (async () => {
       let prefs = { work: true, match: true, waka: true, offers: false, news: true, social: true, digest: true }; let pushed = false;
       try { const t = await api.today(); prefs = t.notifications; pushed = t.pushEnabled; } catch {}
+      (async () => {
+        const box = el.querySelector('#pklist'); if (!box) return;
+        const avail = await passkeyAvailable();
+        const paint = async () => {
+          let keys = []; try { keys = (await api.passkeys()).passkeys; } catch {}
+          box.innerHTML = keys.map((k) => `<div class="item"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">${h(k.label)}</div><div class="s">Added ${k.at.slice(0, 10)}${k.lastUsed ? ' · last used ' + k.lastUsed.slice(0, 10) : ''}</div></div><button class="iconbtn" data-pkdel="${k.id}" aria-label="Remove" style="width:34px;height:34px">${icon('xmark')}</button></div>`).join('')
+            + (avail ? `<button class="item" id="pkadd" style="width:100%;text-align:left"><div class="mi" style="background:var(--green-tint);color:var(--green-dark)">${icon('plus')}</div><div class="grow"><div class="t">${keys.length ? 'Add this phone' : 'Turn on for this phone'}</div><div class="s">Sign in with a touch instead of a password</div></div></button>` : `<div class="item"><div class="mi">${icon('circle-info')}</div><div class="grow"><div class="t">Not available on this browser</div><div class="s">Fingerprint sign-in needs a phone with a screen lock and a recent browser.</div></div></div>`);
+          box.querySelector('#pkadd')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { await registerPasskey(api); toast('Done. Next time, just touch.'); } catch (err) { toast(err && err.name === 'NotAllowedError' ? 'Cancelled.' : (err && err.message) || 'Could not set that up.'); } paint(); });
+          box.querySelectorAll('[data-pkdel]').forEach((b) => b.addEventListener('click', async () => { if (!confirm('Remove fingerprint sign-in for this device?')) return; try { await api.passkeyRemove(b.dataset.pkdel); } catch {} paint(); }));
+        };
+        paint();
+      })();
       el.querySelectorAll('[data-pref]').forEach((s) => { const on = !!prefs[s.dataset.pref]; s.classList.toggle('on', on); s.setAttribute('aria-checked', on); s.addEventListener('click', async () => { const next = !s.classList.contains('on'); s.classList.toggle('on', next); s.setAttribute('aria-checked', next); try { await api.saveNotifyPrefs({ [s.dataset.pref]: next }); } catch (err) { s.classList.toggle('on', !next); failed(el, err); } }); });
       const tg = el.querySelector('#pushtoggle'), st = el.querySelector('#pushs');
       if (!push.pushSupported() || api.isMock()) { st.textContent = api.isMock() ? 'Needs the live site' : 'Not supported in this browser'; tg.disabled = true; return; }
@@ -406,7 +428,24 @@ function setBadge(n) { const tab = document.querySelector('.tab[aria-label="Inbo
 const val = (f, id) => (f.querySelector('#' + id) || {}).value || '';
 function kindLabel(k) { return k === 'company' ? 'Hiring' : k === 'landlord' ? 'Landlord' : 'Resident'; }
 
-async function signedIn(r) { setState({ user: r.user }); go(r.next === 'onboarding' ? '/onboarding' : '/home'); }
+async function signedIn(r) { setState({ user: r.user }); if (r.next === 'onboarding') sessionStorage.setItem('buja_offer_pk', '1'); go(r.next === 'onboarding' ? '/onboarding' : '/home'); }
+
+/** After sign-up: one friendly offer to use the fingerprint next time. Never nags. */
+async function offerPasskey() {
+  if (sessionStorage.getItem('buja_offer_pk') !== '1' || localStorage.getItem('buja_pk_asked')) return;
+  sessionStorage.removeItem('buja_offer_pk');
+  if (!(await passkeyAvailable())) return;
+  localStorage.setItem('buja_pk_asked', '1');
+  const sheet = document.createElement('div');
+  sheet.innerHTML = `<div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:90;display:flex;align-items:flex-end"><div style="background:var(--card);border-radius:22px 22px 0 0;padding:22px 20px calc(22px + var(--safe-b));width:100%;max-width:480px;margin:0 auto">
+    <div style="width:56px;height:56px;border-radius:16px;background:var(--green-tint);color:var(--green-dark);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:12px">${icon('shield-halved')}</div>
+    <div class="h-md">Sign in with your fingerprint next time?</div>
+    <div class="small muted" style="margin:6px 0 16px;line-height:1.55">No password to type. It uses the fingerprint or face lock already on this phone, and it works only on this phone.</div>
+    <button class="btn btn-primary" id="pkyes">Turn it on</button><button class="btn btn-ghost" id="pkno" style="margin-top:6px">Maybe later</button></div></div>`;
+  document.body.appendChild(sheet);
+  sheet.querySelector('#pkno').addEventListener('click', () => sheet.remove());
+  sheet.querySelector('#pkyes').addEventListener('click', async (e) => { busy(e.currentTarget, true); try { await registerPasskey(api); toast('Done. Next time, just touch.'); } catch (err) { toast(err && err.name === 'NotAllowedError' ? 'Cancelled. You can turn it on in Settings.' : 'Could not set that up. You can try again in Settings.'); } sheet.remove(); });
+}
 
 function failed(el, err) {
   if (err && err.fields) { showErrors(el, err.fields); return; }
@@ -415,14 +454,26 @@ function failed(el, err) {
 
 /* Google Identity Services. Needs google_client_id in api/config.php and a <meta name="google-client-id"> on the page.
    In preview mode the button signs in a local demo account instead. */
+let gsiLoading = null;
+function loadGsi() {
+  if (window.google?.accounts?.id) return Promise.resolve(true);
+  if (gsiLoading) return gsiLoading;
+  gsiLoading = new Promise((res) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.onload = () => res(true); s.onerror = () => res(false); document.head.appendChild(s); setTimeout(() => res(!!window.google?.accounts?.id), 8000); });
+  return gsiLoading;
+}
 function mountGoogle(el) {
   const btns = el.querySelectorAll('[data-google]');
-  const clientId = document.querySelector('meta[name="google-client-id"]')?.content;
+  const clientId = serverInfo.googleClientId || document.querySelector('meta[name="google-client-id"]')?.content;
+  if (clientId && !api.isMock()) loadGsi();
   btns.forEach((b) => b.addEventListener('click', async () => {
     if (api.isMock()) { busy(b, true); try { await signedIn(await api.google('mock')); } catch (e) { busy(b, false); failed(el, e); } return; }
-    if (!clientId || !window.google?.accounts?.id) { toast('Google sign-in is not set up yet. Add your Google client ID in config.'); return; }
+    if (!clientId) { toast('Google sign-in is not switched on yet. Use email for now.'); return; }
+    busy(b, true); const ok = await loadGsi(); busy(b, false);
+    if (!ok || !window.google?.accounts?.id) { toast('Could not reach Google. Check your connection and try again.'); return; }
     window.google.accounts.id.initialize({ client_id: clientId, callback: async (resp) => { busy(b, true); try { await signedIn(await api.google(resp.credential)); } catch (e) { busy(b, false); failed(el, e); } }, ux_mode: 'popup' });
-    window.google.accounts.id.prompt((n) => { if (n.isNotDisplayed?.() || n.isSkippedMoment?.()) toast('Google sign-in did not open. Check pop-ups, or use email.'); });
+    let slot = document.getElementById('gsi-slot'); if (!slot) { slot = document.createElement('div'); slot.id = 'gsi-slot'; slot.style.cssText = 'position:fixed;left:-9999px;top:0'; document.body.appendChild(slot); }
+    slot.innerHTML = ''; window.google.accounts.id.renderButton(slot, { type: 'standard', size: 'large', width: 300 });
+    const gb = slot.querySelector('div[role="button"]'); if (gb) gb.click(); else window.google.accounts.id.prompt();
   }));
 }
 

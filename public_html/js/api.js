@@ -228,13 +228,21 @@ export const api = {
   adminArtisans:   () => request('GET', '/admin/artisans'),
   adminArtisan:    (id, action) => request('POST', '/admin/artisans/' + id, { action }),
   adminCitizen:    () => request('GET', '/admin/citizen'),
+  passkeys:        () => request('GET', '/auth/passkeys'),
+  passkeyRegisterOptions: () => request('POST', '/auth/passkey/register/options'),
+  passkeyRegister: (b) => request('POST', '/auth/passkey/register', b),
+  passkeyLoginOptions: (identifier) => request('POST', '/auth/passkey/login/options', { identifier }),
+  passkeyLogin:    (b) => request('POST', '/auth/passkey/login', b),
+  passkeyRemove:   (id) => request('DELETE', '/auth/passkeys/' + id),
 };
 
 /* Detect the API once at boot. If /api/health is not there, switch to mock mode and say so. */
+export const serverInfo = { googleClientId: '' };
 export async function detectApi() {
   if (mock) return 'mock';
   try {
     const h = await request('GET', '/health');
+    if (h && h.googleClientId) serverInfo.googleClientId = h.googleClientId;
     return h && h.ok ? 'live' : 'degraded';
   } catch (e) {
     if (e && e.error === 'network' && !navigator.onLine) return 'offline';
