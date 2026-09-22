@@ -15,7 +15,11 @@ final class SafetyController
         $out = ['id' => (int) $s['id'], 'token' => $s['token'], 'place' => $s['place'], 'note' => $s['note'], 'with' => $s['with_name'], 'contact' => $s['contact_name'],
             'status' => $overdue ? 'overdue' : $s['status'], 'expectedEnd' => $s['expected_end'], 'startedAt' => $s['created_at'], 'endedAt' => $s['ended_at'],
             'last' => $last ? ['lat' => (float) $last['lat'], 'lng' => (float) $last['lng'], 'at' => $last['created_at']] : null,
-            'link' => (string) Http::config('app_origin') . '/#/trip/' . $s['token']];
+            'link' => (string) Http::config('app_origin') . '/#/trip/' . $s['token'],
+            'kind' => $s['kind'] ?? 'meet', 'plate' => $s['plate'] ?? null, 'vehicle' => $s['vehicle'] ?? null, 'mode' => $s['mode'] ?? null,
+            'fareAsked' => !empty($s['fare_asked']), 'routeId' => !empty($s['route_id']) ? (int) $s['route_id'] : null,
+            'from' => !empty($s['from_place']) ? Db::one('SELECT id, name, lat, lng FROM places WHERE id = ?', [$s['from_place']]) : null,
+            'to' => !empty($s['to_place']) ? Db::one('SELECT id, name, lat, lng FROM places WHERE id = ?', [$s['to_place']]) : null];
         if ($withTrack) { $st = Db::pdo()->prepare('SELECT lat, lng, created_at FROM safety_pings WHERE session_id = ? ORDER BY id DESC LIMIT 60'); $st->execute([$s['id']]); $out['track'] = array_reverse(array_map(fn($p) => ['lat' => (float) $p['lat'], 'lng' => (float) $p['lng'], 'at' => $p['created_at']], $st->fetchAll())); }
         return $out;
     }
@@ -65,6 +69,63 @@ final class SafetyController
         if (!empty($b['lat'])) Db::run('INSERT INTO safety_pings (session_id, lat, lng, created_at) VALUES (?,?,?,?)', [$id, (float) $b['lat'], (float) $b['lng'], Db::now()]);
         Track::hit($u, 'safety', 'start');
         Http::json(['trip' => $this->shape(Db::one('SELECT * FROM safety_sessions WHERE id = ?', [$id]))], 201);
+    }
+
+    /**
+     * POST /safety/ride { plate, vehicle, mode, routeId, from, to, minutes, contactId, lat, lng }
+     * Boarding a vehicle: the same live trip, but carrying the plate and the journey, so whoever you share
+     * with knows exactly which vehicle you entered and where you were going.
+     */
+    public function startRide(): void
+    {
+        $u = Auth::require(); RateLimit::hit('trip', 20, 86400);
+        if (Db::one("SELECT id FROM safety_sessions WHERE user_id = ? AND status = 'active'", [$u['id']])) Http::json(['error' => 'active', 'message' => 'A trip is already running. End it first.'], 409);
+        $b = Http::body();
+        $plate = strtoupper(preg_replace('/[^A-Z0-9]/i', '', (string) ($b['plate'] ?? '')));
+        $from = !empty($b['from']) ? Db::one('SELECT id, name FROM places WHERE id = ?', [(int) $b['from']]) : null;
+        $to = !empty($b['to']) ? Db::one('SELECT id, name FROM places WHERE id = ?', [(int) $b['to']]) : null;
+        $place = $to ? ('To ' . $to['name'] . ($from ? ' from ' . $from['name'] : '')) : mb_substr(trim((string) ($b['place'] ?? 'Journey')), 0, 120);
+        $minutes = max(10, min(240, (int) ($b['minutes'] ?? 45)));
+        $contact = null;
+        if (!empty($b['contactId'])) { $c = Db::one('SELECT name FROM trusted_contacts WHERE id = ? AND user_id = ?', [(int) $b['contactId'], $u['id']]); $contact = $c['name'] ?? null; }
+        $token = bin2hex(random_bytes(16));
+        Db::run('INSERT INTO safety_sessions (user_id, place, note, token, contact_name, status, expected_end, created_at, kind, plate, vehicle, route_id, from_place, to_place, mode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            [$u['id'], $place, mb_substr(trim((string) ($b['note'] ?? '')), 0, 300) ?: null, $token, $contact, 'active', gmdate('Y-m-d H:i:s', time() + ($minutes + 20) * 60), Db::now(), 'ride',
+             $plate ?: null, mb_substr(trim((string) ($b['vehicle'] ?? '')), 0, 80) ?: null, !empty($b['routeId']) ? (int) $b['routeId'] : null, $from['id'] ?? null, $to['id'] ?? null, mb_substr((string) ($b['mode'] ?? ''), 0, 10) ?: null]);
+        $id = (int) Db::lastId();
+        if (!empty($b['lat'])) Db::run('INSERT INTO safety_pings (session_id, lat, lng, created_at) VALUES (?,?,?,?)', [$id, (float) $b['lat'], (float) $b['lng'], Db::now()]);
+        Track::hit($u, 'safety', 'ride');
+        Http::json(['trip' => $this->shape(Db::one('SELECT * FROM safety_sessions WHERE id = ?', [$id]))], 201);
+    }
+
+    /**
+     * GET /safety/board?plate=&district=&hour= : everything worth knowing before entering a vehicle.
+     * The plate's own history, and how often one-chance has been reported in this district.
+     */
+    public function board(): void
+    {
+        $u = Auth::require();
+        $plate = strtoupper(preg_replace('/[^A-Z0-9]/i', '', (string) ($_GET['plate'] ?? '')));
+        $district = trim((string) ($_GET['district'] ?? ($u['district'] ?? '')));
+        $out = ['plate' => $plate, 'reports' => 0, 'items' => [], 'verdict' => 'No reports on Buja. That is not proof of safety; stay alert.'];
+        if (strlen($plate) >= 5) {
+            $st = Db::pdo()->prepare('SELECT what, vehicle, district, happened, hurt FROM plate_reports WHERE plate = ? AND hidden_at IS NULL ORDER BY happened DESC LIMIT 5'); $st->execute([$plate]);
+            $rows = $st->fetchAll();
+            $out['reports'] = count($rows);
+            $out['items'] = array_map(fn($r) => ['what' => $r['what'], 'vehicle' => $r['vehicle'], 'district' => $r['district'], 'when' => $r['happened'], 'hurt' => (bool) $r['hurt']], $rows);
+            $out['verdict'] = count($rows) === 0 ? $out['verdict'] : (count($rows) === 1 ? 'One report on this plate. Be careful.' : count($rows) . ' reports on this plate. Do not enter this vehicle.');
+        }
+        // District history: plates reported here, and live road alerts about robbery in this district.
+        $year = gmdate('Y-m-d', time() - 365 * 86400);
+        $out['district'] = $district;
+        $out['districtReports'] = $district === '' ? 0 : (int) (Db::one('SELECT COUNT(*) AS n FROM plate_reports WHERE district = ? AND hidden_at IS NULL AND happened > ?', [$district, $year])['n'] ?? 0);
+        $hour = (int) ($_GET['hour'] ?? (int) gmdate('G', time() + 3600));
+        $out['night'] = $hour >= 18 || $hour < 6;
+        $tips = ['Sit by the door and keep it unlocked if you can.', 'If the vehicle already has three or more passengers and they all stay quiet, step out.', 'Share this trip so someone knows the plate.', 'Never enter a vehicle that will not let you see the other passengers first.'];
+        if ($out['night']) array_unshift($tips, 'It is dark. Board at a busy, lit park rather than a roadside.');
+        if ($out['districtReports'] >= 2) array_unshift($tips, $out['districtReports'] . ' one-chance reports came from ' . $district . ' in the last year. Take extra care here.');
+        $out['tips'] = array_slice($tips, 0, 4);
+        Http::json($out);
     }
 
     /** POST /safety/ping { lat, lng } : the app sends this every couple of minutes while a trip runs */

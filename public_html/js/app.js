@@ -528,6 +528,47 @@ function mountGoogle(el) {
   }));
 }
 
+/** While a shared ride is running, notice when the rider reaches the destination: offer to close the trip,
+ *  then ask what they paid, which is what keeps Waka's fares honest. */
+let arrivalAsked = 0;
+function arrivalCheck(r, coords) {
+  const t = r && r.trip; if (!t || t.kind !== 'ride' || t.status !== 'active' || !t.to) return;
+  const d = Math.hypot((t.to.lat - coords.latitude) * 111000, (t.to.lng - coords.longitude) * 111000 * Math.cos(coords.latitude * Math.PI / 180));
+  if (d > 350 || Date.now() - arrivalAsked < 300000 || document.getElementById('arrivedcard')) return;
+  arrivalAsked = Date.now();
+  const c = document.createElement('div'); c.id = 'arrivedcard';
+  c.innerHTML = `<div style="position:fixed;left:12px;right:12px;bottom:calc(76px + var(--safe-b,0px));z-index:70;max-width:456px;margin:0 auto" class="card stack">
+    <div style="padding:14px;display:flex;flex-direction:column;gap:10px"><div style="font-size:15px;font-weight:700">Have you arrived at ${h(t.to.name)}?</div>
+    <div class="small muted">Ending the trip tells ${h(t.contact || 'whoever you shared with')} you are safe.</div>
+    <div class="row" style="gap:8px"><button class="btn btn-primary grow" data-yes>Yes, I am safe</button><button class="btn btn-outline" data-no style="width:auto">Not yet</button></div></div></div>`;
+  document.body.appendChild(c);
+  c.querySelector('[data-no]').addEventListener('click', () => c.remove());
+  c.querySelector('[data-yes]').addEventListener('click', async () => {
+    c.remove();
+    try { await api.endTrip({ status: 'safe' }); toast('Trip ended. Stay safe.'); } catch {}
+    if (t.routeId && t.from && t.to && !t.fareAsked) farePrompt(t);
+  });
+}
+window.bujaArrivalCheck = arrivalCheck; // also lets a test fire it without waiting for the two-minute cycle
+function farePrompt(t) {
+  if (document.getElementById('farecard')) return;
+  const c = document.createElement('div'); c.id = 'farecard';
+  c.innerHTML = `<div style="position:fixed;left:12px;right:12px;bottom:calc(76px + var(--safe-b,0px));z-index:70;max-width:456px;margin:0 auto" class="card">
+    <div style="padding:14px;display:flex;flex-direction:column;gap:10px"><div style="font-size:15px;font-weight:700">What did you pay?</div>
+    <div class="small muted">${h(t.from.name)} to ${h(t.to.name)}. Three riders and Waka shows this instead of an estimate.</div>
+    <div class="row" style="gap:8px"><span style="font-size:20px;font-weight:800;align-self:center">₦</span><input class="input" id="farein" type="number" inputmode="numeric" placeholder="800" style="flex:1"><button class="btn btn-primary" id="faresend" style="width:auto">Send</button></div>
+    <button class="btn btn-ghost small" id="fareskip">Skip</button></div></div>`;
+  document.body.appendChild(c);
+  const done = () => { api.fareAsked(t.id).catch(() => {}); c.remove(); };
+  c.querySelector('#fareskip').addEventListener('click', done);
+  c.querySelector('#faresend').addEventListener('click', async () => {
+    const amount = +c.querySelector('#farein').value;
+    if (!amount) return;
+    try { await api.wakaReportFare(t.routeId, t.from.id, t.to.id, amount); toast('Thank you. That helps every rider on this route.'); } catch {}
+    done();
+  });
+}
+
 /* ---------------- Boot ---------------- */
 (async function boot() {
   applyTheme(state.theme);
@@ -538,7 +579,7 @@ function mountGoogle(el) {
   if (!location.hash) go(state.user ? '/home' : '/welcome');
   await render();
   setTimeout(preloadRest, 1500); // after the first screen is painted
-  setInterval(() => { if (!state.user || document.hidden || api.isMock() || !navigator.geolocation) return; navigator.geolocation.getCurrentPosition((p) => { api.pingTrip(p.coords.latitude, p.coords.longitude).catch(() => {}); }, () => {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }); }, 120000);
+  setInterval(() => { if (!state.user || document.hidden || api.isMock() || !navigator.geolocation) return; navigator.geolocation.getCurrentPosition((p) => { api.pingTrip(p.coords.latitude, p.coords.longitude).then((r) => arrivalCheck(r, p.coords)).catch(() => {}); }, () => {}, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }); }, 120000);
   setInterval(async () => { if (state.user && !document.hidden && !api.isMock()) { try { const t = await api.today(); if (t.unread !== state.unread) { state.unread = t.unread; setBadge(t.unread); } } catch {} } }, 60000);
   if ('serviceWorker' in navigator && !api.isMock() && location.protocol === 'https:') {
     // When a new version takes control, reload once so the screen runs the code that was just deployed.

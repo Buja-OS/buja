@@ -332,3 +332,8 @@ $router->get('/service-jobs/{id}',           [ServiceJobController::class, 'show
 $router->post('/service-jobs/{id}/ping',     [ServiceJobController::class, 'ping']);
 $router->post('/service-jobs/{id}/rate',     [ServiceJobController::class, 'rate']);
 $router->post('/service-jobs/{id}/{action}', [ServiceJobController::class, 'act']);
+
+// Boarding a vehicle safely
+$router->post('/safety/ride',                [SafetyController::class, 'startRide']);
+$router->get('/safety/board',                [SafetyController::class, 'board']);
+$router->post('/safety/fare-asked',          [SafetyController::class, 'fareAsked']);

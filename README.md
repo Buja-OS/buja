@@ -1,4 +1,4 @@
-# Buja, Phase 24: Waka rebuilt on real 2026 fares, and Bolt-style maps everywhere
+# Buja, Phase 25: boarding a vehicle safely, and fares that correct themselves
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -531,8 +531,31 @@ Bugs fixed: a second job with the same artisan could not be rated (one rating pe
 each job); pins hidden behind the sheet; "0 km from you" on requests; road alerts had no coordinates.
 Swept 121 screens cold as an admin and as a resident: no crashes, no server errors.
 
+## Phase 25: board safely, arrive safely, and tell Waka what you paid
+
+The research called one-chance robbery the sharpest problem an Abuja transport app can address, and Waka's new
+fare engine needs rider reports to correct its estimates. Both happen at the moment somebody boards a vehicle,
+so this phase is built around that moment.
+
+- **Before you enter.** Every journey option now has "Board safely". It asks for the plate on the vehicle and
+  checks it against other riders' reports (`GET /safety/board`), showing what happened and when if there is
+  anything. It also shows how many one-chance reports came from that district in the last year, whether it is
+  dark, and three or four specific things to do: sit by the door, step out if the other passengers are silent,
+  board at a lit park after dark.
+- **Share the ride, not just a meeting.** Trip Share grew a "ride" kind (migration 031) carrying the plate, the
+  vehicle, the route and the destination. The private link now leads with the plate, so whoever you send it to
+  knows exactly which vehicle you entered, and the Safety screen shows it too.
+- **Arrival check-in.** While a ride is running, Buja notices when you come within 350 m of your destination and
+  asks whether you arrived. One tap ends the trip and tells your contact you are safe.
+- **Then: what did you pay?** Straight after, it asks the fare for that leg and files it against the route. Three
+  riders on a stretch and Waka shows what riders paid instead of an estimate, which is how the Phase 24 engine
+  was designed to correct itself.
+
+Fixed on the way: sharing the trip link threw when a browser denied clipboard access; it now falls back to
+showing the link. Swept all 121 screens cold as an admin and as a resident: no crashes, no server errors.
+
 ## What is next
 
-Phase 25: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 26: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

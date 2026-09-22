@@ -155,6 +155,42 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
     }
   });
 
+  /* ---------- Boarding a vehicle: check the plate, see the district's history, share the ride ---------- */
+  async function boardFlow(el, { mode, routeName, routeId, from, to, minutes }) {
+    const sh = el.querySelector('#sheet'); if (!sh) return;
+    const { contacts } = await api.safety().catch(() => ({ contacts: [] }));
+    const draw = (check) => {
+      sh.innerHTML = `<div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center" id="bx"><div class="card stack" style="width:100%;max-width:480px;border-radius:22px 22px 0 0;padding:18px 16px calc(24px + var(--safe-b,0px));gap:12px;max-height:90vh;overflow-y:auto">
+        <div class="row"><div class="h-md grow">Before you enter</div><button class="iconbtn" id="bclose" aria-label="Close" style="width:34px;height:34px">${icon('xmark')}</button></div>
+        <div class="small muted" style="line-height:1.5">${h(routeName || 'Your journey')}${to ? ' to ' + h(to.name) : ''}. Type the plate on the vehicle and Buja checks it against reports from other riders.</div>
+        <div class="row" style="gap:8px"><input class="input" id="bplate" placeholder="ABC 123 XY" autocapitalize="characters" autocomplete="off" style="flex:1;font-size:18px;letter-spacing:2px;text-align:center;height:50px;font-weight:700" value="${h((check && check.plate) || '')}"><button class="btn btn-ink" id="bcheck" style="width:auto;height:50px">Check</button></div>
+        ${check ? `<div style="padding:12px;border-radius:12px;background:${check.reports ? '#FDECEA' : 'var(--green-tint)'};color:${check.reports ? '#D92D20' : 'var(--green-dark)'}">
+          <div style="font-size:14px;font-weight:700">${h(check.verdict)}</div>
+          ${check.items.map((i) => `<div class="small" style="margin-top:6px;line-height:1.45"><strong>${h(i.when)}${i.district ? ', ' + h(i.district) : ''}</strong> ${h(i.what)}</div>`).join('')}</div>` : ''}
+        ${check && check.tips ? `<div class="stack" style="gap:6px">${check.tips.map((t) => `<div class="row small" style="gap:8px;align-items:flex-start"><span style="color:var(--orange-dark);flex-shrink:0">${icon('shield-halved')}</span><span style="line-height:1.45">${h(t)}</span></div>`).join('')}</div>` : ''}
+        <div class="field" style="margin:0"><label for="bwho">Tell somebody you are on the way</label><select class="input" id="bwho">${contacts && contacts.length ? contacts.map((c) => `<option value="${c.id}">${h(c.name)}</option>`).join('') : '<option value="">No trusted contact saved yet</option>'}</select></div>
+        <button class="btn btn-primary" id="bstart">${icon('shield-halved')} Start the ride and share it</button>
+        ${contacts && contacts.length ? '' : `<a class="btn btn-outline small" href="#/safety">Add a trusted contact first</a>`}
+        <div class="small muted" style="line-height:1.5">They get a link with your live position, the plate and where you are heading. Buja asks if you arrived, and ends the trip when you say so.</div></div></div>`;
+      const close = () => { sh.innerHTML = ''; };
+      sh.querySelector('#bclose').addEventListener('click', close);
+      sh.querySelector('#bx').addEventListener('click', (e) => { if (e.target.id === 'bx') close(); });
+      sh.querySelector('#bcheck').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.boardCheck({ plate: sh.querySelector('#bplate').value, district: (from && from.district) || '' }); draw(r); } catch (err) { busy(b, false); failed(el, err); } });
+      sh.querySelector('#bstart').addEventListener('click', async (e) => {
+        const b = e.currentTarget; busy(b, true);
+        const pos = await new Promise((res) => { if (!navigator.geolocation) return res(null); navigator.geolocation.getCurrentPosition((p) => res({ lat: p.coords.latitude, lng: p.coords.longitude }), () => res(null), { enableHighAccuracy: true, timeout: 6000 }); });
+        try {
+          const r = await api.startRide({ plate: sh.querySelector('#bplate').value, mode, routeId, from: from && from.id, to: to && to.id, minutes, contactId: sh.querySelector('#bwho').value || null, lat: pos && pos.lat, lng: pos && pos.lng });
+          close();
+          const text = `I am on a ${h(mode === 'along' ? 'taxi' : mode || 'vehicle')}${r.trip.plate ? ', plate ' + r.trip.plate : ''}${to ? ', going to ' + to.name : ''}. Follow me: ${r.trip.link}`;
+          if (navigator.share) navigator.share({ title: 'My Buja trip', text }).catch(() => {}); else { try { await navigator.clipboard.writeText(text); toast('Link copied. Send it to someone.'); } catch { toast('Share this link: ' + r.trip.link, 6000); } }
+          go('/safety');
+        } catch (err) { busy(b, false); failed(el, err); }
+      });
+    };
+    draw(null);
+  }
+
   /* ---------- Plan results ---------- */
   function legRow(l, i, showActions) {
     return `<div class="row" style="gap:14px;align-items:flex-start">
@@ -184,7 +220,7 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
         <div style="font-size:15px;font-weight:600">${o.taxi ? 'Taxi drop, direct' : o.legs.map((l) => l.routeName).join(', then ')}</div>
         <div class="small muted">about ${o.minutes} min · ${o.transfers ? o.transfers + ' transfer' : 'no transfer'}${o.confirmed ? ' · fares confirmed by riders' : ' · estimated fare'}${o.ridersNow ? ` · ${o.ridersNow} riding now` : ''}</div>
         <div class="stack" style="gap:12px;display:none" data-legs>${o.legs.map((l, k) => legRow(l, k, !o.taxi)).join('')}</div>
-        <button class="btn btn-sm btn-outline" data-expand>Show steps</button>
+        <div class="row" style="gap:8px"><button class="btn btn-sm btn-outline grow" data-expand>Show steps</button><button class="btn btn-sm btn-ink" data-board="${i}" style="width:auto">${icon('shield-halved')} Board safely</button></div>
       </div>`).join('')}
       ${d.rides ? `<div class="section" style="margin:6px 0 0">DOOR TO DOOR</div>
       <div class="card list">${d.rides.map((r) => `<div class="item" style="align-items:flex-start"><div class="mi" style="background:${r.kind === 'bolt' ? '#E7F6EC' : r.kind === 'indrive' ? '#EEF7D9' : 'var(--surface)'};color:${r.kind === 'bolt' ? '#2E7D1E' : r.kind === 'indrive' ? '#4C7A0E' : 'var(--ink)'}">${icon(RIDE_ICON[r.kind])}</div><div class="grow"><div class="row" style="justify-content:space-between;gap:8px"><div class="t">${h(r.label)}</div><div style="font-size:15px;font-weight:800">${naira(r.fare)}${r.range && r.range[1] > r.fare ? `<span class="small muted" style="font-weight:500"> to ${naira(r.range[1])}</span>` : ''}</div></div><div class="s" style="line-height:1.45">about ${r.minutes} min · ${h(r.note)}</div></div></div>`).join('')}</div>
@@ -200,6 +236,10 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
       api.wakaPlan(from, to).then((d) => drawMap(el, (d.options[0] || d.taxi).legs)).catch(() => {});
       el.querySelectorAll('[data-expand]').forEach((b) => b.addEventListener('click', () => { const box = b.closest('[data-opt]').querySelector('[data-legs]'); const open = box.style.display === 'none'; box.style.display = open ? '' : 'none'; b.textContent = open ? 'Hide steps' : 'Show steps'; if (open) { const i = +b.closest('[data-opt]').dataset.opt; api.wakaPlan(from, to).then((d) => drawMap(el, [...d.options, d.taxi][i].legs)); } }));
       bindLegActions(el);
+      el.querySelectorAll('[data-board]').forEach((b) => b.addEventListener('click', async () => {
+        const d2 = await api.wakaPlan(from, to); const opts = d2.options.length ? d2.options : [d2.taxi]; const o = opts[+b.dataset.board] || opts[0]; const leg = o.legs[0];
+        boardFlow(el, { mode: leg.mode, routeName: o.legs.map((l) => l.routeName).join(', then '), routeId: leg.routeId || null, from: leg.from, to: o.legs[o.legs.length - 1].to, minutes: o.minutes });
+      }));
       el.querySelector('#howfares')?.addEventListener('click', async () => {
         const p = await api.wakaPricing(); const sh = el.querySelector('#sheet');
         sh.innerHTML = `<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:flex;align-items:flex-end;justify-content:center" id="fx"><div class="card stack" style="width:100%;max-width:480px;border-radius:22px 22px 0 0;padding:18px 16px calc(24px + var(--safe-b,0px));gap:10px;max-height:85vh;overflow-y:auto">

@@ -13,7 +13,7 @@ export function registerSafety({ route, go, state, api, ui, failed }) {
     <main class="pad stack" style="gap:16px">
       ${t ? `<div class="card stack" style="padding:18px;gap:12px;border:2px solid ${t.status === 'overdue' ? '#D92D20' : 'var(--green)'}">
         <div class="row"><span class="tag ${t.status === 'overdue' ? '' : 'green'}" style="${t.status === 'overdue' ? 'background:#D92D20;color:#fff' : ''}">${t.status === 'overdue' ? 'OVERDUE' : 'TRIP RUNNING'}</span><div class="grow"></div><span class="small muted">${left(t.expectedEnd)}</span></div>
-        <div><div class="h-md">${h(t.place)}</div><div class="small muted" style="margin-top:2px">${t.with ? 'Meeting ' + h(t.with) + ' · ' : ''}due back ${when(t.expectedEnd)}${t.contact ? ' · ' + h(t.contact) + ' can see you' : ''}</div></div>
+        <div><div class="h-md">${h(t.place)}</div>${t.kind === 'ride' && (t.plate || t.mode) ? `<div class="row small" style="gap:6px;margin-top:4px">${t.plate ? `<span class="tag" style="letter-spacing:1px;font-weight:800">${h(t.plate)}</span>` : ''}${t.vehicle ? `<span class="muted">${h(t.vehicle)}</span>` : ''}</div>` : ''}<div class="small muted" style="margin-top:2px">${t.with ? 'Meeting ' + h(t.with) + ' · ' : ''}due back ${when(t.expectedEnd)}${t.contact ? ' · ' + h(t.contact) + ' can see you' : ''}</div></div>
         <div style="height:170px;border-radius:14px;overflow:hidden;background:#ECEEE8" id="map"></div>
         <div class="row" style="gap:8px"><button class="btn btn-sm btn-outline" id="share" style="flex:1">${icon('paper-plane')} Send the link</button><button class="btn btn-sm btn-outline" id="extend" style="flex:1">+1 hour</button></div>
         <button class="btn btn-ink" id="safe">${icon('circle-check')} I am home safe</button>
@@ -24,6 +24,7 @@ export function registerSafety({ route, go, state, api, ui, failed }) {
         <div class="h-md">Going to meet someone?</div>
         <div class="small muted" style="line-height:1.55">Start a trip and one friend gets a private link showing where you are and when you are due back. They do not need Buja. If you do not end the trip in time, the link tells them.</div>
         <a class="btn btn-primary" href="#/safety/start">${icon('location-dot')} Start a trip</a>
+        <a class="btn btn-ink" href="#/waka">${icon('shield-halved')} Boarding a vehicle? Check the plate first</a>
       </div>`}
 
       <div class="stack" style="gap:10px"><div class="row" style="justify-content:space-between"><span class="section">TRUSTED CONTACTS</span><span class="small muted">${d.contacts.length} of 5</span></div>
@@ -104,7 +105,8 @@ export function registerSafety({ route, go, state, api, ui, failed }) {
     <main class="pad stack" style="gap:14px">
       <div class="card stack" style="padding:18px;gap:10px;border:2px solid ${tone[0]}">
         <span class="tag" style="background:${tone[0]};color:#fff;align-self:flex-start">${tone[1]}</span>
-        <div class="h-lg" style="font-size:22px">${h(t.person)} is at ${h(t.place)}</div>
+        <div class="h-lg" style="font-size:22px">${h(t.person)} ${t.kind === 'ride' ? 'is travelling' : 'is at'} ${h(t.place)}</div>
+        ${t.kind === 'ride' && t.plate ? `<div class="card row" style="padding:10px 12px;gap:10px;background:var(--surface);border:none"><span style="width:34px;height:34px;border-radius:17px;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center">${icon('car-side')}</span><span><span class="small muted" style="display:block">Vehicle</span><strong style="letter-spacing:2px;font-size:16px">${h(t.plate)}</strong>${t.vehicle ? ` <span class="small muted">${h(t.vehicle)}</span>` : ''}</span></div>` : ''}
         <div class="small muted" style="line-height:1.55">${t.with ? 'Meeting ' + h(t.with) + '. ' : ''}Due back ${when(t.expectedEnd)}.${t.note ? ' ' + h(t.note) : ''}</div>
         ${t.status === 'alarm' ? `<div style="padding:12px 14px;background:#FDECEA;color:#D92D20;border-radius:12px;font-size:14px;line-height:1.5"><strong>They pressed the alarm.</strong> Call them now. If you cannot reach them, call the police on 112 and give the last position below.</div>`
         : t.status === 'overdue' ? `<div style="padding:12px 14px;background:#FDECEA;color:#D92D20;border-radius:12px;font-size:14px;line-height:1.5"><strong>They are past their time and have not checked in.</strong> Try calling. This may be nothing, but check.</div>`
