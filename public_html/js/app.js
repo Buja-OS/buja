@@ -259,6 +259,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/learn', 'book-open', '#101014', '#7ED957', 'Buja Learn', 'Code, AI, certificates. Free.'],
     ['/queues', 'building-columns', '#EAF1FB', '#1F5FBF', 'Office queues', 'NIN, passport, licence: how long now'],
     ['/rides', 'car', '#E7F0EA', '#2E7D1E', 'Commute share', 'Split a seat along your route'],
+    ['/artisans/map?trade=mechanic', 'wrench', '#EAF1FB', '#1F5FBF', 'Mechanic near me', 'See who is close, watch them come'],
   ];
   return `
   <header class="topbar" style="padding-top:8px">
@@ -321,6 +322,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
       <a class="item" href="#/waka"><div class="mi">${icon('route')}</div><div class="grow"><div class="t">Saved routes</div><div class="s">Waka</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#${u.kind === 'company' ? '/work/company' : '/work/profile'}"><div class="mi">${icon('briefcase')}</div><div class="grow"><div class="t">${u.kind === 'company' ? 'Company and vacancies' : 'My CV and applications'}</div><div class="s">Work</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/tickets"><div class="mi">${icon('ticket')}</div><div class="grow"><div class="t">My tickets</div><div class="s">Events you have paid for</div></div>${icon('chevron-right')}</a>
+      <a class="item" href="#/jobs"><div class="mi">${icon('wrench')}</div><div class="grow"><div class="t">My jobs</div><div class="s">Artisans you called, and jobs you are doing</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/alerts"><div class="mi">${icon('bell')}</div><div class="grow"><div class="t">Saved searches</div><div class="s">Be told when a job, home or item matches</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/invite"><div class="mi">${icon('paper-plane')}</div><div class="grow"><div class="t">Invite friends</div><div class="s">Buja works better with your people on it</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/install"><div class="mi">${icon('plus')}</div><div class="grow"><div class="t">Install Buja</div><div class="s">Put it on your home screen</div></div>${icon('chevron-right')}</a>
@@ -423,6 +425,7 @@ const MODULES = {
   citysignals: () => import('./citysignals.js').then((m) => m.registerCitySignals(BASE)),
   learn:       () => import('./learn.js').then((m) => m.registerLearn(BASE)),
   citymore:    () => import('./citymore.js').then((m) => m.registerCityMore(BASE)),
+  jobs:        () => import('./servicejobs.js').then((m) => m.registerJobs(BASE)),
 };
 /** First path segment → the modules that own screens under it. Several share /admin and /report. */
 const LAZY = {
@@ -430,7 +433,7 @@ const LAZY = {
   admin: ['trust', 'services', 'citymore'], plus: ['trust'], verify: ['trust'],
   news: ['city'], radio: ['city'], social: ['city'], safety: ['safety'], trip: ['safety'],
   install: ['growth'], invite: ['growth'], join: ['growth'], privacy: ['growth'], terms: ['growth'], search: ['growth'], report: ['growth', 'services'],
-  artisans: ['services'], meetup: ['services'], tickets: ['services'],
+  artisans: ['services', 'jobs'], jobs: ['jobs'], meetup: ['services'], tickets: ['services'],
   blood: ['citysignals'], fuel: ['citysignals'], light: ['citysignals'], lostfound: ['citysignals'], plates: ['citysignals'], prices: ['citysignals'],
   cert: ['learn'], learn: ['learn'], queues: ['citymore'], 'rent-index': ['citymore'], rides: ['citymore'],
 };

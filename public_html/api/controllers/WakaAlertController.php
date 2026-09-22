@@ -22,10 +22,10 @@ final class WakaAlertController
 
     private function shape(array $a, array $u): array
     {
-        $place = $a['place_id'] ? Db::one('SELECT name, district FROM places WHERE id = ?', [$a['place_id']]) : null;
+        $place = $a['place_id'] ? Db::one('SELECT name, district, lat, lng FROM places WHERE id = ?', [$a['place_id']]) : null;
         $mine = Db::one('SELECT vote FROM waka_alert_votes WHERE alert_id = ? AND user_id = ?', [$a['id'], $u['id']]);
         return ['id' => (int) $a['id'], 'kind' => $a['kind'], 'label' => (self::KINDS[$a['kind']] ?? ['Something', 2])[0],
-            'place' => $place ? $place['name'] : null, 'district' => $a['district'], 'note' => $a['note'],
+            'place' => $place ? $place['name'] : null, 'lat' => $place ? (float) $place['lat'] : (isset($a['lat']) && $a['lat'] !== null ? (float) $a['lat'] : null), 'lng' => $place ? (float) $place['lng'] : (isset($a['lng']) && $a['lng'] !== null ? (float) $a['lng'] : null), 'district' => $a['district'], 'note' => $a['note'],
             'confirms' => (int) $a['confirms'], 'cleared' => (int) $a['cleared'], 'my_vote' => $mine ? (int) $mine['vote'] : 0,
             'mine' => (int) $a['user_id'] === (int) $u['id'], 'at' => $a['created_at'], 'until' => $a['expires_at']];
     }

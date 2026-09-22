@@ -319,3 +319,16 @@ $router->get('/admin/broadcasts/count',      [EngageController::class, 'count'])
 $router->post('/admin/broadcasts',           [EngageController::class, 'send']);
 $router->get('/me/engage',                   [EngageController::class, 'me']);
 $router->post('/me/engage/asked',            [EngageController::class, 'asked']);
+
+// Waka pricing and road routes
+$router->get('/waka/pricing',                [WakaController::class, 'pricing']);
+$router->post('/admin/waka/pricing',         [WakaController::class, 'setPricing']);
+$router->get('/route',                       [WakaController::class, 'road']);
+
+// On-demand service jobs with live tracking
+$router->get('/service-jobs',                [ServiceJobController::class, 'index']);
+$router->post('/service-jobs',               [ServiceJobController::class, 'create']);
+$router->get('/service-jobs/{id}',           [ServiceJobController::class, 'show']);
+$router->post('/service-jobs/{id}/ping',     [ServiceJobController::class, 'ping']);
+$router->post('/service-jobs/{id}/rate',     [ServiceJobController::class, 'rate']);
+$router->post('/service-jobs/{id}/{action}', [ServiceJobController::class, 'act']);

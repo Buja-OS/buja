@@ -1,3 +1,4 @@
+import { createMap, pinHtml, meHtml, bottomSheet } from './map.js';
 // Buja city signals: what the crowd knows right now. Registered by app.js.
 export function registerCitySignals({ route, go, state, api, ui, DISTRICTS, failed }) {
   const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon, avatar } = ui;
@@ -50,7 +51,7 @@ export function registerCitySignals({ route, go, state, api, ui, DISTRICTS, fail
   route('/fuel', { auth: true, tabs: '' }, async () => {
     const at = await here(3500);
     const d = await api.fuel(at || {});
-    return `${topbar('Fuel board', '/home', `<a class="iconbtn" href="#/fuel/add" aria-label="Add a station" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('plus')}</a>`)}
+    return `${topbar('Fuel board', '/home', `<a class="iconbtn" href="#/fuel/map" aria-label="Fuel on the map" style="margin-right:6px">${icon('map-location-dot')}</a><a class="iconbtn" href="#/fuel/add" aria-label="Add a station" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('plus')}</a>`)}
     <main class="pad stack" style="gap:10px">
       <div class="small muted row" style="gap:6px">${icon('location-dot')} ${at ? 'Nearest first' : 'Turn on location to sort by distance'} · ${d.count} station${d.count === 1 ? '' : 's'} known</div>
       ${d.stations.length ? d.stations.map((s) => `<div class="card stack" style="padding:12px 14px;gap:8px">
@@ -72,6 +73,36 @@ export function registerCitySignals({ route, go, state, api, ui, DISTRICTS, fail
         sh.querySelector('#fx').addEventListener('click', () => { sh.innerHTML = ''; });
         sh.querySelector('#fs').addEventListener('click', async (e) => { busy(e.currentTarget, true); try { await api.fuelReport(b.dataset.report, { queue: qv, petrol: sh.querySelector('#fp').value, diesel: sh.querySelector('#fd').value }); toast('Posted. Thank you.'); location.reload(); } catch (err) { busy(e.currentTarget, false); failed(el, err); } });
       }));
+    }
+  });
+  route('/fuel/map', { auth: true, tabs: '' }, async () => `<div class="bm-screen"><div class="bm-mapbox" id="map"></div>
+    <div class="bm-top"><a class="bm-fab" href="#/fuel" aria-label="Back to the list">${icon('arrow-left')}</a><div class="bm-pill">Fuel near you</div></div></div>`, {
+    async mount(el) {
+      const screen = el.querySelector('.bm-screen'); const sheet = bottomSheet(screen, { peek: 160, half: 0.42, start: 'half' });
+      sheet.body.innerHTML = `<div class="small muted" style="padding:6px 0">Finding stations…</div>`;
+      const at = await here(4000);
+      const map = await createMap(el.querySelector('#map'), { center: at ? [at.lng, at.lat] : undefined, zoom: at ? 13 : 12 });
+      const d = await api.fuel(at || {});
+      const COL = { none: '#2E7D1E', short: '#B7791F', long: '#D92D20', closed: '#9AA0AB' };
+      if (map) {
+        if (at) map.marker('me', { ...at, html: meHtml(), anchor: 'center', z: 5 });
+        d.stations.forEach((s) => map.marker('f' + s.id, { lng: s.lng, lat: s.lat, z: s.report && !s.report.stale ? 3 : 1, html: pinHtml({ iconName: 'gas-pump', color: s.report && !s.report.stale ? COL[s.report.queue] : '#6B6B73', size: 34, label: s.report && s.report.petrol ? naira(s.report.petrol) : s.name, sub: s.report ? QLABEL[s.report.queue] : 'no report' }), onClick: () => show(s) }));
+        map.fit((at ? [[at.lng, at.lat]] : []).concat(d.stations.slice(0, 6).map((s) => [s.lng, s.lat])), { bottom: window.innerHeight * 0.44 });
+      }
+      const list = () => {
+        sheet.body.innerHTML = `<div class="row" style="padding:2px 0 8px"><div class="grow"><div style="font-size:17px;font-weight:800">${d.stations.length} stations</div><div class="small muted">Green: no queue · amber: short · red: long · grey: no fuel or no recent report</div></div></div>
+          ${d.stations.slice(0, 12).map((s) => `<button class="row card" data-s="${s.id}" style="width:100%;text-align:left;padding:10px 12px;gap:10px;margin-bottom:8px;background:var(--card)"><span style="width:36px;height:36px;border-radius:18px;background:${s.report && !s.report.stale ? COL[s.report.queue] : '#9AA0AB'};color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon('gas-pump')}</span><span class="grow" style="min-width:0"><span style="display:block;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(s.name)}</span><span class="small muted">${s.km != null ? s.km + ' km · ' : ''}${s.report ? QLABEL[s.report.queue] + ' · ' + ago(s.report.at) : 'no report yet'}</span></span>${s.report && s.report.petrol ? `<strong>${naira(s.report.petrol)}</strong>` : ''}</button>`).join('')}`;
+        sheet.body.querySelectorAll('[data-s]').forEach((b) => b.addEventListener('click', () => show(d.stations.find((x) => String(x.id) === b.dataset.s))));
+      };
+      const show = (s) => {
+        if (map) map.center(s.lng, s.lat, 15);
+        sheet.body.innerHTML = `<div class="stack" style="gap:10px;padding-top:4px"><div><div style="font-size:18px;font-weight:800">${h(s.name)}</div><div class="small muted">${s.brand ? h(s.brand) + ' · ' : ''}${h(s.district)}${s.km != null ? ' · ' + s.km + ' km' : ''}</div></div>
+          ${s.report ? `<div class="row" style="gap:14px;font-size:15px">${s.report.petrol ? `<span><strong>${naira(s.report.petrol)}</strong> <span class="small muted">petrol</span></span>` : ''}${s.report.diesel ? `<span><strong>${naira(s.report.diesel)}</strong> <span class="small muted">diesel</span></span>` : ''}<span class="tag">${QLABEL[s.report.queue]}</span></div><div class="small muted">${h(s.report.by)}, ${ago(s.report.at)}</div>` : '<div class="small muted">Nobody has reported here yet.</div>'}
+          <a class="btn btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}&travelmode=driving" target="_blank" rel="noopener">${icon('route')} Directions</a>
+          <a class="btn btn-outline" href="#/fuel">I am here, update it</a><button class="btn btn-ghost small" id="back">Back</button></div>`;
+        sheet.set('half'); sheet.body.querySelector('#back').addEventListener('click', list);
+      };
+      list();
     }
   });
   route('/fuel/add', { auth: true, tabs: '' }, async () => `${topbar('Add a station', '/fuel')}

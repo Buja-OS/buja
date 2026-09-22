@@ -1,3 +1,4 @@
+import { createMap, pinHtml, meHtml, bottomSheet } from './map.js';
 // Buja Waka: routes, fares, planner. Registered into the app router by app.js.
 export function registerWaka({ route, go, state, api, ui, failed }) {
   const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon } = ui;
@@ -5,48 +6,33 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
   const modeIcon = { bus: 'bus', along: 'car', keke: 'car', taxi: 'car', train: 'route' };
   const q = () => new URLSearchParams(location.hash.split('?')[1] || '');
 
-  /* ---------- Leaflet, loaded once, from cdnjs. Falls back to a list if it cannot load. ---------- */
-  let leafletReady = null;
-  function loadLeaflet() {
-    if (window.L) return Promise.resolve(true);
-    if (leafletReady) return leafletReady;
-    leafletReady = new Promise((res) => {
-      const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'; document.head.appendChild(css);
-      const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js'; s.onload = () => res(true); s.onerror = () => res(false); document.head.appendChild(s);
-      setTimeout(() => res(!!window.L), 6000);
-    });
-    return leafletReady;
-  }
-  /** Map data credit, required by the licence, kept as a small ⓘ rather than a line of text on the map. */
-  function credit(box) {
-    if (box.querySelector('[data-credit]')) return;
-    const b = document.createElement('button');
-    b.dataset.credit = '1'; b.type = 'button'; b.setAttribute('aria-label', 'Map data credit');
-    b.style.cssText = 'position:absolute;right:8px;bottom:8px;width:22px;height:22px;border-radius:11px;border:none;background:rgba(255,255,255,.82);color:#5A5A62;font:600 12px Inter,sans-serif;z-index:500;cursor:pointer';
-    b.textContent = 'i';
-    b.addEventListener('click', (e) => { e.stopPropagation(); const t = document.getElementById('toast'); if (t) { t.textContent = 'Map data © OpenStreetMap contributors'; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 3200); } });
-    box.style.position = 'relative'; box.appendChild(b);
-  }
-
+  const MODE_ICON = { bus: 'bus', along: 'car-side', keke: 'motorcycle', taxi: 'car-side', train: 'train' };
+  const MODE_COLOR = { bus: '#2E7D1E', along: '#FF7A1A', keke: '#B7791F', taxi: '#101014', train: '#1F5FBF' };
+  /** Draws journey legs on the shared Buja map: real road lines through each leg's stops, a pin per boarding and
+   *  alighting point with the mode's icon, small dots for the stops in between, and riders on board right now. */
   async function drawMap(el, legs, focus) {
     const box = el.querySelector('#map'); if (!box) return;
-    const ok = await loadLeaflet();
-    if (!ok) { box.innerHTML = `<div class="placeholder" style="height:100%;padding:20px"><div class="small muted">Map could not load on this connection. The route steps below still work.</div></div>`; return; }
-    box.innerHTML = '';
-    const map = L.map(box, { zoomControl: false, attributionControl: false }).setView([9.06, 7.45], 12);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
-    credit(box);
-    const bounds = [];
-    legs.forEach((leg) => {
-      const pts = leg.path.map((p) => [p.lat, p.lng]); bounds.push(...pts);
-      const line = leg.geometry && leg.geometry.length > 1 ? leg.geometry : pts;
-      L.polyline(line, { color: leg.color || '#7ED957', weight: 6, opacity: .9, lineJoin: 'round' }).addTo(map);
-      leg.path.forEach((p, i) => { const end = i === 0 || i === leg.path.length - 1; L.circleMarker([p.lat, p.lng], { radius: end ? 8 : 5, color: '#fff', weight: 2, fillColor: end ? '#1B1B1F' : (leg.color || '#7ED957'), fillOpacity: 1 }).addTo(map).bindTooltip(p.name, { direction: 'top', offset: [0, -8] }); });
-      if (leg.ridersNow) { const mid = leg.path[Math.floor(leg.path.length / 2)]; L.marker([mid.lat, mid.lng], { icon: L.divIcon({ className: '', html: `<div style="background:#1B1B1F;color:#fff;border-radius:12px;padding:3px 8px;font:700 11px Inter,sans-serif;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.3)">${leg.ridersNow} rider${leg.ridersNow === 1 ? '' : 's'} now</div>`, iconAnchor: [30, 12] }) }).addTo(map); }
-    });
-    if (focus) { bounds.push([focus.lat, focus.lng]); L.circleMarker([focus.lat, focus.lng], { radius: 9, color: '#fff', weight: 2, fillColor: '#FF7A1A', fillOpacity: 1 }).addTo(map).bindTooltip(focus.name); }
-    if (bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
-    setTimeout(() => map.invalidateSize(), 200);
+    const map = await createMap(box, { zoom: 12, interactive: true });
+    if (!map) { box.innerHTML = `<div class="placeholder" style="height:100%;padding:20px"><div class="small muted">Map could not load on this phone. The route steps below still work.</div></div>`; return; }
+    const all = [];
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i]; const path = (leg.path && leg.path.length ? leg.path : [leg.from, leg.to]).filter(Boolean);
+      const color = leg.color || MODE_COLOR[leg.mode] || '#FF7A1A';
+      path.forEach((p) => all.push([p.lng, p.lat]));
+      let coords = leg.geometry && leg.geometry.length > 1 ? leg.geometry.map((p) => [p[1], p[0]]) : null;
+      if (!coords) {
+        const pts = path.length > 12 ? path.filter((_, k) => k === 0 || k === path.length - 1 || k % Math.ceil(path.length / 10) === 0).slice(0, 12) : path;
+        try { const r = await api.road(pts.map((p) => [p.lat, p.lng])); if (r.coords && r.coords.length > 1 && r.source !== 'straight') coords = r.coords; } catch {}
+      }
+      map.line('leg' + i, coords || path.map((p) => [p.lng, p.lat]), { color, width: 6, dashed: !coords || leg.mode === 'taxi' });
+      path.forEach((p, k) => {
+        const end = k === 0 || k === path.length - 1;
+        if (end) map.marker(`s${i}_${k}`, { lng: p.lng, lat: p.lat, z: 3, html: pinHtml({ iconName: k === 0 ? (MODE_ICON[leg.mode] || 'location-dot') : (i === legs.length - 1 ? 'flag-checkered' : 'arrow-right'), color: k === 0 ? color : '#101014', size: 34, label: p.name, sub: k === 0 ? (leg.modeLabel || '') : '', badge: k === 0 && leg.ridersNow ? leg.ridersNow + ' on it' : '' }) });
+        else map.marker(`s${i}_${k}`, { lng: p.lng, lat: p.lat, z: 1, anchor: 'center', html: `<div title="${h(p.name)}" style="width:12px;height:12px;border-radius:6px;background:#fff;border:3px solid ${color}"></div>` });
+      });
+    }
+    if (focus) { all.push([focus.lng, focus.lat]); map.marker('focus', { lng: focus.lng, lat: focus.lat, z: 4, html: pinHtml({ iconName: 'location-dot', color: '#FF7A1A', label: focus.name }) }); }
+    map.fit(all, { bottom: 30, top: 30 });
   }
 
   /* ---------- Place picker ---------- */
@@ -95,6 +81,7 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
         <div class="row" style="gap:10px"><div style="flex:1;height:1px;background:var(--line)"></div><button class="iconbtn" id="swap" aria-label="Swap" style="width:36px;height:36px">${icon('sliders')}</button></div>
         <button class="row" id="to" style="height:52px;padding:0 14px;background:var(--surface);border:1px solid var(--line);border-radius:14px;width:100%;text-align:left;gap:12px"><span style="width:10px;height:10px;border-radius:5px;background:var(--orange)"></span><span class="grow" id="toName" style="font-size:15px;color:var(--ink-3)">Where to?</span></button>
         <button class="btn btn-primary" id="plan" disabled>${icon('route')} Find the way</button>
+        <a class="row" href="#/waka/map" style="gap:10px;padding:10px 12px;border-radius:14px;background:var(--night);color:#fff;text-decoration:none"><span style="width:34px;height:34px;border-radius:10px;background:rgba(126,217,87,.16);color:#7ED957;display:flex;align-items:center;justify-content:center">${icon('map-location-dot')}</span><span class="grow"><span style="display:block;font-size:14px;font-weight:700">Live Waka map</span><span class="small" style="color:#9AA0AB">Stops near you, road alerts, riders on routes now</span></span>${icon('chevron-right')}</a>
       </div>
       ${saved.length ? `<div class="stack" style="gap:10px"><div class="section">SAVED</div><div class="card list">${saved.map((s) => `<a class="item" href="#/waka/plan?from=${s.from}&to=${s.to}"><div class="mi">${icon('bookmark')}</div><div class="grow"><div class="t">${h(s.label || s.fromName + ' to ' + s.toName)}</div><div class="s">${h(s.fromName)} → ${h(s.toName)}</div></div>${icon('chevron-right')}</a>`).join('')}</div></div>` : ''}
       <div class="stack" style="gap:10px"><div class="section">ROUTES RIGHT NOW</div>
@@ -107,6 +94,8 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
   }, {
     mount(el) {
       let from = null, to = null;
+      const qf = q().get('from'), qt = q().get('to');
+      if (qf || qt) api.wakaPlaces().then(({ places }) => { if (qf) from = places.find((p) => String(p.id) === qf) || null; if (qt) to = places.find((p) => String(p.id) === qt) || null; set(); });
       const toq = q().get('toq'); if (toq) api.wakaPlaces(toq).then(({ places }) => { const p = places.find((x) => x.district === toq) || places[0]; if (p) { to = p; set(); } });
       const set = () => { el.querySelector('#fromName').textContent = from ? from.name : 'Where from?'; el.querySelector('#fromName').style.color = from ? 'var(--ink)' : ''; el.querySelector('#toName').textContent = to ? to.name : 'Where to?'; el.querySelector('#toName').style.color = to ? 'var(--ink)' : ''; el.querySelector('#plan').disabled = !(from && to && from.id !== to.id); };
       el.querySelector('#from').addEventListener('click', () => picker(el, (p) => { from = p; set(); })('Where from?'));
@@ -116,11 +105,62 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
     }
   });
 
+  /* ---------- Live Waka map: stops near you, road alerts, plan from a stop ---------- */
+  route('/waka/map', { auth: true, tabs: '' }, async () => `<div class="bm-screen"><div class="bm-mapbox" id="map"></div>
+    <div class="bm-top"><a class="bm-fab" href="#/waka" aria-label="Back">${icon('arrow-left')}</a><div class="bm-pill">Live Waka map</div></div>
+    <button class="bm-fab bm-locate" id="locate" aria-label="Where am I" style="top:calc(70px + var(--safe-t,0px))">${icon('location-crosshairs')}</button></div>`, {
+    async mount(el) {
+      const screen = el.querySelector('.bm-screen');
+      const sheet = bottomSheet(screen, { peek: 160, half: 0.44, start: 'half' });
+      sheet.body.innerHTML = `<div class="small muted" style="padding:6px 0">Loading stops and alerts…</div>`;
+      const pos = await new Promise((res) => { if (!navigator.geolocation) return res(null); let d = false; const f = (v) => { if (!d) { d = true; res(v); } }; setTimeout(() => f(null), 5000); navigator.geolocation.getCurrentPosition((p) => f({ lat: p.coords.latitude, lng: p.coords.longitude }), () => f(null), { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 }); });
+      const map = await createMap(el.querySelector('#map'), { center: pos ? [pos.lng, pos.lat] : undefined, zoom: pos ? 13.5 : 11.5 });
+      const [{ places }, al] = await Promise.all([api.wakaPlaces(), api.wakaAlerts().catch(() => ({ alerts: [] }))]);
+      const alerts = (al.alerts || []).filter((a) => a.lat != null);
+      const dist = (p) => pos ? Math.hypot((p.lat - pos.lat) * 111, (p.lng - pos.lng) * 111 * Math.cos(pos.lat * Math.PI / 180)) : null;
+      places.forEach((p) => { p.km = dist(p); });
+      const near = places.slice().sort((a, b) => (a.km ?? 99) - (b.km ?? 99)).slice(0, 8);
+      if (map) {
+        if (pos) map.marker('me', { ...pos, html: meHtml(), anchor: 'center', z: 5 });
+        places.forEach((p) => map.marker('p' + p.id, { lng: p.lng, lat: p.lat, z: 1, html: pinHtml({ iconName: p.kind === 'station' ? 'train' : p.kind === 'airport' ? 'plane' : 'bus', color: p.kind === 'station' ? '#1F5FBF' : '#2E7D1E', size: 28, label: p.name }), onClick: () => stop(p) }));
+        alerts.forEach((a) => map.marker('al' + a.id, { lng: a.lng, lat: a.lat, z: 4, html: pinHtml({ iconName: 'triangle-exclamation', color: '#D92D20', size: 36, label: a.label, sub: a.place || '', badge: a.confirms > 1 ? String(a.confirms) : '' }), onClick: () => alertCard(a) }));
+        map.fit((pos ? [[pos.lng, pos.lat]] : []).concat(near.slice(0, 5).map((p) => [p.lng, p.lat])), { bottom: window.innerHeight * 0.46 });
+      }
+      const listView = () => {
+        sheet.body.innerHTML = `<div class="stack" style="gap:10px;padding-top:2px">
+          ${alerts.length ? `<div class="section" style="margin:0">ON THE ROAD NOW</div>${alerts.slice(0, 4).map((a) => `<button class="row card" data-al="${a.id}" style="width:100%;text-align:left;padding:10px 12px;gap:10px;background:var(--card)"><span style="width:34px;height:34px;border-radius:17px;background:#FDECEA;color:#D92D20;display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon('triangle-exclamation')}</span><span class="grow"><span style="display:block;font-size:14px;font-weight:700">${h(a.label)}</span><span class="small muted">${h(a.place || a.district || '')} · ${a.confirms} confirmed</span></span></button>`).join('')}` : `<div class="small muted">No road alerts reported right now.</div>`}
+          <div class="section" style="margin:6px 0 0">${pos ? 'STOPS NEAR YOU' : 'STOPS'}</div>
+          ${near.map((p) => `<button class="row card" data-p="${p.id}" style="width:100%;text-align:left;padding:10px 12px;gap:10px;background:var(--card)"><span style="width:34px;height:34px;border-radius:17px;background:var(--green-tint);color:var(--green-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon(p.kind === 'station' ? 'train' : 'bus')}</span><span class="grow"><span style="display:block;font-size:14px;font-weight:700">${h(p.name)}</span><span class="small muted">${h(p.district || '')}${p.km != null ? ' · ' + (p.km < 1 ? Math.round(p.km * 1000) + ' m' : p.km.toFixed(1) + ' km') : ''}</span></span>${icon('chevron-right')}</button>`).join('')}
+          <a class="btn btn-outline" href="#/waka">Plan a journey</a></div>`;
+        sheet.body.querySelectorAll('[data-p]').forEach((b) => b.addEventListener('click', () => stop(places.find((x) => String(x.id) === b.dataset.p))));
+        sheet.body.querySelectorAll('[data-al]').forEach((b) => b.addEventListener('click', () => alertCard(alerts.find((x) => String(x.id) === b.dataset.al))));
+      };
+      const stop = (p) => {
+        if (map) map.center(p.lng, p.lat, 15);
+        sheet.body.innerHTML = `<div class="stack" style="gap:12px;padding-top:4px"><div><div style="font-size:18px;font-weight:800">${h(p.name)}</div><div class="small muted">${h(p.district || '')}${p.km != null ? ' · ' + (p.km < 1 ? Math.round(p.km * 1000) + ' m from you' : p.km.toFixed(1) + ' km from you') : ''}</div></div>
+          <div class="row" style="gap:8px"><a class="btn btn-primary grow" href="#/waka?from=${p.id}">From here</a><a class="btn btn-ink grow" href="#/waka?to=${p.id}">To here</a></div>
+          <a class="btn btn-outline" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=walking" target="_blank" rel="noopener">${icon('route')} Walk there</a>
+          <button class="btn btn-ghost small" id="back">Back</button></div>`;
+        sheet.set('half'); sheet.body.querySelector('#back').addEventListener('click', listView);
+      };
+      const alertCard = (a) => {
+        if (map) map.center(a.lng, a.lat, 15);
+        sheet.body.innerHTML = `<div class="stack" style="gap:12px;padding-top:4px"><div class="row" style="gap:10px"><span style="width:44px;height:44px;border-radius:22px;background:#FDECEA;color:#D92D20;display:flex;align-items:center;justify-content:center">${icon('triangle-exclamation')}</span><div><div style="font-size:18px;font-weight:800">${h(a.label)}</div><div class="small muted">${h(a.place || a.district || '')}</div></div></div>
+          ${a.note ? `<div class="small" style="color:var(--ink-2)">${h(a.note)}</div>` : ''}<div class="small muted">${a.confirms} ${a.confirms === 1 ? 'person says' : 'people say'} it is still there · ${a.cleared} say it cleared</div>
+          <a class="btn btn-outline" href="#/waka/alerts">Confirm or clear it</a><button class="btn btn-ghost small" id="back">Back</button></div>`;
+        sheet.set('half'); sheet.body.querySelector('#back').addEventListener('click', listView);
+      };
+      el.querySelector('#locate').addEventListener('click', () => { if (pos && map) map.center(pos.lng, pos.lat, 15); else toast('Turn on location to see stops near you'); });
+      listView();
+    }
+  });
+
   /* ---------- Plan results ---------- */
   function legRow(l, i, showActions) {
     return `<div class="row" style="gap:14px;align-items:flex-start">
       <div style="display:flex;flex-direction:column;align-items:center;width:36px"><div style="width:36px;height:36px;border-radius:18px;background:${l.color || 'var(--ink)'};display:flex;align-items:center;justify-content:center;color:#fff">${icon(modeIcon[l.mode])}</div></div>
-      <div class="grow"><div class="row" style="justify-content:space-between;gap:10px"><div style="font-size:15px;font-weight:700">${h(l.routeName)}</div><div style="font-size:15px;font-weight:700">${naira(l.fare.amount)}<span class="small muted" style="font-weight:500">${l.fare.confirmed ? ` · ${l.fare.reports} report${l.fare.reports === 1 ? '' : 's'}` : ' est.'}</span></div></div>
+      <div class="grow"><div class="row" style="justify-content:space-between;gap:10px"><div style="font-size:15px;font-weight:700">${h(l.routeName)}</div><div style="font-size:15px;font-weight:700">${l.fare.amount != null ? naira(l.fare.amount) : '?'}</div></div>
+        <div class="small" style="margin-top:2px;color:${l.fare.confirmed ? 'var(--green-dark)' : 'var(--ink-3)'}">${l.fare.confirmed ? `${l.fare.reports} riders paid this, last 30 days` : l.fare.lowConfidence ? 'Reported fare, confirm at the station' : `Estimate from distance and today's fuel price${l.fare.hint ? ` · a rider paid ${naira(l.fare.hint)}` : ''}`}</div><div></div>
         <div class="small muted" style="margin-top:3px;line-height:1.45">${h(l.from.name)} → ${h(l.to.name)} · ${l.km} km · about ${l.minutes} min${l.ridersNow ? ` · <strong style="color:var(--green-dark)">${l.ridersNow} rider${l.ridersNow === 1 ? '' : 's'} on it now</strong>` : ''}</div>
         <div class="small" style="margin-top:3px">${h(l.say)}</div>
         ${showActions && l.routeId ? `<div class="row" style="gap:8px;margin-top:8px"><a class="btn btn-sm btn-outline" href="#/waka/route/${l.routeId}?from=${l.from.id}&to=${l.to.id}">Route details</a><button class="btn btn-sm btn-outline" data-report="${l.routeId}" data-from="${l.from.id}" data-to="${l.to.id}">${icon('naira-sign')} Report fare</button><button class="btn btn-sm btn-ink" data-checkin="${l.routeId}">${icon('bus')} I'm on this</button></div>` : ''}
@@ -130,7 +170,8 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
     { const qq = new URLSearchParams(location.hash.split('?')[1] || ''); if (!qq.get('from') || !qq.get('to') || qq.get('from') === qq.get('to')) { go('/waka'); return ''; } }
     const from = +q().get('from'), to = +q().get('to');
     const d = await api.wakaPlan(from, to);
-    const all = [...d.options, d.taxi];
+    const all = d.options.length ? d.options : [d.taxi];
+    const RIDE_ICON = { drop: 'car-side', bolt: 'bolt', indrive: 'hand-holding-dollar' };
     return `
     <div style="position:relative;height:300px;background:#ECEEE8;flex-shrink:0"><div id="map" style="position:absolute;inset:0"></div>
       <a class="iconbtn" href="#/waka" aria-label="Back" style="position:absolute;top:12px;left:12px;z-index:10;box-shadow:0 2px 10px rgba(0,0,0,.15)">${icon('arrow-left')}</a>
@@ -145,6 +186,9 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
         <div class="stack" style="gap:12px;display:none" data-legs>${o.legs.map((l, k) => legRow(l, k, !o.taxi)).join('')}</div>
         <button class="btn btn-sm btn-outline" data-expand>Show steps</button>
       </div>`).join('')}
+      ${d.rides ? `<div class="section" style="margin:6px 0 0">DOOR TO DOOR</div>
+      <div class="card list">${d.rides.map((r) => `<div class="item" style="align-items:flex-start"><div class="mi" style="background:${r.kind === 'bolt' ? '#E7F6EC' : r.kind === 'indrive' ? '#EEF7D9' : 'var(--surface)'};color:${r.kind === 'bolt' ? '#2E7D1E' : r.kind === 'indrive' ? '#4C7A0E' : 'var(--ink)'}">${icon(RIDE_ICON[r.kind])}</div><div class="grow"><div class="row" style="justify-content:space-between;gap:8px"><div class="t">${h(r.label)}</div><div style="font-size:15px;font-weight:800">${naira(r.fare)}${r.range && r.range[1] > r.fare ? `<span class="small muted" style="font-weight:500"> to ${naira(r.range[1])}</span>` : ''}</div></div><div class="s" style="line-height:1.45">about ${r.minutes} min · ${h(r.note)}</div></div></div>`).join('')}</div>
+      <button class="btn btn-ghost small" id="howfares" style="align-self:flex-start">${icon('circle-info')} How Waka works out fares</button>` : ''}
       ${!d.options.length ? `<div class="card" style="padding:16px"><div class="h-sm">No bus or keke route on record yet</div><div class="small muted" style="line-height:1.5">Buja knows ${'the main parks and junctions'} so far. Tell us how you make this trip and we add it: Me → Suggest a route.</div></div>` : ''}
       <div class="small muted" style="line-height:1.5;padding-bottom:8px">Times assume Abuja traffic and waiting at the park. Report the fare you paid and it updates for everyone.</div>
     </main>
@@ -156,6 +200,15 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
       api.wakaPlan(from, to).then((d) => drawMap(el, (d.options[0] || d.taxi).legs)).catch(() => {});
       el.querySelectorAll('[data-expand]').forEach((b) => b.addEventListener('click', () => { const box = b.closest('[data-opt]').querySelector('[data-legs]'); const open = box.style.display === 'none'; box.style.display = open ? '' : 'none'; b.textContent = open ? 'Hide steps' : 'Show steps'; if (open) { const i = +b.closest('[data-opt]').dataset.opt; api.wakaPlan(from, to).then((d) => drawMap(el, [...d.options, d.taxi][i].legs)); } }));
       bindLegActions(el);
+      el.querySelector('#howfares')?.addEventListener('click', async () => {
+        const p = await api.wakaPricing(); const sh = el.querySelector('#sheet');
+        sh.innerHTML = `<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:flex;align-items:flex-end;justify-content:center" id="fx"><div class="card stack" style="width:100%;max-width:480px;border-radius:22px 22px 0 0;padding:18px 16px calc(24px + var(--safe-b,0px));gap:10px;max-height:85vh;overflow-y:auto">
+          <div class="h-md">How Waka works out fares</div>
+          <div class="small" style="line-height:1.6;color:var(--ink-2)"><p style="margin:0 0 8px"><strong>Riders first.</strong> When ${p.crowdMin} or more people report what they paid on a stretch in the last 30 days, Waka shows the middle of what they paid.</p><p style="margin:0 0 8px"><strong>Otherwise, an estimate</strong> from the distance and today's petrol price (₦${Number(p.pumpPrice).toLocaleString()} a litre, checked ${h(p.reviewedAt || '')}). Along cabs follow a line fitted to fares Abuja riders paid in March 2026; buses, keke and the light rail use their own bands. When fuel rises, fares rise about half as much, which is how the market has moved since 2023.</p><p style="margin:0 0 8px"><strong>Door to door</strong> prices are estimates: a charter is about four along seats, Bolt uses its published rate card adjusted for fuel, and inDrive's figure is a fair opening offer. Uber no longer operates in Nigeria.</p><p style="margin:0">Keke and okada are not allowed in the city centre; Waka only suggests keke inside estates and satellite towns.</p></div>
+          <div class="card list">${Object.entries(p.examples).map(([k, v]) => `<div class="item"><div class="grow small">${h(k)}</div><strong>₦${Number(v).toLocaleString()}</strong></div>`).join('')}</div>
+          <button class="btn btn-ink" id="fclose">Got it</button></div></div>`;
+        const close = () => { sh.innerHTML = ''; }; sh.querySelector('#fclose').addEventListener('click', close); sh.querySelector('#fx').addEventListener('click', (e) => { if (e.target.id === 'fx') close(); });
+      });
       if (!el.querySelector('#save')) return;
       el.querySelector('#save').addEventListener('click', async () => { const label = prompt('Name this route (optional), e.g. Home to work') ?? null; if (label === null) return; try { await api.wakaSave(from, to, label); toast('Route saved'); } catch (err) { failed(el, err); } });
     }

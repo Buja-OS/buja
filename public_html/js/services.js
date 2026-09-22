@@ -161,7 +161,7 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
     const f = Object.fromEntries(q().entries());
     const at = f.lat ? { lat: +f.lat, lng: +f.lng } : await here(3500);
     const { artisans, trades } = await api.artisans({ ...f, lat: at ? at.lat : '', lng: at ? at.lng : '' });
-    return `${topbar('Artisans', '/home', `<a class="iconbtn" href="#/artisans/register" aria-label="List yourself" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('plus')}</a>`)}
+    return `${topbar('Artisans', '/home', `<a class="iconbtn" href="#/artisans/map${f.trade ? '?trade=' + encodeURIComponent(f.trade) : ''}" aria-label="See them on the map" style="margin-right:6px">${icon('map-location-dot')}</a><a class="iconbtn" href="#/artisans/register" aria-label="List yourself" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('plus')}</a>`)}
     <form id="af" class="pad" style="padding-bottom:0"><div class="card row" style="height:48px;padding:0 16px;gap:10px">${icon('magnifying-glass')}<input id="aq" name="q" type="search" value="${h(f.q || '')}" placeholder="Mechanic, plumber, DStv installer" style="flex:1;border:none;background:transparent;outline:none;font-size:15px;color:var(--ink)"></div></form>
     <div class="row" style="gap:8px;padding:10px 16px 0;overflow-x:auto;scrollbar-width:none"><a class="chip ${!f.trade ? 'on' : ''}" href="#/artisans?${new URLSearchParams({ ...f, trade: '' })}">All</a>${Object.entries(trades).map(([k, l]) => `<a class="chip ${f.trade === k ? 'on' : ''}" href="#/artisans?${new URLSearchParams({ ...f, trade: k })}">${h(l)}</a>`).join('')}</div>
     <main class="pad stack" style="gap:10px;padding-top:12px">

@@ -109,4 +109,28 @@ export function registerCityMore({ route, go, state, api, ui, DISTRICTS, failed 
       </div>`).join('')}
     </main>`;
   });
+
+  /* ================================ ADMIN: WAKA PRICING ================================ */
+  route('/admin/waka-pricing', { auth: true, tabs: '' }, async () => {
+    if (!state.user.admin) return `${topbar('', '/admin')}<div class="placeholder"><div class="h-md">Admins only</div></div>`;
+    const p = await api.wakaPricing();
+    return `${topbar('Waka pricing', '/admin')}<main class="pad stack" style="gap:14px">
+      <div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Petrol price in Abuja</div><div class="small muted" style="line-height:1.5">Every Waka estimate moves with this. Check it when fuel news breaks, or monthly: NNPC and Dangote station prices in Abuja. Last set ${h(p.reviewedAt || 'never')}.</div>
+        <div class="row" style="gap:8px"><span style="font-size:20px;font-weight:800">₦</span><input class="input" id="pump" type="number" inputmode="numeric" value="${p.pumpPrice}" style="font-size:20px;font-weight:800;flex:1"><span class="small muted">per litre</span></div></div>
+      <div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Fine-tune by mode</div><div class="small muted" style="line-height:1.5">Only if riders keep reporting fares above or below Waka's estimate on many routes. Percent, plus or minus.</div>
+        ${[['along', 'Along cabs'], ['bus', 'Buses'], ['keke', 'Keke'], ['bolt', 'Bolt and inDrive']].map(([k, l]) => `<div class="row" style="gap:10px"><span class="grow small" style="font-weight:600">${l}</span><span class="small muted">x${p.factors[k]}</span><input class="input" data-adj="${k}" type="number" value="${p.adjust[k]}" style="width:90px;text-align:right"><span class="small muted">%</span></div>`).join('')}</div>
+      <div class="card list" id="ex">${Object.entries(p.examples).map(([k, v]) => `<div class="item"><div class="grow small">${h(k)}</div><strong>₦${Number(v).toLocaleString()}</strong></div>`).join('')}</div>
+      <button class="btn btn-primary" id="save">Save and update every estimate</button>
+      <div class="small muted" style="line-height:1.5">Stretches with ${p.crowdMin} or more rider reports in 30 days show what riders paid instead, whatever is set here.</div>
+    </main>`;
+  }, {
+    mount(el) {
+      el.querySelector('#save')?.addEventListener('click', async (e) => {
+        const b = e.currentTarget; busy(b, true);
+        const adjust = {}; el.querySelectorAll('[data-adj]').forEach((i) => { adjust[i.dataset.adj] = +i.value || 0; });
+        try { const p = await api.setWakaPricing({ pumpPrice: +el.querySelector('#pump').value, adjust }); el.querySelector('#ex').innerHTML = Object.entries(p.examples).map(([k, v]) => `<div class="item"><div class="grow small">${h(k)}</div><strong>₦${Number(v).toLocaleString()}</strong></div>`).join(''); toast('Saved. Every estimate now uses ₦' + p.pumpPrice.toLocaleString()); } catch (err) { failed(el, err); }
+        busy(b, false);
+      });
+    }
+  });
 }

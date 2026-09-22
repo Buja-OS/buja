@@ -1,4 +1,4 @@
-# Buja, Phase 23: faster start, iPhone setup, and learners' answers
+# Buja, Phase 24: Waka rebuilt on real 2026 fares, and Bolt-style maps everywhere
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -494,8 +494,45 @@ screens, no server errors.
   the code or prompt they submitted, when they last saved it, their score and attempts, and the tests or rubric
   it was judged against.
 
+## Phase 24: Waka fares, maps, and artisans who come to you
+
+**Fares, rebuilt on researched 2026 prices.** The old seeds were badly out of date (Life Camp to Wuse Market
+was N200; riders paid N800 in March 2026) and ignored fuel entirely. `api/src/WakaFares.php` now holds one
+formula per mode, each indexed to the Abuja pump price:
+- along cabs: `N443 + N52.4 per straight-line km`, fitted to seven Daily Trust fares of 17 March 2026 using
+  Waka's own coordinates (Lugbe-Berger N1,000, Nyanya-Jabi N1,700, Berger-Zuba N1,800, Life Camp-Wuse N800 ...)
+- buses: mid-2026 street fares (short N400, Nyanya-Wuse N700, Area 1-Gwagwalada N1,550)
+- keke: NAN of 20 Sept 2026, N200-500, and never suggested inside the city centre, where they are banned
+- light rail: N500-600, flagged as low confidence
+- door to door: a charter is about four along seats; Bolt uses its Aug 2024 card marked up for fuel
+  (Wuse-Airport N12,300 against a published N13,432); inDrive is shown as a fair opening offer; Uber is gone,
+  having left Nigeria on 2 Sept 2026; airport trips carry the FAAN premium.
+Fares move with fuel at about half the rate fuel moves, which is how Abuja has behaved since 2023. Once three
+riders report a stretch within 30 days their median replaces the estimate, and every fare says which it is.
+Admin -> Waka pricing sets the pump price and per-mode adjustments; `/waka/pricing` explains it all to riders.
+
+**Maps, rebuilt.** `js/map.js` is a shared MapLibre GL module on OpenFreeMap vector tiles (free, no key), replacing
+Leaflet on openstreetmap.org's own tile server, which its usage policy forbids for an app. It gives every screen
+HTML pins with Font Awesome icons, markers that glide and turn, road route lines, a draggable bottom sheet, and a
+plain-background fallback so pins and tracking still work when the street map cannot load. Road routes come from
+`api/src/Routing.php` (OpenRouteService if a key is set, else the public OSRM server, else straight lines),
+cached for 14 days in 100 m buckets so the free routers are not hammered. Rebuilt on it: Waka journeys, a new
+live Waka map (stops near you, road alerts as warning pins, plan from a stop), the fuel board coloured by queue,
+Trip Share, and the new artisan screens.
+
+**Mechanic near me.** Artisans appear on a map with their trade's icon (wrench, scissors, faucet ... all 28),
+name and rating. Ask one to come: they see only your area until they accept, then your exact spot. While they
+travel their phone shares position (screen wake lock, sent at most every 4 s or every 20 m), and you watch them
+approach with a live ETA, "stopped for N min" and "signal lost" warnings, auto-arrival within 80 m, and a rating
+at the end. The camera follows both of you and stops following if you drag, with a recenter button. Their trail
+is deleted when the job ends. Polling over plain HTTP, so it works on the free host.
+
+Bugs fixed: a second job with the same artisan could not be rated (one rating per person per artisan, updated
+each job); pins hidden behind the sheet; "0 km from you" on requests; road alerts had no coordinates.
+Swept 121 screens cold as an admin and as a resident: no crashes, no server errors.
+
 ## What is next
 
-Phase 24: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 25: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

@@ -154,9 +154,41 @@ final class WakaController
         if ($options) { $options[0]['tag'] = 'cheapest'; $fi = 0; foreach ($options as $i => $o) if ($o['minutes'] < $options[$fi]['minutes']) $fi = $i; if ($fi !== 0 || count($options) === 1) $options[$fi]['tag'] = $options[$fi]['tag'] ?? 'fastest'; if (count($options) > 1 && $fi === 0) $options[0]['tag'] = 'cheapest and fastest'; }
         Track::hit(Auth::user(), 'waka', 'plan');
         $km = WakaRules::km((float) $a['lat'], (float) $a['lng'], (float) $b['lat'], (float) $b['lng']);
-        $taxi = ['legs' => [['mode' => 'taxi', 'modeLabel' => 'Taxi', 'routeName' => 'Taxi drop, direct', 'from' => $this->place($a), 'to' => $this->place($b), 'km' => round($km, 1), 'minutes' => WakaRules::minutes($km, 'taxi'), 'fare' => ['amount' => (int) (round(max(1500, 400 + $km * 350) / 100) * 100), 'reports' => 0, 'confirmed' => false], 'path' => [$this->place($a), $this->place($b)], 'say' => 'Agree the price before you enter', 'color' => '#1B1B1F', 'ridersNow' => 0]], 'transfers' => 0, 'tag' => 'direct', 'taxi' => true];
-        $taxi['fare'] = $taxi['legs'][0]['fare']['amount']; $taxi['minutes'] = $taxi['legs'][0]['minutes']; $taxi['confirmed'] = false; $taxi['ridersNow'] = 0;
-        Http::json(['from' => $this->place($a), 'to' => $this->place($b), 'km' => round($km, 1), 'options' => $options, 'taxi' => $taxi]);
+        // Door to door: a chartered taxi, Bolt and inDrive, estimated from road distance and fuel. Uber left Nigeria on 2 Sept 2026.
+        $airport = stripos($a['name'] . ' ' . $b['name'], 'airport') !== false;
+        $mins = WakaRules::minutes($km * WakaFares::ROAD_FACTOR, 'taxi');
+        $drop = WakaFares::drop($km, $airport);
+        $taxi = ['legs' => [['mode' => 'taxi', 'modeLabel' => 'Taxi', 'routeName' => 'Taxi drop, direct', 'from' => $this->place($a), 'to' => $this->place($b), 'km' => round($km * WakaFares::ROAD_FACTOR, 1), 'minutes' => $mins, 'fare' => ['amount' => $drop, 'reports' => 0, 'confirmed' => false, 'source' => 'estimate']]], 'transfers' => 0, 'taxi' => true, 'fare' => $drop, 'minutes' => $mins, 'confirmed' => false, 'ridersNow' => 0];
+        $rides = [
+            ['kind' => 'drop', 'label' => 'Taxi drop (charter)', 'fare' => $drop, 'range' => [WakaFares::drop($km * 0.8, $airport), (int) (ceil($drop * 1.2 / 50) * 50)], 'minutes' => $mins, 'note' => $airport ? 'Airport runs cost more: e-hailing pickups there have been restricted since the FAAN directive of 30 July 2026.' : 'Agree the price before you enter. Roughly four along seats.'],
+            ['kind' => 'bolt', 'label' => 'Bolt', 'fare' => WakaFares::bolt($km, $mins), 'range' => [WakaFares::bolt($km, $mins), (int) (ceil(WakaFares::bolt($km, $mins) * 1.6 / 50) * 50)], 'minutes' => $mins, 'note' => 'Estimate. Surge can push it higher at rush hour and in rain.'],
+            ['kind' => 'indrive', 'label' => 'inDrive', 'fare' => WakaFares::indrive($km, $mins), 'range' => null, 'minutes' => $mins, 'note' => 'A fair opening offer. You propose, drivers accept or counter.'],
+        ];
+        Http::json(['from' => $this->place($a), 'to' => $this->place($b), 'km' => round($km, 1), 'options' => $options, 'taxi' => $taxi, 'rides' => $rides, 'pricing' => ['pumpPrice' => (int) WakaFares::config()['pump_price'], 'reviewedAt' => WakaFares::config()['reviewed_at']]]);
+    }
+
+    /** GET /waka/pricing : how fares are worked out, with live examples */
+    public function pricing(): void { Auth::require(); Http::json(WakaFares::explain()); }
+
+    /** POST /admin/waka/pricing { pumpPrice, adjust: {along, bus, keke, bolt} } */
+    public function setPricing(): void
+    {
+        $u = Auth::require(); if (empty($u['is_admin']) && ($u['role'] ?? '') !== 'admin') Http::json(['error' => 'forbidden'], 403);
+        $b = Http::body(); $p = (int) ($b['pumpPrice'] ?? 0);
+        if ($p < 300 || $p > 5000) Http::json(['error' => 'validation', 'message' => 'Pump price per litre, between N300 and N5,000.'], 422);
+        WakaFares::set('pump_price', (string) $p); WakaFares::set('reviewed_at', gmdate('Y-m-d'));
+        foreach (['along', 'bus', 'keke', 'bolt'] as $m) if (isset($b['adjust'][$m])) WakaFares::set('adjust_' . $m, (string) max(-50, min(100, (float) $b['adjust'][$m])));
+        Http::json(WakaFares::explain());
+    }
+
+    /** GET /route?pts=lat,lng;lat,lng : a road route for any map in Buja */
+    public function road(): void
+    {
+        Auth::require(); RateLimit::hit('route', 120, 3600);
+        $pts = array_map(fn($p) => array_map('floatval', explode(',', $p)), array_filter(explode(';', (string) ($_GET['pts'] ?? ''))));
+        $pts = array_values(array_filter($pts, fn($p) => count($p) === 2 && $p[0] > 8 && $p[0] < 10 && $p[1] > 6.5 && $p[1] < 8)); // FCT and around
+        if (count($pts) < 2 || count($pts) > 12) Http::json(['error' => 'validation', 'message' => 'Two to twelve points inside the FCT.'], 422);
+        Http::json(Routing::route($pts));
     }
 
     /** POST /waka/fares { routeId, from, to, amount } : the crowd fare */

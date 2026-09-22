@@ -1,3 +1,4 @@
+import { createMap, carHtml } from './map.js';
 // Buja Trip Share: tell a friend where you are while you meet someone. Registered by app.js.
 export function registerSafety({ route, go, state, api, ui, failed }) {
   const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon } = ui;
@@ -58,25 +59,12 @@ export function registerSafety({ route, go, state, api, ui, failed }) {
 
   async function drawTrip(el, data) {
     const box = el.querySelector('#map'); if (!box) return;
-    const d = data || (await api.safety()).active; if (!d || !d.last) { box.innerHTML = `<div class="placeholder" style="height:100%"><div class="small muted">Waiting for your first position…</div></div>`; return; }
-    const ok = await loadLeaflet(); if (!ok) { box.innerHTML = `<div class="placeholder" style="height:100%;padding:16px"><div class="small muted">Last seen at ${d.last.lat.toFixed(4)}, ${d.last.lng.toFixed(4)}</div></div>`; return; }
-    box.innerHTML = ''; const map = L.map(box, { zoomControl: false, attributionControl: false }).setView([d.last.lat, d.last.lng], 15);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
-    if (!box.querySelector('[data-credit]')) { const b = document.createElement('button'); b.dataset.credit = '1'; b.type = 'button'; b.setAttribute('aria-label', 'Map data credit'); b.textContent = 'i'; b.style.cssText = 'position:absolute;right:8px;bottom:8px;width:22px;height:22px;border-radius:11px;border:none;background:rgba(255,255,255,.82);color:#5A5A62;font:600 12px Inter,sans-serif;z-index:500'; b.addEventListener('click', (e) => { e.stopPropagation(); toast('Map data © OpenStreetMap contributors'); }); box.style.position = 'relative'; box.appendChild(b); }
-    if (d.track && d.track.length > 1) L.polyline(d.track.map((p) => [p.lat, p.lng]), { color: '#FF7A1A', weight: 5, opacity: .85 }).addTo(map);
-    L.circleMarker([d.last.lat, d.last.lng], { radius: 10, color: '#fff', weight: 3, fillColor: d.status === 'alarm' ? '#D92D20' : '#FF7A1A', fillOpacity: 1 }).addTo(map);
-    setTimeout(() => map.invalidateSize(), 200);
-  }
-  let leafletReady = null;
-  function loadLeaflet() {
-    if (window.L) return Promise.resolve(true);
-    if (leafletReady) return leafletReady;
-    leafletReady = new Promise((res) => {
-      const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'; document.head.appendChild(css);
-      const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js'; s.onload = () => res(true); s.onerror = () => res(false); document.head.appendChild(s);
-      setTimeout(() => res(!!window.L), 6000);
-    });
-    return leafletReady;
+    const d = data || (await api.safety()).active; if (!d || !d.last) { box.innerHTML = `<div class="placeholder" style="height:100%"><div class="small muted">Waiting for your first position...</div></div>`; return; }
+    if (!box._bm) { box._bm = await createMap(box, { center: [d.last.lng, d.last.lat], zoom: 15 }); if (!box._bm) { box.innerHTML = `<div class="placeholder" style="height:100%;padding:16px"><div class="small muted">Last seen at ${d.last.lat.toFixed(4)}, ${d.last.lng.toFixed(4)}</div></div>`; return; } box._bm.marker('me', { lng: d.last.lng, lat: d.last.lat, anchor: 'center', z: 3, html: carHtml(d.status === 'alarm' ? '#D92D20' : '#FF7A1A', 'person') }); }
+    const m = box._bm;
+    if (d.track && d.track.length > 1) m.line('trail', d.track.map((p) => [p.lng, p.lat]), { color: '#FF7A1A', width: 5 });
+    m.move('me', d.last.lng, d.last.lat, { ms: 2000 });
+    m.fit((d.track && d.track.length ? d.track : [d.last]).slice(-30).map((p) => [p.lng, p.lat]), { bottom: 40, top: 40, maxZoom: 16 });
   }
 
   /* ---------- Start a trip ---------- */

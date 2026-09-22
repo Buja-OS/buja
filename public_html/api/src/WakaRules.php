@@ -21,22 +21,22 @@ final class WakaRules
         return max(3, (int) round($km / (self::SPEED[$mode] ?? 22) * 60 * 1.25)); // 1.25 for stops and waiting
     }
 
-    /** Consensus fare between two stops of a route: median of recent reports, else the seeded estimate. */
+    /**
+     * Fare between two stops of a route. Riders' median once three of them agree in 30 days; otherwise the
+     * fuel-indexed estimate for the route's mode (see WakaFares). A lone report is passed along as a hint.
+     */
     public static function fare(int $routeId, int $fromStop, int $toStop): array
     {
-        $st = Db::pdo()->prepare('SELECT amount FROM fare_reports WHERE route_id = ? AND from_place = ? AND to_place = ? AND created_at > ? ORDER BY amount');
-        $st->execute([$routeId, $fromStop, $toStop, gmdate('Y-m-d H:i:s', time() - self::FARE_WINDOW_DAYS * 86400)]);
-        $amts = array_map('intval', array_column($st->fetchAll(), 'amount'));
-        if ($amts) { $n = count($amts); $med = $n % 2 ? $amts[intdiv($n, 2)] : (int) round(($amts[$n / 2 - 1] + $amts[$n / 2]) / 2); return ['amount' => $med, 'reports' => $n, 'confirmed' => true]; }
-        $seed = Db::one('SELECT amount FROM fare_seeds WHERE route_id = ? AND ((from_place = ? AND to_place = ?) OR (from_place = ? AND to_place = ?))', [$routeId, $fromStop, $toStop, $toStop, $fromStop]);
-        if ($seed) return ['amount' => (int) $seed['amount'], 'reports' => 0, 'confirmed' => false];
-        // No seed for this pair: estimate from the route's origin-to-end seed scaled by distance.
-        $full = Db::one('SELECT s.amount, r.origin_place, r.dest_place FROM fare_seeds s JOIN routes r ON r.id = s.route_id WHERE s.route_id = ? AND s.from_place = r.origin_place AND s.to_place = r.dest_place', [$routeId]);
-        if (!$full) return ['amount' => null, 'reports' => 0, 'confirmed' => false];
+        $st = Db::pdo()->prepare('SELECT amount FROM fare_reports WHERE route_id = ? AND ((from_place = ? AND to_place = ?) OR (from_place = ? AND to_place = ?)) AND created_at > ? ORDER BY amount');
+        $st->execute([$routeId, $fromStop, $toStop, $toStop, $fromStop, gmdate('Y-m-d H:i:s', time() - self::FARE_WINDOW_DAYS * 86400)]);
+        $amts = array_map('intval', array_column($st->fetchAll(), 'amount')); $n = count($amts);
+        $median = $n ? ($n % 2 ? $amts[intdiv($n, 2)] : (int) round(($amts[$n / 2 - 1] + $amts[$n / 2]) / 2)) : null;
+        if ($n >= WakaFares::CROWD_MIN) return ['amount' => $median, 'reports' => $n, 'confirmed' => true, 'source' => 'riders'];
+        $r = Db::one('SELECT mode, name FROM routes WHERE id = ?', [$routeId]);
         $a = Db::one('SELECT lat, lng FROM places WHERE id = ?', [$fromStop]); $b = Db::one('SELECT lat, lng FROM places WHERE id = ?', [$toStop]);
-        $o = Db::one('SELECT lat, lng FROM places WHERE id = ?', [$full['origin_place']]); $d = Db::one('SELECT lat, lng FROM places WHERE id = ?', [$full['dest_place']]);
-        $part = self::km((float) $a['lat'], (float) $a['lng'], (float) $b['lat'], (float) $b['lng']); $whole = max(0.5, self::km((float) $o['lat'], (float) $o['lng'], (float) $d['lat'], (float) $d['lng']));
-        return ['amount' => (int) (round(max(100, (int) $full['amount'] * $part / $whole) / 50) * 50), 'reports' => 0, 'confirmed' => false];
+        $km = ($a && $b) ? self::km((float) $a['lat'], (float) $a['lng'], (float) $b['lat'], (float) $b['lng']) : 5;
+        $est = WakaFares::estimate((string) ($r['mode'] ?? 'along'), $km, $r['name'] ?? null);
+        return ['amount' => $est, 'reports' => $n, 'confirmed' => false, 'source' => 'estimate', 'hint' => $median, 'lowConfidence' => ($r['mode'] ?? '') === 'train'];
     }
 
     public static function ridersNow(int $routeId): int
