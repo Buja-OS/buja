@@ -2,24 +2,10 @@
 import { state, setState, subscribe, applyTheme } from './store.js';
 import { api, detectApi, serverInfo } from './api.js';
 import { h, toast, mark, markAuto, topbar, tabbar, field, showErrors, bindEyes, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify } from './ui.js';
-import { registerWork } from './work.js';
 import { registerMessages } from './messages.js';
-import { registerMatch } from './match.js';
-import { registerWaka } from './waka.js';
-import { registerHomes } from './homes.js';
-import { registerDeclutter } from './declutter.js';
-import { registerAsk } from './ask.js';
-import { registerTrust, registerLaunch } from './trust.js';
-import { registerCity } from './city.js';
-import { registerSafety } from './safety.js';
-import { registerGrowth } from './growth.js';
 import { registerCall } from './call.js';
 import { registerAlerts } from './alerts.js';
 import { registerTrustAlerts, ringer } from './trustalerts.js';
-import { registerCityServices } from './services.js';
-import { registerCitySignals } from './citysignals.js';
-import { registerLearn } from './learn.js';
-import { registerCityMore } from './citymore.js';
 import { registerEngage } from './engage.js';
 import { passkeyAvailable, registerPasskey, loginWithPasskey } from './passkey.js';
 import { registerRtc, watchIncoming } from './rtc.js';
@@ -98,6 +84,9 @@ async function render() {
   if (!state.booted) return;
   const seq = ++renderSeq;
   const path = current();
+  try { await ensure(path); }
+  catch { if (seq !== renderSeq) return; app.innerHTML = `<div class="screen no-tabs">${topbar('', '/home')}<div class="placeholder"><div class="mi card">${icon('triangle-exclamation')}</div><div class="h-md">Could not open this part of Buja</div><div class="small muted">Check your connection and try again.</div><button class="btn btn-ink" onclick="location.reload()" style="width:auto">Try again</button></div></div>`; return; }
+  if (seq !== renderSeq) return;
   const { r, params } = match(path);
   if (r.auth && !state.user) { go('/welcome'); return; }
   if (r.guest && state.user) { go(state.user.district ? '/home' : '/onboarding'); return; }
@@ -292,7 +281,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
   offerPasskey();
   if (window.bujaLightWatch && !window.__lw) { window.__lw = 1; window.bujaLightWatch(); }
   lightPrompt();
-  if (window.bujaPushNudge) window.bujaPushNudge();
+  if (window.bujaPushNudge) window.bujaPushNudge().finally(() => window.bujaContinue && window.bujaContinue());
   api.weather?.().then(({ weather: w }) => {
     const box = document.getElementById('weather'); if (!box || !w) return;
     const art = { sun: '#F5A524', cloud: '#7A8290', rain: '#2E7DD1', storm: '#6B4FA8' }[w.icon] || '#7A8290';
@@ -410,25 +399,50 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
   }
 });
 
-registerWork({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
-registerCityMore({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
-registerLearn({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
-registerCitySignals({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, DISTRICTS, failed });
-registerCityServices({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
 registerTrustAlerts({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerAlerts({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerRtc({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerCall({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
-registerGrowth({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
-registerSafety({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
-registerCity({ route, go, state, api, radio, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
-registerLaunch({ route, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
-registerTrust({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
-registerAsk({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
-registerDeclutter({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
-registerHomes({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
-registerWaka({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
-registerMatch({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
+/* ---------------- Lazy modules ----------------
+   Home, messages, calls and settings load at once. Every other part of Buja loads the first time its screen
+   is opened, and all of them download quietly in the background once Home is showing, so later taps are instant. */
+const UI = { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify };
+const BASE = { route, go, state, api, ui: UI, DISTRICTS, failed };
+const MODULES = {
+  work:        () => import('./work.js').then((m) => m.registerWork({ ...BASE, setState })),
+  match:       () => import('./match.js').then((m) => m.registerMatch(BASE)),
+  waka:        () => import('./waka.js').then((m) => m.registerWaka(BASE)),
+  homes:       () => import('./homes.js').then((m) => m.registerHomes(BASE)),
+  declutter:   () => import('./declutter.js').then((m) => m.registerDeclutter(BASE)),
+  ask:         () => import('./ask.js').then((m) => m.registerAsk(BASE)),
+  trust:       () => import('./trust.js').then((m) => { m.registerLaunch({ route, api, ui: UI, failed }); m.registerTrust({ ...BASE, setState }); }),
+  city:        () => import('./city.js').then((m) => m.registerCity({ ...BASE, radio })),
+  safety:      () => import('./safety.js').then((m) => m.registerSafety(BASE)),
+  growth:      () => import('./growth.js').then((m) => m.registerGrowth(BASE)),
+  services:    () => import('./services.js').then((m) => m.registerCityServices(BASE)),
+  citysignals: () => import('./citysignals.js').then((m) => m.registerCitySignals(BASE)),
+  learn:       () => import('./learn.js').then((m) => m.registerLearn(BASE)),
+  citymore:    () => import('./citymore.js').then((m) => m.registerCityMore(BASE)),
+};
+/** First path segment → the modules that own screens under it. Several share /admin and /report. */
+const LAZY = {
+  work: ['work'], match: ['match'], waka: ['waka'], homes: ['homes'], declutter: ['declutter'], ask: ['ask'],
+  admin: ['trust', 'services', 'citymore'], plus: ['trust'], verify: ['trust'],
+  news: ['city'], radio: ['city'], social: ['city'], safety: ['safety'], trip: ['safety'],
+  install: ['growth'], invite: ['growth'], join: ['growth'], privacy: ['growth'], terms: ['growth'], search: ['growth'], report: ['growth', 'services'],
+  artisans: ['services'], meetup: ['services'], tickets: ['services'],
+  blood: ['citysignals'], fuel: ['citysignals'], light: ['citysignals'], lostfound: ['citysignals'], plates: ['citysignals'], prices: ['citysignals'],
+  cert: ['learn'], learn: ['learn'], queues: ['citymore'], 'rent-index': ['citymore'], rides: ['citymore'],
+};
+const loaded = {};
+function need(name) { if (!loaded[name]) loaded[name] = MODULES[name]().catch((e) => { delete loaded[name]; throw e; }); return loaded[name]; }
+function ensure(path) { const list = LAZY[path.split('/')[1] || '']; return list ? Promise.all(list.map(need)) : Promise.resolve(); }
+function preloadRest() {
+  const idle = window.requestIdleCallback || ((f) => setTimeout(f, 1200));
+  const names = Object.keys(MODULES);
+  const next = () => { const n = names.shift(); if (!n) return; need(n).then(() => { if (n === 'citysignals' && state.user && window.bujaLightWatch && !window.__lw) { window.__lw = 1; window.bujaLightWatch(); } }).catch(() => {}).finally(() => idle(next)); };
+  idle(next);
+}
 const push = registerMessages({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerEngage({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed, push });
 
@@ -519,7 +533,8 @@ function mountGoogle(el) {
   try { const r = await api.me(); state.user = r.user; } catch { state.user = null; }
   setState({ booted: true });
   if (!location.hash) go(state.user ? '/home' : '/welcome');
-  render();
+  await render();
+  setTimeout(preloadRest, 1500); // after the first screen is painted
   setInterval(() => { if (!state.user || document.hidden || api.isMock() || !navigator.geolocation) return; navigator.geolocation.getCurrentPosition((p) => { api.pingTrip(p.coords.latitude, p.coords.longitude).catch(() => {}); }, () => {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }); }, 120000);
   setInterval(async () => { if (state.user && !document.hidden && !api.isMock()) { try { const t = await api.today(); if (t.unread !== state.unread) { state.unread = t.unread; setBadge(t.unread); } } catch {} } }, 60000);
   if ('serviceWorker' in navigator && !api.isMock() && location.protocol === 'https:') {

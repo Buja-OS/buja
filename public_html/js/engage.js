@@ -17,7 +17,7 @@ export async function mountAdminPerson(el, id, { api, h, icon, toast, busy }) {
       <div style="height:6px;border-radius:3px;background:var(--surface)"><div style="height:6px;border-radius:3px;background:var(--green);width:${c.pct}%"></div></div>
       ${c.next ? `<div class="small">Next: <strong>${h(c.next.title)}</strong> <span class="muted">(${c.next.kind}, ${c.next.minutes} min)</span></div>` : ''}
       ${c.certificate ? `<div class="row small" style="gap:8px">${icon('award')} <span class="grow">Certificate <strong style="letter-spacing:1px">${h(c.certificate.code)}</strong> · ${c.certificate.score}% · ${h(c.certificate.at.slice(0, 10))}</span><a href="#/cert/${h(c.certificate.code)}" style="font-weight:650">Verify</a></div>` : ''}
-      <details><summary class="small" style="cursor:pointer;color:var(--ink-2)">Every lesson</summary><div class="stack" style="gap:3px;margin-top:6px">${c.detail.map((x) => `<div class="row small" style="gap:8px"><span style="width:18px;color:${x.done ? 'var(--green-dark)' : 'var(--ink-3)'}">${x.done ? '✓' : x.index + 1}</span><span class="grow" style="${x.done ? '' : 'color:var(--ink-3)'}">${h(x.title)}</span>${x.done ? `<span class="muted">${x.score}%${x.attempts > 1 ? ' · ' + x.attempts + ' tries' : ''}</span>` : ''}</div>`).join('')}</div></details>
+      <details><summary class="small" style="cursor:pointer;color:var(--ink-2)">Every lesson</summary><div class="stack" style="gap:3px;margin-top:6px">${c.detail.map((x) => `<div class="row small" style="gap:8px"><span style="width:18px;color:${x.done ? 'var(--green-dark)' : 'var(--ink-3)'}">${x.done ? '✓' : x.index + 1}</span><span class="grow" style="${x.done ? '' : 'color:var(--ink-3)'}">${h(x.title)}</span>${x.done ? `<span class="muted">${x.score}%${x.attempts > 1 ? ' · ' + x.attempts + ' tries' : ''}</span>` : ''}${x.hasAnswer ? `<a href="#" data-ans="${h(c.slug)}|${x.index}" style="font-weight:650;margin-left:6px">Answer</a>` : ''}</div><div data-ansbox="${h(c.slug)}|${x.index}"></div>`).join('')}</div></details>
     </div>`).join('') : `<div class="small muted">Has not started a course.</div>`}
     <div class="row small muted" style="gap:8px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--line)"><span>Reminders ${u.remindersOn ? 'on' : 'switched off by them'}</span><span>· last sent ${ago(u.lastReminder)}</span><span>· ${u.pushDevices ? u.pushDevices + ' device' + (u.pushDevices === 1 ? '' : 's') + ' with notifications' : 'notifications not switched on'}</span></div>
     ${L.courses.some((c) => c.status === 'in_progress') ? `<button class="btn btn-sm btn-outline" id="nudgenow">${icon('bell')} Send their learning reminder now</button>` : ''}
@@ -29,6 +29,19 @@ export async function mountAdminPerson(el, id, { api, h, icon, toast, busy }) {
     <button class="btn btn-sm btn-ink" id="msend">${icon('paper-plane')} Send</button>
     <div class="small muted">Shows in their notifications, and on their phone if they switched push on. Falls back to email when they have no push device.</div>
   </div>`;
+  box.querySelectorAll('[data-ans]').forEach((a) => a.addEventListener('click', async (e) => {
+    e.preventDefault(); const [course, n] = a.dataset.ans.split('|'); const slot = box.querySelector(`[data-ansbox="${a.dataset.ans}"]`);
+    if (slot.innerHTML) { slot.innerHTML = ''; return; }
+    slot.innerHTML = '<div class="small muted" style="padding:6px 0">Loading…</div>';
+    try {
+      const r = await api.adminSubmission(id, course, n);
+      slot.innerHTML = `<div class="stack" style="gap:6px;margin:6px 0 10px;padding:10px;border-radius:10px;background:var(--surface)">
+        <div class="small muted">${r.lesson.kind === 'prompt' ? 'Their prompt' : 'Their code'}${r.answer ? ', last saved ' + ago(r.answer.at) : ''}${r.progress ? ' · scored ' + r.progress.score + '% after ' + r.progress.attempts + ' attempt' + (r.progress.attempts === 1 ? '' : 's') : ''}</div>
+        <pre style="margin:0;max-height:260px;overflow:auto;background:#101014;color:#E8E8EC;padding:10px;border-radius:8px;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word">${h(r.answer ? r.answer.text : '(nothing saved)')}</pre>
+        ${r.lesson.rubric ? `<div class="small"><strong>Rubric</strong><ul style="margin:4px 0 0;padding-left:18px">${r.lesson.rubric.map((x) => `<li>${h(x)}</li>`).join('')}</ul></div>` : ''}
+        ${r.lesson.tests ? `<div class="small"><strong>Tests it had to pass</strong><ul style="margin:4px 0 0;padding-left:18px">${r.lesson.tests.map((x) => `<li>${h(x)}</li>`).join('')}</ul></div>` : ''}</div>`;
+    } catch (err) { slot.innerHTML = `<div class="small" style="color:#D92D20">${h((err && err.message) || 'Could not load')}</div>`; }
+  }));
   box.querySelector('#nudgenow')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.adminNudgeUser(id); toast(r.ok ? 'Reminder sent' : r.message); } catch (err) { toast((err && err.message) || 'Failed'); } busy(b, false); });
   box.querySelector('#msend').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { await api.adminNotifyUser(id, { title: box.querySelector('#mt').value, body: box.querySelector('#mb').value, url: box.querySelector('#mu').value }); toast('Sent'); box.querySelector('#mt').value = ''; box.querySelector('#mb').value = ''; } catch (err) { toast((err && err.message) || 'Failed'); } busy(b, false); });
 }
@@ -88,33 +101,92 @@ export function registerEngage({ route, go, state, api, ui, failed, push }) {
     }
   });
 
-  /* ---------------- The notification nudge on Home ---------------- */
-  // Shown to anyone without notifications switched on. Once a day at most; after three dismissals, weekly.
+  /* ---------------- The setup card on Home ----------------
+     One card at most, the one that matters for this phone:
+       1. iPhone in the browser: notifications only work once Buja is on the Home Screen, so explain that first
+       2. push supported but not on: switch it on (or, if blocked, how to unblock)
+       3. Android with an install offer waiting: install Buja
+     Once a day at most per card, weekly after three dismissals. */
+  const seen = (k) => { let s = {}; try { s = JSON.parse(localStorage.getItem(k) || '{}'); } catch {} return s; };
+  const due = (k) => { const s = seen(k); if (s.on) return false; const gap = (s.n || 0) >= 3 ? 7 * 86400000 : 86400000; return !s.at || Date.now() - s.at >= gap; };
+  const dismiss = (k) => { const s = seen(k); try { localStorage.setItem(k, JSON.stringify({ at: Date.now(), n: (s.n || 0) + 1 })); } catch {} };
+  const done = (k) => { try { localStorage.setItem(k, JSON.stringify({ at: Date.now(), n: 0, on: 1 })); } catch {} };
+  const place = (html) => { const slot = document.getElementById('weather'); if (!slot || document.getElementById('setupcard')) return null; const c = document.createElement('div'); c.id = 'setupcard'; c.innerHTML = html; slot.after(c); return c; };
+  const shell = (iconName, title, text, btn) => `<div class="card stack" style="padding:14px;gap:10px;margin-bottom:10px;border:2px solid var(--orange)">
+      <div class="row" style="gap:12px;align-items:flex-start"><span style="width:40px;height:40px;border-radius:12px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon(iconName)}</span>
+      <div class="grow"><div style="font-size:15px;font-weight:700">${title}</div><div class="small" style="color:var(--ink-2);line-height:1.5;margin-top:2px">${text}</div></div>
+      <button class="iconbtn" data-x aria-label="Not now" style="width:30px;height:30px;background:transparent;border:none">${icon('xmark')}</button></div>
+      ${btn || ''}</div>`;
+
+  /** Continue-learning card on Home, under the setup card. Hidden for the rest of the day once closed. */
+  window.bujaContinue = async () => {
+    if (!state.user || api.isMock()) return;
+    const k = 'buja_cont_' + new Date().toISOString().slice(0, 10); try { if (localStorage.getItem(k)) return; } catch {}
+    let r; try { r = await api.learnContinue(); } catch { return; }
+    const c = r && r.course; const slot = document.getElementById('weather');
+    if (!c || !slot || document.getElementById('contcard')) return;
+    const left = c.lessons - c.done;
+    const el = document.createElement('div'); el.id = 'contcard';
+    el.innerHTML = `<div class="card stack" style="padding:14px;gap:10px;margin-bottom:10px;background:var(--night);color:#fff;border-color:var(--night)">
+      <div class="row" style="gap:12px"><span style="width:40px;height:40px;border-radius:12px;background:rgba(126,217,87,.15);color:#7ED957;display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon('book-open')}</span>
+      <div class="grow" style="min-width:0"><div class="small" style="color:#9AA0AB">Continue learning · ${c.done} of ${c.lessons}</div><div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(c.title)}</div></div>
+      <button class="iconbtn" data-x aria-label="Hide for today" style="width:30px;height:30px;background:transparent;border:none;color:#fff">${icon('xmark')}</button></div>
+      <div style="height:5px;border-radius:3px;background:rgba(255,255,255,.12)"><div style="height:5px;border-radius:3px;background:#7ED957;width:${c.pct}%"></div></div>
+      <a class="btn" href="#/learn/${h(c.slug)}/${c.next.index}" style="background:#7ED957;color:#101014;border:none">Next: ${h(c.next.title)} · ${c.next.minutes} min</a>
+      ${left <= 2 ? `<div class="small" style="color:#B5B5BC">${left === 1 ? 'One lesson' : 'Two lessons'} from your certificate.</div>` : ''}</div>`;
+    const after = document.getElementById('setupcard') || slot; after.after(el);
+    el.querySelector('[data-x]').addEventListener('click', () => { try { localStorage.setItem(k, '1'); } catch {} el.remove(); });
+  };
+
   window.bujaPushNudge = async () => {
-    if (!state.user || api.isMock() || !push || !push.pushSupported()) return;
-    const slot = document.getElementById('weather'); if (!slot || document.getElementById('pushnudge')) return;
-    const on = await Promise.race([push.pushState(), new Promise((r) => setTimeout(() => r(false), 3000))]); // never wait forever on a stuck service worker
-    if (on) return; // this device already has it
-    const perm = ('Notification' in window) ? Notification.permission : 'default';
-    const k = 'buja_pn'; let s = {}; try { s = JSON.parse(localStorage.getItem(k) || '{}'); } catch {}
-    const gap = (s.n || 0) >= 3 ? 7 * 86400000 : 86400000;
-    if (s.at && Date.now() - s.at < gap) return;
-    const blocked = perm === 'denied';
-    const card = document.createElement('div');
-    card.id = 'pushnudge';
-    card.innerHTML = `<div class="card stack" style="padding:14px;gap:10px;margin-bottom:10px;border:2px solid var(--orange)">
-      <div class="row" style="gap:12px;align-items:flex-start"><span style="width:40px;height:40px;border-radius:12px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon('bell')}</span>
-      <div class="grow"><div style="font-size:15px;font-weight:700">${blocked ? 'Notifications are blocked for Buja' : 'Switch on notifications'}</div><div class="small" style="color:var(--ink-2);line-height:1.5;margin-top:2px">${blocked ? 'Your browser is blocking them, so you will miss messages, interview calls and seat requests. Tap the lock or ⓘ icon beside the address bar, then Notifications, then Allow. Come back and tap Check again.' : 'So you do not miss messages, interview calls, seat requests and your learning reminders. One tap, and you can switch any kind off later in Settings.'}</div></div>
-      <button class="iconbtn" id="pnx" aria-label="Not now" style="width:30px;height:30px;background:transparent;border:none">${icon('xmark')}</button></div>
-      <button class="btn btn-primary" id="pngo">${blocked ? 'Check again' : 'Switch on'}</button></div>`;
-    slot.after(card);
-    api.pushAsked().catch(() => {});
-    const close = () => { s = { at: Date.now(), n: (s.n || 0) + 1 }; try { localStorage.setItem(k, JSON.stringify(s)); } catch {} card.remove(); };
-    card.querySelector('#pnx').addEventListener('click', close);
-    card.querySelector('#pngo').addEventListener('click', async (e) => {
-      const b = e.currentTarget; busy(b, true);
-      try { await push.enablePush(); toast('Notifications are on'); card.remove(); try { localStorage.setItem(k, JSON.stringify({ at: Date.now(), n: 0, on: 1 })); } catch {} }
-      catch (err) { busy(b, false); toast((err && err.message) || 'Not switched on'); if ('Notification' in window && Notification.permission === 'denied') { card.remove(); window.bujaPushNudge(); } }
-    });
+    if (!state.user || api.isMock()) return;
+    const ua = navigator.userAgent;
+    const ios = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+    // 1. iPhone in the browser
+    if (ios && !standalone) {
+      if (!due('buja_ios')) return;
+      const v = ua.match(/OS (\d+)_(\d+)/); const old = v && (+v[1] < 16 || (+v[1] === 16 && +v[2] < 4));
+      const c = place(shell('bell', 'Add Buja to your Home Screen', old
+        ? 'Your iPhone needs iOS 16.4 or newer for Buja notifications. Update it in Settings, General, Software Update, then come back here.'
+        : 'On iPhone, notifications only work when Buja is on your Home Screen. It takes ten seconds:'
+        + '<ol style="margin:8px 0 0;padding-left:18px"><li>Tap the <strong>Share</strong> button at the bottom of Safari (the square with an arrow pointing up).</li><li>Scroll and tap <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li><li>Open Buja from the new icon and switch notifications on.</li></ol>',
+        `<a class="btn btn-primary" href="#/install">Show me with pictures</a>`));
+      if (!c) return;
+      api.pushAsked().catch(() => {});
+      c.querySelector('[data-x]').addEventListener('click', () => { dismiss('buja_ios'); c.remove(); });
+      return;
+    }
+
+    // 2. Notifications
+    if (push && push.pushSupported()) {
+      const on = await Promise.race([push.pushState(), new Promise((r) => setTimeout(() => r(false), 3000))]); // never wait forever on a stuck service worker
+      if (!on) {
+        if (!due('buja_pn')) return;
+        const blocked = ('Notification' in window) && Notification.permission === 'denied';
+        const c = place(shell('bell', blocked ? 'Notifications are blocked for Buja' : 'Switch on notifications', blocked
+          ? 'Your browser is blocking them, so you will miss messages, interview calls and seat requests. Tap the lock or ⓘ icon beside the address bar, then Notifications, then Allow. Come back and tap Check again.'
+          : 'So you do not miss messages, interview calls, seat requests and your learning reminders. One tap, and you can switch any kind off later in Settings.',
+          `<button class="btn btn-primary" data-go>${blocked ? 'Check again' : 'Switch on'}</button>`));
+        if (!c) return;
+        api.pushAsked().catch(() => {});
+        c.querySelector('[data-x]').addEventListener('click', () => { dismiss('buja_pn'); c.remove(); });
+        c.querySelector('[data-go]').addEventListener('click', async (e) => {
+          const b = e.currentTarget; busy(b, true);
+          try { await push.enablePush(); toast('Notifications are on'); done('buja_pn'); c.remove(); }
+          catch (err) { busy(b, false); toast((err && err.message) || 'Not switched on'); if ('Notification' in window && Notification.permission === 'denied') { c.remove(); window.bujaPushNudge(); } }
+        });
+        return;
+      }
+    }
+
+    // 3. Android: an install offer is waiting
+    if (!standalone && window.__bujaInstall && due('buja_inst')) {
+      const c = place(shell('file-arrow-up', 'Install Buja', 'It opens like an app from your home screen, starts faster, and works on a poor connection. No app store, about 1 MB.', `<button class="btn btn-primary" data-go>Install</button>`));
+      if (!c) return;
+      c.querySelector('[data-x]').addEventListener('click', () => { dismiss('buja_inst'); c.remove(); });
+      c.querySelector('[data-go]').addEventListener('click', async () => { const ev = window.__bujaInstall; window.__bujaInstall = null; try { ev.prompt(); const r = await ev.userChoice; if (r && r.outcome === 'accepted') { done('buja_inst'); toast('Installing'); } else dismiss('buja_inst'); } catch {} c.remove(); });
+    }
   };
 }

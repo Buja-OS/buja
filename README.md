@@ -1,4 +1,4 @@
-# Buja, Phase 22: learners, reminders, broadcasts, and a full bug sweep
+# Buja, Phase 23: faster start, iPhone setup, and learners' answers
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -474,8 +474,28 @@ Bug fixed on the way: reading a new row's id after the analytics insert (the Pha
 **Sweep:** all 126 routes visited as an admin, an ordinary resident and a second user: no crashes, no blank
 screens, no server errors.
 
+## Phase 23: a faster start, iPhone setup, Continue learning, learners' answers
+
+- **Lazy loading.** Every one of the 23 modules used to download and run before Home appeared. Now Home,
+  messages, calls, settings and the engagement code load at once; the other fourteen (Work, Match, Waka, Homes,
+  Declutter, Ask, admin, News/Radio/Social, Safety, invites and search, Meetup and Artisans, the city signals,
+  Learn, queues and rides) load the first time their screen opens, and all of them download quietly in the
+  background once Home has painted. A prefix map in `app.js` (`LAZY`) routes each screen to its module, including
+  `/admin` and `/report`, which several modules share. Measured on a cheap-phone profile (6x slower CPU,
+  750 kbps, no cache): Home ready in 3.7 s instead of 8.1 s, 210 KB of JavaScript instead of 613 KB. After Home,
+  opening Learn took 40 ms. All 115 screens opened cold, straight from a link, with no errors.
+- **The setup card** on Home picks one message per phone: on an iPhone in Safari, "Add Buja to your Home Screen"
+  with the three taps (notifications only work there, on iOS 16.4 or newer; older iPhones are told to update);
+  otherwise "Switch on notifications" (or how to unblock them); otherwise, on Android, "Install Buja" using the
+  browser's own install prompt, which Buja had been capturing since Phase 9 and never used.
+- **Continue learning** on each learner's Home: the course, progress bar, and a button straight into the next
+  lesson, with "one lesson from your certificate" near the end. Closable for the day.
+- **Learners' answers.** On a person's admin profile, every lesson with saved work has an Answer link that opens
+  the code or prompt they submitted, when they last saved it, their score and attempts, and the tests or rubric
+  it was judged against.
+
 ## What is next
 
-Phase 23: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 24: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

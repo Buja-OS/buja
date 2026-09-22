@@ -27,6 +27,8 @@ final class EngageController
         $st->execute([$userId]);
         $by = [];
         foreach ($st->fetchAll() as $r) $by[$r['course']][(int) $r['lesson']] = $r;
+        $sv = Db::pdo()->prepare('SELECT course, lesson FROM learn_saves WHERE user_id = ?'); $sv->execute([$userId]);
+        $saved = []; foreach ($sv->fetchAll() as $r) $saved[$r['course'] . ':' . (int) $r['lesson']] = true;
         $certs = [];
         $cs = Db::pdo()->prepare('SELECT code, course, score, issued_at, revoked_at FROM certificates WHERE user_id = ? ORDER BY issued_at DESC'); $cs->execute([$userId]);
         foreach ($cs->fetchAll() as $c) $certs[$c['course']] = $c;
@@ -44,7 +46,7 @@ final class EngageController
                 'attempts' => array_sum(array_map(fn($r) => (int) $r['attempts'], $done)), 'last' => $last, 'next' => $next,
                 'status' => $cert && !$cert['revoked_at'] ? 'certified' : ($next === null ? 'finished' : 'in_progress'),
                 'certificate' => $cert && !$cert['revoked_at'] ? ['code' => $cert['code'], 'score' => (int) $cert['score'], 'at' => $cert['issued_at']] : null,
-                'detail' => array_map(fn($i, $l) => ['index' => $i, 'title' => $l['title'], 'kind' => $l['kind'], 'done' => isset($done[$i]), 'score' => isset($done[$i]) ? (int) $done[$i]['score'] : null, 'attempts' => isset($done[$i]) ? (int) $done[$i]['attempts'] : null, 'at' => $done[$i]['completed_at'] ?? null], array_keys($c['lessons']), $c['lessons']),
+                'detail' => array_map(fn($i, $l) => ['index' => $i, 'title' => $l['title'], 'kind' => $l['kind'], 'done' => isset($done[$i]), 'score' => isset($done[$i]) ? (int) $done[$i]['score'] : null, 'attempts' => isset($done[$i]) ? (int) $done[$i]['attempts'] : null, 'at' => $done[$i]['completed_at'] ?? null, 'hasAnswer' => isset($saved[$slug . ':' . $i])], array_keys($c['lessons']), $c['lessons']),
             ];
         }
         usort($courses, fn($a, $b) => strcmp((string) $b['last'], (string) $a['last']) ?: ($b['pct'] <=> $a['pct']));
@@ -83,6 +85,26 @@ final class EngageController
         $u = Db::one('SELECT id, name, email, district, created_at, learn_nudged_at, notify_learn FROM users WHERE id = ?', [$id]); if (!$u) Http::json(['error' => 'not_found'], 404);
         $push = (int) (Db::one('SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ?', [$id])['n'] ?? 0);
         Http::json(['user' => ['id' => (int) $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'district' => $u['district'], 'joined' => $u['created_at'], 'avatar' => Auth::picture((int) $u['id']), 'lastReminder' => $u['learn_nudged_at'], 'remindersOn' => (bool) $u['notify_learn'], 'pushDevices' => $push], 'learning' => self::learning($id)]);
+    }
+
+    /** GET /admin/users/{id}/learning/{course}/{n} : what they actually wrote for one lesson */
+    public function submission(int $id, string $course, int $n): void
+    {
+        $this->admin();
+        $c = Curriculum::find($course); if (!$c || !isset($c['lessons'][$n])) Http::json(['error' => 'not_found'], 404);
+        $l = $c['lessons'][$n];
+        $save = Db::one('SELECT code, updated_at FROM learn_saves WHERE user_id = ? AND course = ? AND lesson = ?', [$id, $course, $n]);
+        $prog = Db::one('SELECT score, attempts, completed_at FROM learn_progress WHERE user_id = ? AND course = ? AND lesson = ?', [$id, $course, $n]);
+        Http::json(['lesson' => ['title' => $l['title'], 'kind' => $l['kind'], 'lang' => $l['lang'] ?? null, 'rubric' => $l['rubric'] ?? null, 'tests' => isset($l['tests']) ? array_column($l['tests'], 'msg') : null],
+            'answer' => $save ? ['text' => $save['code'], 'at' => $save['updated_at']] : null, 'progress' => $prog ? ['score' => (int) $prog['score'], 'attempts' => (int) $prog['attempts'], 'at' => $prog['completed_at']] : null]);
+    }
+
+    /** GET /learn/continue : the one course this person should pick up, for the card on their Home */
+    public function continue(): void
+    {
+        $u = Auth::require();
+        foreach (self::learning((int) $u['id'])['courses'] as $c) if ($c['status'] === 'in_progress' && $c['next']) Http::json(['course' => ['slug' => $c['slug'], 'title' => $c['title'], 'done' => $c['done'], 'lessons' => $c['lessons'], 'pct' => $c['pct'], 'next' => $c['next']]]);
+        Http::json(['course' => null]);
     }
 
     /** POST /admin/users/{id}/notify { title, body, url } : one message to one person */

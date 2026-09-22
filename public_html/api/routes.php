@@ -288,6 +288,7 @@ $router->post('/prices/report',              [CityController::class, 'priceRepor
 // Buja Learn
 $router->get('/learn',                       [LearnController::class, 'index']);
 $router->get('/learn/certificates',          [LearnController::class, 'mine']);
+$router->get('/learn/continue',              [EngageController::class, 'continue']);
 $router->get('/learn/{course}',              [LearnController::class, 'course']);
 $router->get('/learn/{course}/certificate',  [LearnController::class, 'certificate']);
 $router->get('/learn/{course}/{n}',          [LearnController::class, 'lesson']);
@@ -310,6 +311,7 @@ $router->get('/admin/learn',                 [CityController2::class, 'learnStat
 // Engagement: learner detail, reminders, broadcasts, push nudge
 $router->get('/admin/learners',              [EngageController::class, 'learners']);
 $router->get('/admin/users/{id}/learning',   [EngageController::class, 'userLearning']);
+$router->get('/admin/users/{id}/learning/{course}/{n}', [EngageController::class, 'submission']);
 $router->post('/admin/users/{id}/notify',    [EngageController::class, 'notifyUser']);
 $router->post('/admin/users/{id}/nudge',     [EngageController::class, 'nudgeUser']);
 $router->get('/admin/broadcasts',            [EngageController::class, 'broadcasts']);
