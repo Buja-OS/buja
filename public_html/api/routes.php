@@ -306,3 +306,14 @@ $router->post('/rides/{id}/decide',          [CityController2::class, 'rideDecid
 $router->post('/rides/{id}/stop',            [CityController2::class, 'rideStop']);
 $router->get('/rent-index',                  [CityController2::class, 'rentIndex']);
 $router->get('/admin/learn',                 [CityController2::class, 'learnStats']);
+
+// Engagement: learner detail, reminders, broadcasts, push nudge
+$router->get('/admin/learners',              [EngageController::class, 'learners']);
+$router->get('/admin/users/{id}/learning',   [EngageController::class, 'userLearning']);
+$router->post('/admin/users/{id}/notify',    [EngageController::class, 'notifyUser']);
+$router->post('/admin/users/{id}/nudge',     [EngageController::class, 'nudgeUser']);
+$router->get('/admin/broadcasts',            [EngageController::class, 'broadcasts']);
+$router->get('/admin/broadcasts/count',      [EngageController::class, 'count']);
+$router->post('/admin/broadcasts',           [EngageController::class, 'send']);
+$router->get('/me/engage',                   [EngageController::class, 'me']);
+$router->post('/me/engage/asked',            [EngageController::class, 'asked']);

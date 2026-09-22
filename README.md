@@ -1,4 +1,4 @@
-# Buja, Phase 21: Public Buja, and the update fix
+# Buja, Phase 22: learners, reminders, broadcasts, and a full bug sweep
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -437,8 +437,45 @@ Verified: every public page renders with the right title, description and JSON-L
 on the test data; the ride flow end to end with notifications; queue medians; the analytics screen.
 Bug fixed on the way: reading a new row's id after the analytics insert (the Phase 10 bug, again).
 
+## Phase 22: learners, reminders, broadcasts, the notification nudge, and a sweep
+
+- **Learners in the admin.** Admin → Learners lists everyone who has started a course, with the current course and
+  lesson, days idle (green, amber past 2, red past 7), lessons done and certificates; filters for active this week,
+  stuck 7+ days, and certified; search by name or email. Opening a person's admin profile now shows a Learning
+  section: every course with progress, average score, attempts, last activity and the next lesson; each lesson with
+  its score and number of tries; each certificate with its code and a Verify link.
+- **Personal learning reminders**, category `learn`, shown in notifications and pushed when push is on. The text
+  is built from the person's own record: "Adaeze, you are 7 of 8 into Backend Development with JavaScript. Next:
+  Final project: an in-memory API (25 min). One lesson from your certificate." When a course is finished and the
+  next tier has not been started: "Frontend, Intermediate is unlocked". Sent automatically between 9am and 7pm
+  Abuja time to people idle 2 to 30 days, never more than once every 5 days, ten per five minutes. The admin can
+  send one on demand from the person's profile. People can switch them off: Settings, Learning reminders.
+- **Admin notifications.** Admin → Send a notification: nine audiences with live counts (everyone, a district,
+  joined this week, notifications not switched on, learners, idle learners, certified, companies, not seen in 14
+  days), title and message with a live preview, which screen it opens, "Send to me first", a confirm, and history
+  with delivery progress. Large audiences queue and go out forty at a time. Links can only point inside Buja.
+  A single person can also be messaged from their admin profile (with email fallback when they have no push device).
+  Admins only; moderators cannot see learner records or message anyone.
+- **The notification nudge.** On Home, anyone whose device does not have push on sees a card: "Switch on
+  notifications", one tap. If they once blocked Buja, the card says so and explains how to unblock it in the
+  browser. Once a day at most, weekly after three dismissals. Separately, once per person, a day after joining,
+  an in-app notification "switch on notifications" linking to Settings.
+- **Search** now finds courses (by title, level, or any lesson title) and the city services by the words people
+  use: "nimc", "petrol", "light", "one chance".
+
+**Bugs found and fixed**
+1. Notification switches: `Notify` read only four of seven switches, so turning off News, Social or Digest did
+   not stop them. It now reads all of them.
+2. Settings: after flipping any switch, the reply returned News, Social and Digest as off even when on.
+3. Router: when a screen failed to load, its setup code still ran against the error page and crashed (seen on
+   editing someone else's job). Setup now only runs on a screen that loaded.
+4. Admin guard for the new screens let moderators in; tightened to admins, matching the existing user screens.
+
+**Sweep:** all 126 routes visited as an admin, an ordinary resident and a second user: no crashes, no blank
+screens, no server errors.
+
 ## What is next
 
-Phase 22: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 23: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

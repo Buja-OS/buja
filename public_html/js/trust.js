@@ -1,3 +1,4 @@
+import { mountAdminPerson } from './engage.js';
 // Buja trust and money: Plus, verification, admin. Registered into the app router by app.js.
 export function registerTrust({ route, go, state, setState, api, ui, failed }) {
   const { h, toast, topbar, busy, avatar, icon } = ui;
@@ -57,6 +58,8 @@ export function registerTrust({ route, go, state, setState, api, ui, failed }) {
         <a class="item" href="#/admin/meetups"><div class="mi">${icon('calendar-days')}</div><div class="grow"><div class="t">Events</div><div class="s">${o.city ? o.city.meetups + ' upcoming' : ''}${o.city && o.city.ticketSales ? ' · ₦' + o.city.ticketSales.toLocaleString() + ' in tickets · Buja earned ₦' + o.city.bujaFees.toLocaleString() : ''}</div></div>${icon('chevron-right')}</a>
         <a class="item" href="#/admin/artisans"><div class="mi">${icon('screwdriver-wrench')}</div><div class="grow"><div class="t">Artisans</div><div class="s">${o.city ? o.city.artisans + ' listed, verify the ones you have called' : ''}</div></div>${icon('chevron-right')}</a>
         <a class="item" href="#/admin/citizen"><div class="mi">${icon('building-columns')}</div><div class="grow"><div class="t">Citizen reports</div><div class="s">${o.city ? o.city.reports30 + ' in the last 30 days' : ''}</div></div>${icon('chevron-right')}</a>
+        <a class="item" href="#/admin/broadcast"><div class="mi" style="background:var(--orange-tint);color:var(--orange-dark)">${icon('paper-plane')}</div><div class="grow"><div class="t">Send a notification</div><div class="s">To everyone, a district, learners, or people without notifications on</div></div>${icon('chevron-right')}</a>
+        <a class="item" href="#/admin/learners"><div class="mi">${icon('user')}</div><div class="grow"><div class="t">Learners</div><div class="s">Each person's courses, lessons, scores and certificates</div></div>${icon('chevron-right')}</a>
         <a class="item" href="#/admin/learn"><div class="mi">${icon('book-open')}</div><div class="grow"><div class="t">Learn analytics</div><div class="s">Who starts, who finishes, where they stop</div></div>${icon('chevron-right')}</a>
         <a class="item" href="#/admin/analytics"><div class="mi">${icon('chart-simple')}</div><div class="grow"><div class="t">Analytics</div><div class="s">Active users, sign-ups, usage by module</div></div>${icon('chevron-right')}</a>
         <a class="item" href="#/admin/users"><div class="mi">${icon('users')}</div><div class="grow"><div class="t">Users</div><div class="s">${o.counts.users} accounts · search, roles, suspend</div></div>${icon('chevron-right')}</a>
@@ -138,6 +141,7 @@ export function registerTrust({ route, go, state, setState, api, ui, failed }) {
         <div class="item"><div class="grow"><div class="t" style="font-size:13px">Trust</div><div class="s">${u.selfieVerified ? 'Selfie verified' : 'Not selfie verified'} · ${u.plusUntil && u.plusUntil > new Date().toISOString() ? 'Plus until ' + u.plusUntil.slice(0, 10) : 'Free'} · ${sessions} active session${sessions === 1 ? '' : 's'}</div></div></div>
         ${act.length ? `<div class="item"><div class="grow"><div class="t" style="font-size:13px">Activity</div><div class="s">${act.map(([k, v]) => `${v} ${k.replace(/([A-Z])/g, ' $1').toLowerCase()}`).join(' · ')}</div></div></div>` : ''}
       </div>
+      <div id="learning" class="stack" style="gap:14px"><div class="card small muted" style="padding:14px">Loading learning…</div></div>
       <div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Role</div><div class="seg" id="role">${['user', 'moderator', 'admin'].map((r) => `<button type="button" data-role="${r}" class="${u.role === r ? 'on' : ''}">${r[0].toUpperCase() + r.slice(1)}</button>`).join('')}</div><div class="small muted">Moderators work the queues. Admins see everything, including this page.</div></div>
       <div class="row" style="gap:8px;flex-wrap:wrap">
         <button class="btn btn-sm btn-outline" data-act="signout" style="flex:1">Sign out everywhere</button>
@@ -146,6 +150,7 @@ export function registerTrust({ route, go, state, setState, api, ui, failed }) {
       </div>
     </main>`;
   }, { mount(el, { id }) {
+    mountAdminPerson(el, id, { api, h, icon, toast, busy });
     el.querySelectorAll('#role button').forEach((b) => b.addEventListener('click', async () => { try { await api.adminUserAction(id, { role: b.dataset.role }); el.querySelectorAll('#role button').forEach((x) => x.classList.toggle('on', x === b)); toast('Role updated'); } catch (err) { failed(el, err); } }));
     el.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => { const a = b.dataset.act; if ((a === 'suspend' || a === 'delete') && !confirm(a === 'delete' ? 'Delete this account permanently, with their listings, photos, messages and matches? This cannot be undone.' : 'Suspend this account? They are signed out and their listings are hidden.')) return; busy(b, true); try { const r = await api.adminUserAction(id, { action: a }); toast('Done'); if (r.deleted) go('/admin/users'); else location.reload(); } catch (err) { busy(b, false); failed(el, err); } }));
   } });

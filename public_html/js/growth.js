@@ -4,7 +4,7 @@ export function registerGrowth({ route, go, state, api, ui, failed }) {
   const q = () => new URLSearchParams(location.hash.split('?')[1] || '');
 
   /* ---------------- Search ---------------- */
-  const TYPE = { job: ['briefcase', 'Job'], home: ['house-chimney', 'Home'], item: ['tags', 'For sale'], place: ['location-dot', 'Place'], post: ['message', 'Social'], stop: ['route', 'Waka'], event: ['calendar-days', 'Meetup'], artisan: ['screwdriver-wrench', 'Artisan'], agency: ['building-columns', 'Report to'] };
+  const TYPE = { course: ['book-open', 'Course'], service: ['bolt', 'Buja'], job: ['briefcase', 'Job'], home: ['house-chimney', 'Home'], item: ['tags', 'For sale'], place: ['location-dot', 'Place'], post: ['message', 'Social'], stop: ['route', 'Waka'], event: ['calendar-days', 'Meetup'], artisan: ['screwdriver-wrench', 'Artisan'], agency: ['building-columns', 'Report to'] };
   route('/search', { auth: true, tabs: '' }, async () => {
     const term = q().get('q') || '';
     const r = term ? await api.search(term) : { results: [] };

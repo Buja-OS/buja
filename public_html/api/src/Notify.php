@@ -7,7 +7,7 @@ final class Notify
     public static function user(int $userId, string $category, string $title, string $body, string $url, bool $emailFallback = false, array $extra = []): void
     {
         try {
-            $u = Db::one('SELECT id, email, name, notify_work, notify_match, notify_waka, notify_offers FROM users WHERE id = ?', [$userId]);
+            $u = Db::one('SELECT * FROM users WHERE id = ?', [$userId]); // every notify_* switch, so all seven are respected
             if ($u === null) return;
             Db::run('INSERT INTO notifications (user_id, category, title, body, url, created_at) VALUES (?,?,?,?,?,?)', [$userId, $category, mb_substr($title, 0, 120), mb_substr($body, 0, 300), $url, Db::now()]);
             $col = 'notify_' . $category;

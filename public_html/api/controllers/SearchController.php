@@ -52,6 +52,14 @@ final class SearchController
         $ag = array_values(array_filter(CitizenController::AGENCIES, fn($a) => str_contains(mb_strtolower($a['name'] . ' ' . $a['note'] . ' ' . implode(' ', array_map(fn($c) => CitizenController::CATS[$c] ?? $c, $a['cats']))), $ql)));
         $add('agency', array_map(fn($a) => ['id' => $a['id'], 'title' => $a['name'], 'sub' => $a['phones'][0] ?? 'see website', 'url' => '/report?category=' . ($a['cats'][0] ?? '')], array_slice($ag, 0, 4)));
 
+        // Courses, and the city services people search for by name
+        $ql = $ql ?? mb_strtolower($q);
+        $cs = [];
+        foreach (Curriculum::all() as $slug => $c) { $hay = mb_strtolower($c['title'] . ' ' . $c['blurb'] . ' ' . $c['track'] . ' ' . implode(' ', array_column($c['lessons'], 'title'))); if (str_contains($hay, $ql)) $cs[] = ['id' => $slug, 'title' => $c['title'], 'sub' => $c['level'] . ' · ' . count($c['lessons']) . ' lessons · free', 'url' => '/learn/' . $slug]; }
+        $add('course', array_slice($cs, 0, 4));
+        $svc = [['light', 'Light Watch', 'Is there light in your area', '/light', 'light nepa aedc power electricity'], ['fuel', 'Fuel board', 'Who has fuel and at what price', '/fuel', 'fuel petrol diesel queue filling station'], ['blood', 'Blood donors', 'Donors near the hospital', '/blood', 'blood donor donate hospital'], ['lost', 'Lost and found', 'Documents, keys, phones', '/lostfound', 'lost found nin licence passport keys phone'], ['plates', 'Check a plate', 'Before you enter that taxi', '/plates', 'plate one chance taxi robbery'], ['prices', 'Market prices', 'Staples by market', '/prices', 'price market rice gas tomato'], ['queues', 'Office queues', 'NIN, passport, licence waits', '/queues', 'queue nin nimc passport immigration licence frsc vio'], ['rides', 'Commute share', 'Split a seat on your route', '/rides', 'ride carpool share lift commute'], ['rent', 'Rent index', 'Asking rent by district', '/rent-index', 'rent index price flat bedroom']];
+        $add('service', array_values(array_map(fn($x) => ['id' => $x[0], 'title' => $x[1], 'sub' => $x[2], 'url' => $x[3]], array_filter($svc, fn($x) => str_contains($x[4] . ' ' . mb_strtolower($x[1]), $ql)))));
+
         Track::hit($u, 'search', 'search');
         Http::json(['query' => $q, 'results' => $out]);
     }

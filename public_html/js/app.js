@@ -20,6 +20,7 @@ import { registerCityServices } from './services.js';
 import { registerCitySignals } from './citysignals.js';
 import { registerLearn } from './learn.js';
 import { registerCityMore } from './citymore.js';
+import { registerEngage } from './engage.js';
 import { passkeyAvailable, registerPasskey, loginWithPasskey } from './passkey.js';
 import { registerRtc, watchIncoming } from './rtc.js';
 
@@ -110,7 +111,7 @@ async function render() {
   app.innerHTML = '';
   app.appendChild(el);
   if (r.tabs) app.insertAdjacentHTML('beforeend', tabbar(r.tabs, state.unread || 0));
-  if (r.mount) r.mount(el, params);
+  if (r.mount && html !== null) { try { r.mount(el, params); } catch (err) { console.error('[buja mount]', err); } } // no setup on an error page
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', render);
@@ -291,6 +292,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
   offerPasskey();
   if (window.bujaLightWatch && !window.__lw) { window.__lw = 1; window.bujaLightWatch(); }
   lightPrompt();
+  if (window.bujaPushNudge) window.bujaPushNudge();
   api.weather?.().then(({ weather: w }) => {
     const box = document.getElementById('weather'); if (!box || !w) return;
     const art = { sun: '#F5A524', cloud: '#7A8290', rain: '#2E7DD1', storm: '#6B4FA8' }[w.icon] || '#7A8290';
@@ -371,7 +373,7 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
     <div class="stack" style="gap:10px"><div class="section">NOTIFICATIONS</div>
       <div class="card list" id="notif">
         <div class="item"><div class="mi">${icon('bell')}</div><div class="grow"><div class="t">Push notifications on this device</div><div class="s" id="pushs">Checking…</div></div><button class="switch" id="pushtoggle" role="switch" aria-checked="false" aria-label="Push notifications"><span></span></button></div>
-        ${[['digest', 'paper-plane', 'A weekly email: new jobs, homes and what people are saying'], ['work', 'briefcase', 'Interviews, messages and applications'], ['match', 'heart', 'New matches and people near you'], ['news', 'circle-info', 'Urgent Abuja news only, up to 3 a day'], ['social', 'message', 'Replies to your posts'], ['waka', 'route', 'Fare changes on saved routes'], ['offers', 'bolt', 'Buja Plus offers']].map(([k, ic, t]) => `<div class="item"><div class="mi">${icon(ic)}</div><div class="grow"><div class="t">${t}</div></div><button class="switch" data-pref="${k}" role="switch" aria-checked="false" aria-label="${t}"><span></span></button></div>`).join('')}
+        ${[['learn', 'book-open', 'Learning reminders: where you stopped and what is next'], ['digest', 'paper-plane', 'A weekly email: new jobs, homes and what people are saying'], ['work', 'briefcase', 'Interviews, messages and applications'], ['match', 'heart', 'New matches and people near you'], ['news', 'circle-info', 'Urgent Abuja news only, up to 3 a day'], ['social', 'message', 'Replies to your posts'], ['waka', 'route', 'Fare changes on saved routes'], ['offers', 'bolt', 'Buja Plus offers']].map(([k, ic, t]) => `<div class="item"><div class="mi">${icon(ic)}</div><div class="grow"><div class="t">${t}</div></div><button class="switch" data-pref="${k}" role="switch" aria-checked="false" aria-label="${t}"><span></span></button></div>`).join('')}
       </div>
       <div class="small muted" id="pushhint">Push works in Chrome on Android and on iPhone once Buja is added to the Home Screen.</div>
     </div>
@@ -428,6 +430,7 @@ registerHomes({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, sh
 registerWaka({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
 registerMatch({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, DISTRICTS, failed });
 const push = registerMessages({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
+registerEngage({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed, push });
 
 route('/404', {}, async () => `${topbar('Not found', '/home')}<div class="placeholder"><div class="h-md">That page does not exist</div><a class="btn btn-ink" href="#/home" style="width:auto">Go home</a></div>`);
 

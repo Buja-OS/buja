@@ -19,7 +19,14 @@ final class Cron
             if (self::stamp('tidy_last') < $now - 3600) { self::mark('tidy_last'); self::tidy(); return; }
             // Digest: Monday mornings Abuja time, five people per poll until everyone due is done.
             $lagos = new DateTime('now', new DateTimeZone('Africa/Lagos'));
-            if ((int) $lagos->format('N') === 1 && (int) $lagos->format('G') >= 7 && self::stamp('digest_tick') < $now - 60) { self::mark('digest_tick'); self::digest(5); }
+            if ((int) $lagos->format('N') === 1 && (int) $lagos->format('G') >= 7 && self::stamp('digest_tick') < $now - 60) { self::mark('digest_tick'); self::digest(5); return; }
+            // Broadcasts still queued: forty more per poll.
+            if (Db::one('SELECT 1 AS x FROM broadcast_queue LIMIT 1') && self::stamp('bcast_tick') < $now - 20) { self::mark('bcast_tick'); EngageController::sendQueued(40); return; }
+            // Learning reminders: daytime only, 9am to 7pm Abuja, ten people every five minutes.
+            $hour = (int) $lagos->format('G');
+            if ($hour >= 9 && $hour < 19 && self::stamp('learn_tick') < $now - 300) { self::mark('learn_tick'); EngageController::remindBatch(10); return; }
+            // Switch-on-notifications reminder, once per person, twenty per hour.
+            if ($hour >= 9 && $hour < 21 && self::stamp('pushnudge_tick') < $now - 3600) { self::mark('pushnudge_tick'); EngageController::pushReminderBatch(20); }
         } catch (Throwable $e) { error_log('[buja cron] ' . $e->getMessage()); }
     }
 
