@@ -1,5 +1,5 @@
 // Buja: artisans on a map, "ask them to come", and live tracking while they travel. Registered lazily by app.js.
-import { createMap, pinHtml, carHtml, avatarHtml, meHtml, bottomSheet, keepAwake, metres, TRADE_ICON, TRADE_COLOR } from './map.js';
+import { createMap, pinHtml, facePinHtml, spreadSame, groupChips, carHtml, avatarHtml, meHtml, bottomSheet, keepAwake, metres, TRADE_ICON, TRADE_COLOR } from './map.js';
 
 export function registerJobs({ route, go, state, api, ui, failed }) {
   const { h, toast, topbar, icon, busy, avatar, field, showErrors } = ui;
@@ -71,17 +71,19 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           <span style="width:44px;height:44px;border-radius:22px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon('car-side')}</span>
           <span class="grow"><span style="display:block;font-size:16px;font-weight:800">My car broke down</span><span class="small" style="opacity:.9">Pin where you are. The nearest ${trade === 'towing' ? 'tow truck' : trade === 'vulcanizer' ? 'tyre man' : 'mechanic'} who accepts comes to you.</span></span>${icon('chevron-right')}</a>` : '';
         sheet.body.innerHTML = sos + `<div class="row" style="padding:2px 0 10px"><div class="grow"><div style="font-size:17px;font-weight:800">${list.length ? list.length + ' ' + noun(trade, list.length) + ' near you' : 'Nobody here yet'}</div><div class="small muted">${me ? 'Closest first. Tap one on the map or below.' : 'Turn on location to see who is closest.'}</div></div></div>
-          ${list.length ? list.map((a) => `<button class="row card" data-a="${a.id}" style="width:100%;text-align:left;padding:10px 12px;gap:12px;margin-bottom:8px;background:var(--card)"><span style="width:40px;height:40px;border-radius:20px;background:${TRADE_COLOR[a.trade] || '#FF7A1A'};color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon(TRADE_ICON[a.trade] || 'wrench')}</span><span class="grow" style="min-width:0"><span style="display:block;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(a.name)}</span><span class="small muted">${h(a.tradeLabel)}${a.km != null ? ' · ' + a.km + ' km' : ''}</span></span><span class="small" style="font-weight:700;color:#B7791F">${starsShort(a.rating)}</span></button>`).join('') : `<div class="small muted" style="line-height:1.5">No ${trade ? 'one in this trade' : 'artisans'} listed near you yet. Know a good one? Ask them to list themselves under Artisans.</div><a class="btn btn-outline" href="#/artisans/me" style="margin-top:10px">List my own trade</a>`}`;
+          ${list.length ? list.map((a) => `<button class="row card" data-a="${a.id}" style="width:100%;text-align:left;padding:10px 12px;gap:12px;margin-bottom:8px;background:var(--card)"><span class="lst-face" style="--c:${TRADE_COLOR[a.trade] || '#FF7A1A'}">${a.photo ? `<img src="${h(a.photo)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<b>${h((a.name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase())}</b><i>${icon(TRADE_ICON[a.trade] || 'wrench')}</i></span><span class="grow" style="min-width:0"><span style="display:block;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(a.name)}</span><span class="small muted">${h(a.tradeLabel)}${a.km != null ? ' · ' + a.km + ' km' : ''}</span></span><span class="small" style="font-weight:700;color:#B7791F">${starsShort(a.rating)}</span></button>`).join('') : `<div class="small muted" style="line-height:1.5">No ${trade ? 'one in this trade' : 'artisans'} listed near you yet. Know a good one? Ask them to list themselves under Artisans.</div><a class="btn btn-outline" href="#/artisans/me" style="margin-top:10px">List my own trade</a>`}`;
         sheet.body.querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', () => detail(list.find((x) => String(x.id) === b.dataset.a))));
       };
       const load = async () => {
         el.querySelectorAll('#chips .chip').forEach((c) => c.classList.toggle('on', c.dataset.t === trade));
         try { const r = await api.artisans({ trade, lat: me?.lat || '', lng: me?.lng || '' }); list = (r.artisans || []).filter((a) => a.lat != null || !map); } catch (err) { failed(el, err); return; }
         if (map) {
-          map.clearMarkers('a');
-          list.forEach((a) => { if (a.lat == null) return; map.marker('a' + a.id, { lng: a.lng, lat: a.lat, z: 2, html: pinHtml({ iconName: TRADE_ICON[a.trade] || 'wrench', color: a.available ? (TRADE_COLOR[a.trade] || '#FF7A1A') : '#9AA0AB', label: a.name, sub: `${starsShort(a.rating)}${a.km != null ? ' · ' + a.km + ' km' : ''}`, badge: a.verified ? '✓' : '' }), onClick: () => detail(a) }); });
+          map.clearMarkers('a'); map.clearMarkers('grp');
+          const at = spreadSame(list, (a) => a.lat != null ? { lat: a.lat, lng: a.lng } : null);
+          list.forEach((a) => { if (a.lat == null) return; const grouped = !!at.get(a); map.marker('a' + a.id, { lng: a.lng, lat: a.lat, offset: at.get(a), z: 2, html: facePinHtml({ photo: a.photo, name: grouped ? '' : a.name, sub: `${starsShort(a.rating)}${a.km != null ? ' · ' + a.km + ' km' : ''}`, color: TRADE_COLOR[a.trade] || '#FF7A1A', iconName: TRADE_ICON[a.trade] || 'wrench', verified: a.verified, dim: !a.available }), onClick: () => detail(a) }); });
+          groupChips(list, (a) => a.lat != null ? { lat: a.lat, lng: a.lng } : null).forEach((g, gi) => map.marker('grp' + gi, { lng: g.lng, lat: g.lat, anchor: 'top', offset: [0, 4], z: 1, html: `<div class="bm-label" style="margin:0"><strong>${g.n} ${noun(trade, g.n)} here</strong><span>tap a face</span></div>` }));
           const pts = list.filter((a) => a.lat != null).slice(0, 8).map((a) => [a.lng, a.lat]); if (me) pts.push([me.lng, me.lat]);
-          map.fit(pts, { bottom: window.innerHeight * 0.48 });
+          map.fit(pts, { bottom: window.innerHeight * 0.48, top: 150, side: 60 });
         }
         renderList();
       };

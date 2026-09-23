@@ -1,7 +1,7 @@
 {
   "name": "Buja",
   "short_name": "Buja",
-  "description": "Jobs, people, movement, homes, trade and answers, for Abuja.",
+  "description": "Abuja's everyday app: a mechanic near you when your car breaks down, jobs, homes, transport fares and routes, a marketplace, city news and free coding courses.",
   "id": "/",
   "start_url": "/#/home",
   "scope": "/",
@@ -38,6 +38,18 @@
   ],
   "shortcuts": [
     {
+      "name": "Mechanic near me",
+      "short_name": "Mechanic",
+      "description": "Car broke down? Get the nearest mechanic",
+      "url": "/#/artisans/map?trade=mechanic",
+      "icons": [
+        {
+          "src": "/assets/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
       "name": "Ask Buja",
       "short_name": "Ask",
       "url": "/#/ask",
@@ -72,9 +84,52 @@
     }
   ],
   "categories": [
-    "social",
     "lifestyle",
     "travel",
-    "business"
+    "business",
+    "education",
+    "navigation"
+  ],
+  "dir": "ltr",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "prefer_related_applications": false,
+  "launch_handler": {
+    "client_mode": [
+      "navigate-existing",
+      "auto"
+    ]
+  },
+  "screenshots": [
+    {
+      "src": "/assets/screenshots/1-home.jpg",
+      "sizes": "1080x1920",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Buja home: everything for life in Abuja"
+    },
+    {
+      "src": "/assets/screenshots/2-mechanic-dashboard.jpg",
+      "sizes": "1080x1920",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Mechanics: take breakdown jobs near you"
+    },
+    {
+      "src": "/assets/screenshots/4-waka.jpg",
+      "sizes": "1080x1920",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Waka: routes and real fares across Abuja"
+    },
+    {
+      "src": "/assets/screenshots/3-learn.jpg",
+      "sizes": "1080x1920",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Buja Learn: free coding courses with certificates"
+    }
   ]
 }

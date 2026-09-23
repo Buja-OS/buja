@@ -35,6 +35,41 @@ export function avatarHtml(photo, color = '#1F5FBF', initials = '') {
   const face = photo ? `<img src="${h(photo)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block">` : `<span style="font:800 15px Inter,system-ui,sans-serif;color:#fff">${h(initials)}</span>`;
   return `<div class="bm-car bm-face" style="--c:${color}"><div class="bm-rot"><div class="bm-arrow"></div></div><div class="bm-facebody">${face}</div></div>`;
 }
+/** A person on the map: their photo in a ring of their trade's colour, a small trade badge, and a name chip.
+ *  Falls back to initials when there is no photo, and to them if the photo fails to load. */
+export function facePinHtml({ photo, name = '', sub = '', color = '#1F5FBF', iconName = 'wrench', verified = false, dim = false }) {
+  const initials = (name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase();
+  const face = photo
+    ? `<img src="${h(photo)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'bm-ini',textContent:'${h(initials).replace(/'/g, '')}'}))">`
+    : `<span class="bm-ini">${h(initials)}</span>`;
+  return `<div class="bm-pin bm-person${dim ? ' bm-dim' : ''}" style="--c:${color}">
+    <div class="bm-photo">${face}<span class="bm-trade">${icon(iconName)}</span>${verified ? '<span class="bm-badge">✓</span>' : ''}</div>
+    ${name ? `<div class="bm-label"><strong>${h(name)}</strong>${sub ? `<span>${h(sub)}</span>` : ''}</div>` : ''}
+  </div>`;
+}
+/** Several people at the same spot (a mechanic village, one workshop) would sit on top of each other. Returns a
+ *  pixel offset per item, a small ring that stays the same size at every zoom; their real position is unchanged. */
+export function spreadSame(items, getLL, px = 30) {
+  const groups = {};
+  items.forEach((it) => { const p = getLL(it); if (!p) return; const k = p.lat.toFixed(4) + ',' + p.lng.toFixed(4); (groups[k] = groups[k] || []).push(it); });
+  const out = new Map();
+  Object.values(groups).forEach((g) => {
+    if (g.length === 1) { out.set(g[0], null); return; }
+    const r = px * Math.max(1, g.length / 4);
+    // Two or three sit side by side; more form a ring. Grouped pins drop their own name chip (see groupChips).
+    g.forEach((it, i) => {
+      if (g.length <= 3) out.set(it, [Math.round((i - (g.length - 1) / 2) * px * 1.9), 0]);
+      else { const t = (2 * Math.PI * i) / g.length - Math.PI / 2; out.set(it, [Math.round(r * Math.cos(t)), Math.round(r * Math.sin(t))]); }
+    });
+  });
+  return out;
+}
+/** One chip under each group of people at the same spot: "3 mechanics here". Returns [{ lat, lng, n }]. */
+export function groupChips(items, getLL) {
+  const groups = {};
+  items.forEach((it) => { const p = getLL(it); if (!p) return; const k = p.lat.toFixed(4) + ',' + p.lng.toFixed(4); (groups[k] = groups[k] || { ...p, n: 0 }).n++; });
+  return Object.values(groups).filter((g) => g.n > 1);
+}
 export const meHtml = () => `<div class="bm-me"><span></span></div>`;
 
 /**
@@ -65,10 +100,10 @@ export async function createMap(el, { center = ABUJA, zoom = 12, interactive = t
   const api = {
     raw: map,
     /** Adds or replaces a marker. */
-    marker(id, { lng, lat, html, onClick, anchor = 'bottom', z = 1, draggable = false, onDragEnd }) {
+    marker(id, { lng, lat, html, onClick, anchor = 'bottom', z = 1, draggable = false, onDragEnd, offset = null }) {
       api.remove(id);
       const node = document.createElement('div'); node.innerHTML = html; node.style.zIndex = z;
-      const m = new ml.Marker({ element: node, anchor, draggable }).setLngLat([lng, lat]).addTo(map);
+      const m = new ml.Marker({ element: node, anchor, draggable, ...(offset ? { offset } : {}) }).setLngLat([lng, lat]).addTo(map);
       if (draggable && onDragEnd) m.on('dragend', () => { const p = m.getLngLat(); if (markers[id]) { markers[id].lng = p.lng; markers[id].lat = p.lat; } onDragEnd(p.lng, p.lat); });
       if (onClick) node.addEventListener('click', (e) => { e.stopPropagation(); onClick(id); });
       markers[id] = { m, node, lng, lat };
