@@ -61,6 +61,7 @@ final class ServiceJobController
             'problem' => $j['problem'], 'landmark' => $showExact ? $j['landmark'] : null,
             'place' => $showExact ? ['lat' => (float) $j['lat'], 'lng' => (float) $j['lng'], 'exact' => true] : ['lat' => round((float) $j['lat'] / 0.005) * 0.005, 'lng' => round((float) $j['lng'] / 0.005) * 0.005, 'exact' => false],
             'mode' => $j['mode'] ?? 'direct', 'accuracyM' => isset($j['accuracy_m']) && $j['accuracy_m'] !== null ? (int) $j['accuracy_m'] : null,
+            'quote' => !empty($j['quote_amount']) ? ['amount' => (int) $j['quote_amount'], 'note' => $j['quote_note'] ?? null, 'status' => $j['quote_status'] ?? 'sent', 'at' => $j['quoted_at'] ?? null] : null,
             'dispatch' => ($j['mode'] ?? '') === 'nearest' ? ['ring' => (int) $j['ring'], 'maxRings' => self::MAX_RINGS, 'alerted' => (int) (Db::one('SELECT COUNT(*) AS n FROM job_offers WHERE job_id = ?', [$j['id']])['n'] ?? 0), 'declined' => (int) (Db::one("SELECT COUNT(*) AS n FROM job_offers WHERE job_id = ? AND status = 'declined'", [$j['id']])['n'] ?? 0)] : null,
             'photo' => $isCustomer && !$pending ? (($p = Db::one('SELECT photo_upload FROM artisans WHERE user_id = ?', [$j['artisan_id']])) && $p['photo_upload'] ? '/api/uploads/' . (int) $p['photo_upload'] : Auth::picture((int) $j['artisan_id'])) : null,
             'other' => ($pending && $isCustomer) ? ['id' => 0, 'name' => 'Finding the nearest ' . strtolower(ArtisanController::TRADES[$j['trade']] ?? 'hand'), 'phone' => null, 'avatar' => null, 'rating' => ['count' => 0]] : ['id' => $other, 'name' => $isCustomer ? ($art['business'] ?: explode(' ', trim((string) ($o['name'] ?? '')))[0]) : explode(' ', trim((string) ($o['name'] ?? '')))[0],
@@ -165,7 +166,7 @@ final class ServiceJobController
                 break;
             case 'cancel':
                 if (!in_array($j['status'], ['requested', 'accepted', 'enroute'], true)) $bad();
-                Db::run("UPDATE service_jobs SET status = 'cancelled' WHERE id = ?", [$id]);
+                Db::run("UPDATE service_jobs SET status = 'cancelled', cancelled_by = ? WHERE id = ?", [$u['id'], $id]);
                 Db::run('DELETE FROM service_trail WHERE job_id = ?', [$id]);
                 Notify::user($to, 'work', 'Job cancelled', $name . ' cancelled the job.', $url);
                 break;
@@ -256,15 +257,18 @@ final class ServiceJobController
         $radius = min(60, 6 * $ring + 2);                                   // 8, 14, 20, 26, 32 km
         $dLat = $radius / 111; $dLng = $radius / (111 * max(0.2, cos(deg2rad($lat))));
         // Bounding box first, so this stays fast with thousands of artisans (index: trade, available, lat, lng)
-        $st = Db::pdo()->prepare("SELECT a.user_id, a.lat, a.lng, a.radius_km, a.last_online_at FROM artisans a WHERE a.trade = ? AND a.available = 1 AND a.hidden_at IS NULL
+        $st = Db::pdo()->prepare("SELECT a.user_id, a.lat, a.lng, a.radius_km, a.last_online_at, a.schedule FROM artisans a WHERE a.trade = ? AND a.available = 1 AND a.hidden_at IS NULL
             AND a.lat BETWEEN ? AND ? AND a.lng BETWEEN ? AND ? AND a.user_id <> ? AND a.user_id NOT IN (SELECT artisan_id FROM job_offers WHERE job_id = ?) LIMIT 200");
         $st->execute([$j['trade'], $lat - $dLat, $lat + $dLat, $lng - $dLng, $lng + $dLng, $j['customer_id'], $id]);
         $c = [];
         foreach ($st->fetchAll() as $a) {
             $km = WakaRules::km($lat, $lng, (float) $a['lat'], (float) $a['lng']);
             if ($km > $radius || ($ring < 3 && $km > max(3, (float) $a['radius_km'] * 1.2))) continue; // early rounds respect how far they said they travel
+            if (!self::onDuty($a['schedule'] ?? null)) continue;              // outside the hours they set
             $recent = $a['last_online_at'] && strtotime($a['last_online_at'] . ' UTC') > time() - 900;
-            $c[] = ['id' => (int) $a['user_id'], 'km' => $km, 'score' => $km - ($recent ? 3 : 0)];
+            // Fair dispatch: nearest first, but quick and reliable mechanics rise and no-shows sink.
+            $rel = self::reliability((int) $a['user_id']);
+            $c[] = ['id' => (int) $a['user_id'], 'km' => $km, 'score' => $km - ($recent ? 3 : 0) + $rel['penalty']];
         }
         usort($c, fn($x, $y) => $x['score'] <=> $y['score']);
         $pick = array_slice($c, 0, self::RING_SIZE);
@@ -322,6 +326,61 @@ final class ServiceJobController
             if ((int) $j['artisan_id'] && in_array($j['status'], ['accepted', 'enroute'], true)) Notify::user((int) $j['artisan_id'], 'work', 'Your customer moved their pin', 'Check the map for the new spot.', '/#/jobs/' . $id);
         }
         Http::json(['job' => $this->shape(Db::one('SELECT * FROM service_jobs WHERE id = ?', [$id]), $u)]);
+    }
+
+    /**
+     * POST /service-jobs/{id}/quote { amount, note } : the artisan names a price before starting work.
+     * POST /service-jobs/{id}/quote/{answer} : the customer accepts or declines it. Agreeing a price in the app,
+     * before the work, prevents most arguments afterwards; both sides can see exactly what was agreed and when.
+     */
+    public function quote(int $id): void
+    {
+        $u = Auth::require(); $j = $this->job($id, $u); $b = Http::body();
+        if ((int) $j['artisan_id'] !== (int) $u['id']) Http::json(['error' => 'forbidden'], 403);
+        if (!in_array($j['status'], ['accepted', 'enroute', 'arrived'], true)) Http::json(['error' => 'validation', 'message' => 'Send a price once you have accepted the job.'], 422);
+        $amount = (int) ($b['amount'] ?? 0); if ($amount < 500 || $amount > 5000000) Http::json(['error' => 'validation', 'fields' => ['amount' => 'The price in naira, for example 15000.']], 422);
+        if (($j['quote_status'] ?? 'none') === 'accepted') Http::json(['error' => 'validation', 'message' => 'Your customer already accepted a price. Talk to them before changing it.'], 409);
+        Db::run("UPDATE service_jobs SET quote_amount = ?, quote_note = ?, quote_status = 'sent', quoted_at = ? WHERE id = ?", [$amount, mb_substr(trim((string) ($b['note'] ?? '')), 0, 200) ?: null, Db::now(), $id]);
+        $biz = (Db::one('SELECT business FROM artisans WHERE user_id = ?', [$u['id']])['business'] ?? '') ?: explode(' ', trim((string) $u['name']))[0];
+        Notify::user((int) $j['customer_id'], 'work', $biz . ' quoted ₦' . number_format($amount), 'Tap to accept or decline before they start.', '/#/jobs/' . $id, true);
+        $this->show($id);
+    }
+    public function answerQuote(int $id, string $answer): void
+    {
+        $u = Auth::require(); $j = $this->job($id, $u);
+        if ((int) $j['customer_id'] !== (int) $u['id']) Http::json(['error' => 'forbidden'], 403);
+        if (($j['quote_status'] ?? 'none') !== 'sent') Http::json(['error' => 'validation', 'message' => 'There is no price waiting for you.'], 422);
+        $ok = $answer === 'accept';
+        Db::run('UPDATE service_jobs SET quote_status = ? WHERE id = ?', [$ok ? 'accepted' : 'declined', $id]);
+        Notify::user((int) $j['artisan_id'], 'work', $ok ? 'Price accepted: ₦' . number_format((int) $j['quote_amount']) : 'Your price was declined', $ok ? 'You can start the work.' : 'Talk to your customer and send a new price, or cancel.', '/#/jobs/' . $id, true);
+        $this->show($id);
+    }
+
+    /**
+     * How reliable an artisan has been, for fair dispatch and their own dashboard. Newcomers start from a fair
+     * middle rather than zero, so a new mechanic still gets alerted.
+     */
+    public static function reliability(int $artisanId): array
+    {
+        $since = gmdate('Y-m-d H:i:s', time() - 60 * 86400);
+        $o = Db::one("SELECT COUNT(*) AS offered, SUM(CASE WHEN status IN ('won','declined','taken') OR answered_at IS NOT NULL THEN 1 ELSE 0 END) AS answered, SUM(CASE WHEN status = 'won' THEN 1 ELSE 0 END) AS won FROM job_offers WHERE artisan_id = ? AND offered_at > ?", [$artisanId, $since]) ?: [];
+        $j = Db::one("SELECT SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done, SUM(CASE WHEN status = 'cancelled' AND cancelled_by = artisan_id THEN 1 ELSE 0 END) AS dropped, COUNT(*) AS taken FROM service_jobs WHERE artisan_id = ? AND created_at > ? AND status NOT IN ('requested','expired','declined')", [$artisanId, $since]) ?: [];
+        $offered = (int) ($o['offered'] ?? 0); $answered = (int) ($o['answered'] ?? 0);
+        $resp = $offered >= 3 ? $answered / $offered : 0.8;
+        $r = RatingController::summary($artisanId, 'artisan');
+        return ['offered' => $offered, 'answered' => $answered, 'won' => (int) ($o['won'] ?? 0), 'responseRate' => round($resp, 2),
+            'done' => (int) ($j['done'] ?? 0), 'dropped' => (int) ($j['dropped'] ?? 0), 'stars' => $r['stars'], 'ratings' => (int) $r['count'],
+            'penalty' => round((1 - $resp) * 4 + (int) ($j['dropped'] ?? 0) * 2.5 - (($r['stars'] ?? 0) >= 4.5 && $r['count'] >= 3 ? 1.5 : 0), 2)];
+    }
+    /** Is this artisan working now, by the hours they set? No hours set means any time. */
+    public static function onDuty(?string $schedule): bool
+    {
+        $s = $schedule ? json_decode($schedule, true) : null; if (!$s) return true;
+        $now = new DateTime('now', new DateTimeZone('Africa/Lagos'));
+        $day = strtolower($now->format('D')); $h = (int) $now->format('G') + ((int) $now->format('i')) / 60;
+        if (empty($s[$day]) || !is_array($s[$day])) return false;
+        [$from, $to] = [(float) $s[$day][0], (float) $s[$day][1]];
+        return $to > $from ? ($h >= $from && $h < $to) : ($h >= $from || $h < $to); // overnight shifts
     }
 
     /** POST /service-jobs/{id}/rate { stars, tags, comment } : the customer, once, after the job */

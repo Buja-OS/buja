@@ -53,6 +53,10 @@ return [
     'turn_default' => $env('TURN_URL', '') === '',
     'jitsi_domain' => $env('JITSI_DOMAIN', 'meet.jit.si'),
     'ask_provider' => $env('ASK_PROVIDER', 'gemini'),
+    // Play Store (PWABuilder Android package): the package name and the SHA-256 signing fingerprint(s), comma separated.
+    // They publish /.well-known/assetlinks.json so the app opens full screen without a browser bar.
+    'android_package' => $env('ANDROID_PACKAGE', ''),
+    'android_sha256' => $env('ANDROID_SHA256', ''),
     'gemini_api_key' => $env('GEMINI_API_KEY', ''),      // aistudio.google.com, free, no card
     'gemini_model' => $env('GEMINI_MODEL', 'gemini-3.6-flash'),
     'gemini_endpoint' => $env('GEMINI_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/models'),

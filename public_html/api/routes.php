@@ -228,6 +228,8 @@ $router->post('/events/{id}/checkin',        [MeetupController::class, 'checkin'
 $router->get('/events/{id}/ics',             [MeetupController::class, 'ics']);
 $router->get('/artisans',                    [ArtisanController::class, 'index']);
 $router->post('/artisans/me/online',         [ArtisanController::class, 'online']);
+$router->get('/artisans/dashboard',          [ArtisanController::class, 'dashboard']);
+$router->post('/artisans/schedule',          [ArtisanController::class, 'schedule']);
 $router->get('/artisans/me',                 [ArtisanController::class, 'me']);
 $router->post('/artisans/me',                [ArtisanController::class, 'save']);
 $router->get('/artisans/{id}',               [ArtisanController::class, 'show']);
@@ -336,6 +338,8 @@ $router->get('/service-jobs/{id}',           [ServiceJobController::class, 'show
 $router->post('/service-jobs/{id}/where',    [ServiceJobController::class, 'where']);
 $router->post('/service-jobs/{id}/ping',     [ServiceJobController::class, 'ping']);
 $router->post('/service-jobs/{id}/rate',     [ServiceJobController::class, 'rate']);
+$router->post('/service-jobs/{id}/quote',    [ServiceJobController::class, 'quote']);
+$router->post('/service-jobs/{id}/quote/{answer}', [ServiceJobController::class, 'answerQuote']);
 $router->post('/service-jobs/{id}/{action}', [ServiceJobController::class, 'act']);
 
 // Boarding a vehicle safely
@@ -353,3 +357,7 @@ $router->post('/admin/news/{id}/{action}',   [NewsController::class, 'adminAct']
 $router->get('/ads/config',                  [AdsController::class, 'show']);
 $router->get('/admin/ads',                   [AdsController::class, 'admin']);
 $router->post('/admin/ads',                  [AdsController::class, 'save']);
+
+// Account deletion (Play Store and App Store requirement)
+$router->post('/me/delete',                  [AccountController::class, 'destroy']);
+$router->post('/account/delete-request',     [AccountController::class, 'deleteRequest']);

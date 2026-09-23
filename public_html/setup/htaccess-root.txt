@@ -15,6 +15,7 @@ RewriteRule ^api/ - [L]
 RewriteRule ^p(/.*)?$ p/index.php [QSA,L]
 RewriteRule ^sitemap\.xml$ p/index.php?path=sitemap [L]
 RewriteRule ^robots\.txt$ p/index.php?path=robots [L]
+RewriteRule ^\.well-known/assetlinks\.json$ p/index.php?path=assetlinks [L]
 RewriteRule ^ads\.txt$ p/index.php?path=ads [L]
 
 # Everything else that is not a real file serves the app shell (hash routing, so this is rarely hit)

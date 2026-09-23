@@ -105,6 +105,8 @@ final class UploadsController
             return false;
         })();
         $allowed = $public;
+        // Admins may see any upload: ID photos sent for the Verified badge are only ever seen by them.
+        if (!$allowed && $u && (!empty($u['is_admin']) || ($u['role'] ?? '') === 'admin')) $allowed = true;
         if (!$allowed && $u) {
             $allowed = (int) $f['user_id'] === (int) $u['id']
                 || Db::one('SELECT 1 AS x FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.upload_id = ? AND (t.user_a = ? OR t.user_b = ?)', [$id, $u['id'], $u['id']]) !== null

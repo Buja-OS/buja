@@ -179,10 +179,10 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
             brands: [...el.querySelectorAll('#brands .on')].map((b) => b.dataset.b), years: el.querySelector('#years').value, calloutFee: el.querySelector('#calloutFee').value, about: el.querySelector('#about').value,
             lat: pin && pin.lat, lng: pin && pin.lng, address: el.querySelector('#address').value, landmark: el.querySelector('#landmark').value, phone: el.querySelector('#phone').value, whatsapp: el.querySelector('#whatsapp').value,
             radiusKm: el.querySelector('#radiusKm').value, hours: el.querySelector('#hours').value, mobileService: el.querySelector('#mobileService').checked, emergency: el.querySelector('#emergency').checked,
-            available: el.querySelector('#available').checked, uploadId: photoId, idUploadId: idId });
+            available: el.querySelector('#available').checked, uploadId: photoId, idUploadId: idId, source: new URLSearchParams(location.hash.split('?')[1] || '').get('src') || null });
           const r = await api.me(); state.user = r.user;
           toast(me ? 'Saved' : 'You are registered. Keep notifications on so you never miss a breakdown.');
-          go('/jobs');
+          go('/artisans/dashboard');
         } catch (err) {
           busy(btn, false);
           const fl = (err && err.fields) || {}; if (fl.ownerName || fl.trade) show(1); else if (fl.lat || fl.phone) show(2);
@@ -238,6 +238,48 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
         });
       };
       draw();
+    }
+  });
+
+  /* ============================== MECHANIC DASHBOARD ============================== */
+  const DAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
+  const naira = (n) => '₦' + Number(n || 0).toLocaleString();
+  const hr = (x) => { const h = Math.floor(x), m = Math.round((x - h) * 60); return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'); };
+  route('/artisans/dashboard', { auth: true, tabs: 'Me' }, async () => {
+    const d = await api.artisanDashboard();
+    if (!d.artisan) return `${topbar('Mechanic dashboard', '/me')}<div class="placeholder" style="padding:60px 20px"><div class="mi card">${icon('wrench')}</div><div class="h-md">You are not registered as a mechanic yet</div><div class="small muted">Five minutes: your name, a face photo and your workshop pin.</div><a class="btn btn-primary" href="#/artisans/register?trade=mechanic" style="width:auto">Register my trade</a></div>`;
+    const a = d.artisan, R = d.reliability, sch = a.schedule || {};
+    const pct = (x) => Math.round((x || 0) * 100) + '%';
+    return `${topbar('Mechanic dashboard', '/me', `<a class="iconbtn" href="#/artisans/register" aria-label="Edit my profile">${icon('user')}</a>`)}
+    <main class="pad stack" style="gap:14px">
+      <div class="card row" style="padding:14px;gap:12px">${a.photo ? `<img src="${h(a.photo)}" alt="" style="width:54px;height:54px;border-radius:27px;object-fit:cover">` : avatar(a.name, 54)}
+        <div class="grow" style="min-width:0"><div style="font-size:17px;font-weight:800">${h(a.name)}</div><div class="small muted">${h(a.trade)}${a.verified ? ' · <span style="color:var(--green-dark);font-weight:700">Verified</span>' : a.idSent ? ' · ID sent, awaiting check' : ' · <a href="#/artisans/register">send your ID for the Verified badge</a>'}</div></div></div>
+      <div class="card stack" style="padding:16px;gap:10px;background:${a.available ? 'var(--green-tint)' : 'var(--surface)'};border-color:${a.available ? 'var(--green)' : 'var(--line)'}">
+        <div class="row" style="gap:12px"><div class="grow"><div style="font-size:16px;font-weight:800">${a.available ? (a.onDuty ? 'You are taking jobs' : 'On, but outside your hours') : 'You are off'}</div>
+          <div class="small muted">${a.available ? (a.onDuty ? 'Your phone rings when a breakdown is near. Keep Buja open.' : 'You will be alerted again when your hours start.') : 'No alerts until you switch on.'}</div></div>
+          <button class="switch ${a.available ? 'on' : ''}" id="onoff" role="switch" aria-checked="${a.available}" aria-label="Taking jobs" style="flex-shrink:0"><span></span></button></div></div>
+      <div class="kpis">${[['Jobs this week', d.week.jobs], ['Earned this week', naira(d.week.earned)], ['Done this month', d.month.done], ['Earned this month', naira(d.month.earned)]].map(([l, v]) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join('')}</div>
+      <div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">How you are doing</div>
+        ${[['Answer rate', R.offered >= 3 ? pct(R.responseRate) : 'New', R.offered >= 3 ? `${R.answered} of ${R.offered} alerts answered in 60 days` : 'Shows after your first few alerts', R.offered < 3 || R.responseRate >= 0.7],
+           ['Rating', R.ratings ? '★ ' + Number(R.stars).toFixed(1) : 'New', R.ratings ? R.ratings + ' customer review' + (R.ratings === 1 ? '' : 's') : 'Finish a job and ask for a rating', !R.ratings || R.stars >= 4],
+           ['Jobs dropped', String(R.dropped), R.dropped ? 'Accepted, then cancelled. This moves you down the list.' : 'None. Keep it that way.', !R.dropped]].map(([l, v, s, good]) => `<div class="row" style="gap:10px"><div class="grow"><div style="font-size:14px;font-weight:650">${l}</div><div class="small muted">${s}</div></div><div style="font-size:17px;font-weight:800;color:${good ? 'var(--green-dark)' : '#D92D20'}">${v}</div></div>`).join('')}
+        <div class="small muted" style="line-height:1.5">Buja alerts the nearest mechanics first, then moves quick, well-rated mechanics up and ones who drop jobs down.</div></div>
+      ${d.offers.length ? `<div class="section">RINGING NOW</div>${d.offers.map((o) => `<a class="card row" href="#/jobs/${o.id}" style="padding:12px 14px;gap:10px;border-color:#D92D20"><span style="width:40px;height:40px;border-radius:20px;background:#D92D20;color:#fff;display:flex;align-items:center;justify-content:center">${icon('wrench')}</span><span class="grow"><span style="display:block;font-weight:700">${o.km < 1 ? 'Under 1' : o.km} km away</span><span class="small muted">${h(o.problem)}</span></span>${icon('chevron-right')}</a>`).join('')}` : ''}
+      <div class="card stack" style="padding:14px;gap:10px"><div class="row"><div class="h-sm grow">Working hours</div><label class="small row" style="gap:6px"><input type="checkbox" id="anytime" ${a.schedule ? '' : 'checked'}> Any time</label></div>
+        <div class="stack" id="hours" style="gap:6px;${a.schedule ? '' : 'opacity:.45;pointer-events:none'}">${DAYS.map(([k, l]) => `<div class="row" style="gap:6px;min-width:0"><label class="row small" style="gap:4px;width:50px;flex-shrink:0"><input type="checkbox" data-day="${k}" ${sch[k] || !a.schedule ? 'checked' : ''}> ${l}</label><input class="input" type="time" data-from="${k}" value="${hr((sch[k] || [8, 18])[0])}" style="height:38px;flex:1 1 0;min-width:0;padding:0 4px;font-size:12.5px"><span class="small muted" style="flex-shrink:0">–</span><input class="input" type="time" data-to="${k}" value="${hr((sch[k] || [8, 18])[1])}" style="height:38px;flex:1 1 0;min-width:0;padding:0 4px;font-size:12.5px"></div>`).join('')}</div>
+        <button class="btn btn-sm btn-ink" id="savehours">Save hours</button><div class="small muted">Outside these hours you are not alerted, even when switched on. A night shift like 20:00 to 06:00 works too.</div></div>
+      <div class="section">RECENT JOBS</div>
+      ${d.recent.length ? `<div class="card list">${d.recent.map((r) => `<a class="item" href="#/jobs/${r.id}"><div class="grow"><div class="t">${h(r.customer)}: ${h(r.problem)}</div><div class="s">${r.at.slice(0, 10)} · ${h(STATUS[r.status] ? STATUS[r.status][0] : r.status)}${r.price ? ' · ' + naira(r.price) : ''}</div></div>${icon('chevron-right')}</a>`).join('')}</div>` : `<div class="small muted">No jobs yet. Keep Buja open with notifications on, and the first breakdown near you will ring.</div>`}
+      <div class="card stack" style="padding:14px;gap:8px"><div class="h-sm">Get more customers</div><div class="small muted">Send your Buja profile to your regular customers. Their ratings help new ones choose you.</div><button class="btn btn-sm btn-outline" id="share">${icon('paper-plane')} Share my profile</button></div>
+    </main>`;
+  }, {
+    mount(el) {
+      const tg = el.querySelector('#onoff'); if (!tg) return;
+      tg.addEventListener('click', async () => { tg.disabled = true; const on = !tg.classList.contains('on'); tg.classList.toggle('on', on); try { await api.artisanSchedule({ available: on, schedule: readHours() }); toast(on ? 'You are taking jobs' : 'Switched off'); location.reload(); } catch (err) { tg.disabled = false; failed(el, err); } });
+      const readHours = () => { if (el.querySelector('#anytime').checked) return null; const s = {}; el.querySelectorAll('[data-day]').forEach((c) => { if (!c.checked) return; const k = c.dataset.day; const f = el.querySelector(`[data-from="${k}"]`).value.split(':'), t = el.querySelector(`[data-to="${k}"]`).value.split(':'); s[k] = [+f[0] + (+f[1] || 0) / 60, +t[0] + (+t[1] || 0) / 60]; }); return Object.keys(s).length ? s : null; };
+      el.querySelector('#anytime').addEventListener('change', (e) => { const box = el.querySelector('#hours'); box.style.opacity = e.target.checked ? .45 : 1; box.style.pointerEvents = e.target.checked ? 'none' : ''; });
+      el.querySelector('#savehours').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { await api.artisanSchedule({ schedule: readHours() }); toast('Hours saved'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } });
+      el.querySelector('#share').addEventListener('click', async () => { const d = await api.artisanDashboard(); const t = `${d.artisan.name}, ${d.artisan.trade.toLowerCase()} on Buja. See my reviews and call me: ${d.artisan.profileUrl}`; if (navigator.share) navigator.share({ title: d.artisan.name, text: t }).catch(() => {}); else { try { await navigator.clipboard.writeText(t); toast('Copied'); } catch { toast(d.artisan.profileUrl, 5000); } } });
     }
   });
 
@@ -314,6 +356,27 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
         return STATUS[j.status][0];
       };
 
+      /* Agreeing the price in the app, before the work. */
+      const priceBlock = (j) => {
+        const Q = j.quote, live = ['accepted', 'enroute', 'arrived'].includes(j.status);
+        if (j.role === 'artisan') {
+          if (!live && !Q) return '';
+          if (Q && Q.status === 'accepted') return `<div class="card row" style="padding:12px 14px;gap:10px;background:var(--green-tint);border-color:var(--green)"><span class="grow"><span class="small muted" style="display:block">Agreed price</span><strong style="font-size:18px">${naira(Q.amount)}</strong>${Q.note ? ` <span class="small muted">${h(Q.note)}</span>` : ''}</span>${icon('circle-check')}</div>`;
+          if (!live) return '';
+          return `<div class="card stack" style="padding:12px 14px;gap:8px"><div class="small" style="font-weight:700">${Q ? (Q.status === 'declined' ? 'Your price was declined. Send a new one:' : 'Waiting for your customer to accept ' + naira(Q.amount) + '. Change it:') : 'Send your price before you start'}</div>
+            <div class="row" style="gap:8px"><span style="font-weight:800;align-self:center">₦</span><input class="input" id="qamt" type="number" inputmode="numeric" placeholder="15000" value="${Q ? Q.amount : ''}" style="flex:1"><button class="btn btn-sm btn-primary" id="qsend" style="width:auto">Send</button></div>
+            <input class="input" id="qnote" maxlength="200" placeholder="What it covers, e.g. new battery and fitting" value="${h(Q && Q.note || '')}"></div>`;
+        }
+        if (!Q) return live ? `<div class="small muted">Your ${h(j.tradeLabel.toLowerCase())} will send a price here before starting. Do not pay for work you have not agreed.</div>` : '';
+        if (Q.status === 'sent') return `<div class="card stack" style="padding:14px;gap:10px;border-color:var(--orange);background:var(--orange-tint)"><div><span class="small muted">Price for this job</span><div style="font-size:24px;font-weight:900">${naira(Q.amount)}</div>${Q.note ? `<div class="small">${h(Q.note)}</div>` : ''}</div>
+          <div class="row" style="gap:8px"><button class="btn btn-primary grow" data-q="accept">Accept price</button><button class="btn btn-outline" data-q="decline" style="width:auto">Decline</button></div></div>`;
+        if (Q.status === 'accepted') return `<div class="card row" style="padding:12px 14px;gap:10px;background:var(--green-tint);border-color:var(--green)"><span class="grow"><span class="small muted" style="display:block">You agreed</span><strong style="font-size:18px">${naira(Q.amount)}</strong>${Q.note ? ` <span class="small muted">${h(Q.note)}</span>` : ''}</span>${icon('circle-check')}</div>`;
+        return `<div class="small muted">You declined ${naira(Q.amount)}. Talk to them; they can send a new price.</div>`;
+      };
+      const bindPrice = () => {
+        sheet.body.querySelector('#qsend')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.jobQuote(id, { amount: +sheet.body.querySelector('#qamt').value, note: sheet.body.querySelector('#qnote').value }); toast('Price sent'); render(r.job); } catch (err) { busy(b, false); failed(el, err); } });
+        sheet.body.querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.jobQuoteAnswer(id, b.dataset.q); toast(b.dataset.q === 'accept' ? 'Price agreed' : 'Declined'); render(r.job); } catch (err) { busy(b, false); failed(el, err); } }));
+      };
       const render = (j) => {
         job = j; pill.textContent = headline(j);
         const L = j.live, C = j.role === 'customer';
@@ -344,7 +407,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           else if (j.status === 'arrived') body = `<div class="small muted">When the work is finished:</div><button class="btn btn-primary" data-act="done">${icon('circle-check')} Job done</button>`;
           else body = `<div class="small muted">${j.status === 'done' ? 'Well done. Their rating will show on your profile.' : 'This job is closed.'}</div>`;
         }
-        sheet.body.innerHTML = `<div class="stack" style="gap:14px;padding-top:4px">${who}${j.role === 'customer' || j.status !== 'requested' ? `<div class="small" style="color:var(--ink-2)"><strong>${h(j.tradeLabel)}:</strong> ${h(j.problem)}</div>` : ''}${body}</div>`;
+        sheet.body.innerHTML = `<div class="stack" style="gap:14px;padding-top:4px">${who}${j.role === 'customer' || j.status !== 'requested' ? `<div class="small" style="color:var(--ink-2)"><strong>${h(j.tradeLabel)}:</strong> ${h(j.problem)}</div>` : ''}${priceBlock(j)}${body}</div>`;
         sheet.body.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
           const a = b.dataset.act; if ((a === 'cancel' || a === 'decline') && !confirm(a === 'cancel' ? 'Cancel this job?' : 'Decline this job?')) return;
           busy(b, true);
@@ -352,6 +415,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           catch (err) { busy(b, false); if (err && (err.error === 'taken' || err.error === 'not_found')) { toast('Another mechanic took this one'); go('/jobs'); return; } failed(el, err); }
         }));
         sheet.body.querySelector('[data-start]')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); const p = await here(10000); try { const r = await api.jobAct(id, 'start', p || {}); startSharing(); draw(r.job); render(r.job); } catch (err) { busy(b, false); failed(el, err); } });
+        bindPrice();
         sheet.body.querySelector('[data-rate]')?.addEventListener('click', () => rateForm());
       };
 
@@ -385,7 +449,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       /* Both sides poll every 4 s while this screen is open and visible. */
       const tick = async () => {
         if (!alive) return; if (gone()) { alive = false; stopSharing(); return; }
-        if (!document.hidden) { try { const r = await api.job(id); draw(r.job); if (JSON.stringify(r.job) !== JSON.stringify(job) || sheet.body.querySelector('#rs') == null) { if (!sheet.body.querySelector('#rs')) render(r.job); else job = r.job; } } catch {} }
+        if (!document.hidden) { try { const r = await api.job(id); draw(r.job); if (JSON.stringify(r.job) !== JSON.stringify(job) || sheet.body.querySelector('#rs') == null) { if (!sheet.body.querySelector('#rs') && !(document.activeElement && ['qamt', 'qnote'].includes(document.activeElement.id))) render(r.job); else job = r.job; } } catch {} }
         timer = setTimeout(tick, job && job.status === 'enroute' ? 3000 : 4000); // quicker while someone is on the way
       };
       draw(job); render(job);

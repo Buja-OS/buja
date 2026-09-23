@@ -96,4 +96,41 @@ final class AccountController
         $nu = (int) (Db::one('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL', [$u['id']])['n'] ?? 0);
         Http::json(['items' => array_slice($items, 0, 5), 'unread' => $unread, 'notifications_unread' => $nu, 'notifications' => ['work' => (bool) $n['notify_work'], 'match' => (bool) $n['notify_match'], 'waka' => (bool) $n['notify_waka'], 'offers' => (bool) $n['notify_offers'], 'news' => (bool) $n['notify_news'], 'social' => (bool) $n['notify_social'], 'digest' => (bool) $n['notify_digest'], 'learn' => (bool) ($n['notify_learn'] ?? 1)], 'pushEnabled' => Db::one('SELECT 1 AS x FROM push_subscriptions WHERE user_id = ?', [$u['id']]) !== null]);
     }
+
+    /**
+     * POST /me/delete { confirm: "DELETE" } : required by Google Play and the App Store. The account stops
+     * existing for everyone: signed out everywhere, name and contacts wiped, listings and artisan profile hidden,
+     * push devices removed. Messages already sent stay in the other person's chat, shown as from "Deleted user".
+     */
+    public function destroy(): void
+    {
+        $u = Auth::require(); $b = Http::body();
+        if (strtoupper(trim((string) ($b['confirm'] ?? ''))) !== 'DELETE') Http::json(['error' => 'validation', 'message' => 'Type DELETE to confirm.'], 422);
+        $id = (int) $u['id']; $now = Db::now();
+        $try = function (string $sql, array $p) { try { Db::run($sql, $p); } catch (Throwable $e) { error_log('[buja delete] ' . $e->getMessage()); } };
+        $try("UPDATE users SET deleted_at = ?, name = 'Deleted user', email = ?, phone = NULL, avatar_url = NULL, google_sub = NULL, password_hash = '' WHERE id = ?", [$now, 'deleted-' . $id . '@deleted.buja', $id]);
+        $try('UPDATE artisans SET hidden_at = ?, available = 0, phone = \'\', whatsapp = NULL WHERE user_id = ?', [$now, $id]);
+        $try("UPDATE jobs SET status = 'closed' WHERE company_id IN (SELECT id FROM companies WHERE owner_id = ?)", [$id]);
+        $try("UPDATE properties SET status = 'hidden' WHERE owner_id = ?", [$id]);
+        $try("UPDATE listings SET status = 'hidden' WHERE seller_id = ?", [$id]);
+        $try('UPDATE social_posts SET hidden_at = ? WHERE user_id = ?', [$now, $id]);
+        $try('DELETE FROM push_subscriptions WHERE user_id = ?', [$id]);
+        $try('DELETE FROM trusted_contacts WHERE user_id = ?', [$id]);
+        $try('DELETE FROM passkeys WHERE user_id = ?', [$id]);
+        $try('UPDATE sessions SET revoked_at = ? WHERE user_id = ?', [$now, $id]);
+        Track::hit(['id' => $id], 'account', 'deleted');
+        Auth::signOut();
+        Http::json(['deleted' => true]);
+    }
+
+    /** POST /account/delete-request { email, reason } : the public web form stores listings must link to */
+    public function deleteRequest(): void
+    {
+        RateLimit::hit('delreq', 5, 3600); $b = Http::body();
+        $email = strtolower(trim((string) ($b['email'] ?? ''))); if (!filter_var($email, FILTER_VALIDATE_EMAIL)) Http::json(['error' => 'validation', 'message' => 'The email on your Buja account.'], 422);
+        $u = Db::one('SELECT id FROM users WHERE email = ? AND deleted_at IS NULL', [$email]);
+        Db::run('INSERT INTO deletion_requests (email, reason, user_id, created_at) VALUES (?,?,?,?)', [$email, mb_substr(trim((string) ($b['reason'] ?? '')), 0, 400) ?: null, $u['id'] ?? null, Db::now()]);
+        $admin = (string) Http::config('mail_from', ''); if ($admin !== '') Mail::send($admin, 'Buja admin', 'Account deletion request', '<p>' . htmlspecialchars($email) . ' asked for their Buja account to be deleted.' . ($u ? ' The account exists (user ' . (int) $u['id'] . ').' : ' No account uses this email.') . ' Delete it within 30 days, or reply if you need to confirm it is them.</p>');
+        Http::json(['ok' => true]); // same answer whether or not the email exists, so nobody can probe for accounts
+    }
 }

@@ -90,7 +90,7 @@ async function render() {
   catch { if (seq !== renderSeq) return; app.innerHTML = `<div class="screen no-tabs">${topbar('', '/home')}<div class="placeholder"><div class="mi card">${icon('triangle-exclamation')}</div><div class="h-md">Could not open this part of Buja</div><div class="small muted">Check your connection and try again.</div><button class="btn btn-ink" onclick="location.reload()" style="width:auto">Try again</button></div></div>`; return; }
   if (seq !== renderSeq) return;
   const { r, params } = match(path);
-  if (r.auth && !state.user) { go('/welcome'); return; }
+  if (r.auth && !state.user) { try { sessionStorage.setItem('buja_next', current() + (location.hash.includes('?') ? '?' + location.hash.split('?')[1] : '')); } catch {} go('/welcome'); return; }
   if (r.guest && state.user) { go(state.user.district ? '/home' : '/onboarding'); return; }
   const el = document.createElement('div');
   el.className = 'screen screen-enter' + (r.tabs ? '' : ' no-tabs');
@@ -232,7 +232,7 @@ route('/onboarding', { auth: true }, async () => {
       showErrors(el, {}); busy(btn, true);
       const body = { kind: f.querySelector('input[name=kind]:checked').value, district: val(f, 'district') };
       if (f.querySelector('#phone')) body.phone = val(f, 'phone');
-      try { const r = await api.updateMe(body); setState({ user: r.user }); toast('Welcome to Buja, ' + r.user.name.split(' ')[0]); go('/home'); }
+      try { const r = await api.updateMe(body); setState({ user: r.user }); toast('Welcome to Buja, ' + r.user.name.split(' ')[0]); go(takeNext() || '/home'); }
       catch (err) { busy(btn, false); failed(el, err); }
     });
   }
@@ -325,6 +325,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
       <a class="item" href="#/waka"><div class="mi">${icon('route')}</div><div class="grow"><div class="t">Saved routes</div><div class="s">Waka</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#${u.kind === 'company' ? '/work/company' : '/work/profile'}"><div class="mi">${icon('briefcase')}</div><div class="grow"><div class="t">${u.kind === 'company' ? 'Company and vacancies' : 'My CV and applications'}</div><div class="s">Work</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/tickets"><div class="mi">${icon('ticket')}</div><div class="grow"><div class="t">My tickets</div><div class="s">Events you have paid for</div></div>${icon('chevron-right')}</a>
+      ${state.user.artisan ? `<a class="item" href="#/artisans/dashboard"><div class="mi" style="background:#FDECEA;color:#D92D20">${icon('gauge-high')}</div><div class="grow"><div class="t">Mechanic dashboard</div><div class="s">${state.user.artisan.available ? 'Taking jobs' : 'Switched off'} · your jobs, earnings and hours</div></div>${icon('chevron-right')}</a>` : ''}
       <a class="item" href="#/jobs"><div class="mi">${icon('wrench')}</div><div class="grow"><div class="t">My jobs</div><div class="s">Artisans you called, and jobs you are doing</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/alerts"><div class="mi">${icon('bell')}</div><div class="grow"><div class="t">Saved searches</div><div class="s">Be told when a job, home or item matches</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/invite"><div class="mi">${icon('paper-plane')}</div><div class="grow"><div class="t">Invite friends</div><div class="s">Buja works better with your people on it</div></div>${icon('chevron-right')}</a>
@@ -377,8 +378,16 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
     <div class="stack" style="gap:10px"><div class="section">ABOUT</div>
       <div class="card list"><div class="item"><div class="mi">${icon('circle-info')}</div><div class="grow"><div class="t">Buja</div><div class="s">Phase 1 · ${api.isMock() ? 'preview mode, data stays on this device' : 'connected to your API'}</div></div></div></div>
     </div>
-  </main>`, {
+  <div class="card stack" style="padding:14px;gap:8px;border-color:#F3B2AC;margin-top:10px"><div class="h-sm" style="color:#D92D20">Delete my account</div><div class="small muted" style="line-height:1.5">Removes your name, contacts and photo, takes down your listings and artisan profile, and signs you out everywhere. This cannot be undone. <a href="/p/delete-account" target="_blank" rel="noopener">What is deleted</a></div><button class="btn btn-sm btn-outline" id="delacct" style="color:#D92D20;border-color:#F3B2AC">Delete my account</button></div>
+    </main>`, {
   mount(el) {
+    el.querySelector('#delacct')?.addEventListener('click', async (e) => {
+      const typed = prompt('This deletes your Buja account for good. Type DELETE to confirm.');
+      if (!typed) return;
+      if (typed.trim().toUpperCase() !== 'DELETE') { toast('Not deleted. You need to type DELETE.'); return; }
+      const b = e.currentTarget; busy(b, true);
+      try { await api.deleteMe(typed); setState({ user: null }); toast('Your account has been deleted'); go('/welcome'); } catch (err) { busy(b, false); failed(el, err); }
+    });
     el.querySelectorAll('#theme button').forEach((b) => b.addEventListener('click', () => { applyTheme(b.dataset.theme); el.querySelectorAll('#theme button').forEach((x) => x.classList.toggle('on', x === b)); }));
     (async () => {
       let prefs = { work: true, match: true, waka: true, offers: false, news: true, social: true, digest: true }; let pushed = false;
@@ -471,7 +480,9 @@ function setBadge(n) { const tab = document.querySelector('.tab[aria-label="Inbo
 const val = (f, id) => (f.querySelector('#' + id) || {}).value || '';
 function kindLabel(k) { return k === 'company' ? 'Hiring' : k === 'landlord' ? 'Landlord' : 'Resident'; }
 
-async function signedIn(r) { setState({ user: r.user }); if (r.next === 'onboarding') sessionStorage.setItem('buja_offer_pk', '1'); go(r.next === 'onboarding' ? '/onboarding' : '/home'); }
+/** Where to go after signing in or finishing onboarding: back to what sent you here (a flyer, a shared link), else Home. */
+function takeNext() { let n = null; try { n = sessionStorage.getItem('buja_next'); sessionStorage.removeItem('buja_next'); } catch {} return n && n.startsWith('/') && !/^\/(welcome|signin|signup|onboarding)/.test(n) ? n : null; }
+async function signedIn(r) { setState({ user: r.user }); if (r.next === 'onboarding') { sessionStorage.setItem('buja_offer_pk', '1'); go('/onboarding'); return; } go(takeNext() || '/home'); }
 
 /** Once a day, in the evening: one tap tells the city whether your area has light. */
 function lightPrompt() {

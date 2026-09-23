@@ -26,6 +26,11 @@ $district = fn($s) => $s ? $e($s) . ', Abuja' : 'Abuja';
 
 /* ---------- robots and sitemap ---------- */
 if ($path === 'ads') { header('Content-Type: text/plain'); echo AdsController::adsTxt(); exit; }
+if ($path === 'assetlinks') {
+    header('Content-Type: application/json'); header('Cache-Control: public, max-age=3600');
+    $pkg = trim((string) Http::config('android_package', '')); $fps = array_values(array_filter(array_map('trim', explode(',', (string) Http::config('android_sha256', '')))));
+    echo json_encode($pkg && $fps ? [['relation' => ['delegate_permission/common.handle_all_urls'], 'target' => ['namespace' => 'android_app', 'package_name' => $pkg, 'sha256_cert_fingerprints' => $fps]]] : [], JSON_UNESCAPED_SLASHES); exit;
+}
 if ($path === 'robots') { header('Content-Type: text/plain'); echo "User-agent: *\nAllow: /p/\nDisallow: /api/\nSitemap: {$origin}/sitemap.xml\n"; exit; }
 if ($path === 'sitemap') {
     header('Content-Type: application/xml; charset=utf-8');
@@ -157,6 +162,85 @@ if ($kind === 'courses') {
     $ld = ['@context' => 'https://schema.org', '@type' => 'Course', 'name' => $c['title'], 'description' => $c['blurb'], 'provider' => ['@type' => 'Organization', 'name' => 'Buja Learn', 'url' => $origin . '/p/courses'], 'educationalLevel' => $c['level'], 'hasCourseInstance' => ['@type' => 'CourseInstance', 'courseMode' => 'online', 'courseWorkload' => 'PT' . (int) $c['hours'] . 'H'], 'offers' => ['@type' => 'Offer', 'price' => 0, 'priceCurrency' => 'NGN']];
     $body = '<div class="wrap"><span class="tag">' . $e($c['level']) . '</span><h1>' . $e($c['title']) . '</h1><div class="muted">' . count($c['lessons']) . ' lessons · about ' . (int) $c['hours'] . ' hours · free · certificate on completion</div><img class="cover" src="' . $e($origin . $img) . '" alt="" style="margin:12px 0"><p>' . $e($c['blurb']) . '</p><a class="btn" href="/#/learn/' . $e($id) . '">Start free on Buja</a><div class="card"><h3>You will be able to</h3><ul>' . implode('', array_map(fn($o) => '<li>' . $e($o) . '</li>', $c['outcomes'])) . '</ul></div><div class="card"><h3>Lessons</h3><ol>' . implode('', array_map(fn($l) => '<li>' . $e($l['title']) . ' <span class="muted">· ' . (int) $l['minutes'] . ' min</span></li>', $c['lessons'])) . '</ol></div>' . (!empty($c['after']) ? '<p class="muted">Requires the ' . $e($all[$c['after']]['title'] ?? '') . ' certificate first.</p>' : '') . '</div>';
     page($c['title'] . ', a free course', $c['blurb'], $body, ['path' => 'courses/' . $id, 'app' => '/#/learn/' . $id, 'image' => $origin . $img, 'jsonld' => $ld]);
+}
+
+/* ---------- Recruiting mechanics: the page, the link on the flyer, and the printable flyer ---------- */
+if ($kind === 'join') {
+    // /p/join/mechanic?src=apo : where the flyer's QR code lands. Straight into registration, remembering which flyer.
+    $trade = preg_replace('/[^a-z]/', '', (string) ($id ?? 'mechanic')) ?: 'mechanic';
+    $src = preg_replace('/[^a-z0-9_-]/', '', strtolower((string) ($_GET['src'] ?? ''))) ?: 'web';
+    try { Db::run("INSERT INTO events (user_id, module, action, created_at) VALUES (NULL, 'recruit', ?, ?)", ['scan:' . $src, Db::now()]); } catch (Throwable $ex) {}
+    header('Location: /#/artisans/register?trade=' . rawurlencode($trade) . '&src=' . rawurlencode($src), true, 302); exit;
+}
+if ($kind === 'mechanics' && $id === 'flyer') {
+    // Printable flyer. ?src= tags which village it is for; ?copies=2 prints two to a page to cut in half.
+    $src = preg_replace('/[^a-z0-9_-]/', '', strtolower((string) ($_GET['src'] ?? 'apo'))) ?: 'apo';
+    $place = ['apo' => 'Apo Mechanic Village', 'kugbo' => 'Kugbo Mechanic Village'][$src] ?? ucfirst($src);
+    $copies = max(1, min(4, (int) ($_GET['copies'] ?? 1)));
+    $url = $origin . '/p/join/mechanic?src=' . rawurlencode($src);
+    $one = '<section class="fl"><div class="top"><img src="/assets/icons/icon-192.png" alt=""><div><b>Buja</b><span>Mechanic near me</span></div></div>
+      <h1>Customers whose car don spoil <em>near you</em>, straight to your phone.</h1>
+      <p class="lead">When a car breaks down in Abuja, Buja alerts the nearest mechanics. First to accept gets the job. Free to join, no commission.</p>
+      <div class="mid"><div class="qr" data-url="' . $e($url) . '"></div><ol><li><b>Scan</b> this with your phone camera</li><li><b>Register</b>: your name, a photo of your face, your workshop pin</li><li><b>Keep Buja open</b>: it rings when a breakdown is near</li></ol></div>
+' . ($copies === 1 ? '<div class="why"><div><b>You set the price</b><span>Send your price in the app. The customer accepts before you start.</span></div><div><b>Good work rises</b><span>Answer fast, get good ratings, and you are alerted first.</span></div><div><b>Your hours</b><span>Switch off when you are busy. Choose how far you travel.</span></div></div><div class="free">FREE TO JOIN · NO COMMISSION</div>' : '') . '
+      <div class="foot"><span>Bring: your phone and a clear face photo. Five minutes.</span><span class="where">' . $e($place) . '</span></div>
+      <div class="url">' . $e(preg_replace('#^https?://#', '', $url)) . '</div></section>';
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Buja mechanic flyer, ' . $e($place) . '</title><meta name="robots" content="noindex">
+    <style>@page{size:A4;margin:10mm}*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,sans-serif;color:#1B1B1F;background:#eee}
+    .sheet{max-width:190mm;margin:0 auto;background:#fff}.fl{border:2px dashed #ccc;padding:9mm;margin:0 0 6mm;page-break-inside:avoid;' . ($copies > 1 ? 'min-height:128mm' : 'min-height:270mm') . '}
+    .top{display:flex;align-items:center;gap:10px}.top img{width:46px;height:46px;border-radius:12px}.top b{display:block;font-size:22px}.top span{color:#D92D20;font-weight:700;font-size:13px;letter-spacing:.5px;text-transform:uppercase}
+    h1{font-size:' . ($copies > 1 ? '24px' : '40px') . ';line-height:1.15;margin:14px 0 8px}h1 em{font-style:normal;color:#D92D20}.lead{font-size:' . ($copies > 1 ? '13px' : '16px') . ';color:#4A4A52;margin:0 0 12px;line-height:1.5}
+    .mid{display:flex;gap:18px;align-items:center}.qr{flex-shrink:0;padding:8px;border:3px solid #101014;border-radius:12px;background:#fff}.qr img,.qr canvas{display:block}
+    ol{margin:0;padding-left:20px;font-size:' . ($copies > 1 ? '13px' : '16px') . ';line-height:1.6}.foot{display:flex;justify-content:space-between;gap:10px;margin-top:12px;font-size:12px;color:#4A4A52}
+    .where{font-weight:800;color:#101014}.why{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px}.why div{background:#FFF4EC;border-radius:12px;padding:12px}.why b{display:block;font-size:15px;margin-bottom:4px}.why span{font-size:13px;color:#4A4A52;line-height:1.45}
+    .free{margin-top:16px;background:#D92D20;color:#fff;text-align:center;font-weight:900;font-size:22px;letter-spacing:1px;padding:14px;border-radius:12px}.url{margin-top:6px;font:600 11px ui-monospace,Menlo,monospace;color:#6B6B73}
+    .bar{max-width:190mm;margin:0 auto 10px;padding:12px;display:flex;gap:10px;align-items:center;font-size:14px}.bar button{background:#FF7A1A;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-weight:700;font-size:14px;cursor:pointer}
+    @media print{body{background:#fff}.bar{display:none}.fl{border-color:#ddd}}</style></head><body>
+    <div class="bar"><button onclick="print()">Print</button><span>' . $e($place) . ' · ' . ($copies > 1 ? $copies . ' flyers a page, cut along the dashes' : 'one flyer a page') . ' · <a href="?src=' . $e($src) . '&copies=' . ($copies > 1 ? 1 : 2) . '">' . ($copies > 1 ? 'one big flyer' : 'two to a page') . '</a></span></div>
+    <div class="sheet">' . str_repeat($one, $copies) . '</div>
+    <script src="/js/vendor/qrcode.js"></script><script>document.querySelectorAll(".qr").forEach(function(el){var q=qrcode(0,"M");q.addData(el.dataset.url);q.make();el.innerHTML=q.createImgTag(' . ($copies > 1 ? '4' : '9') . ',0);});</script></body></html>';
+    exit;
+}
+if ($kind === 'mechanics') {
+    $n = (int) (Db::one("SELECT COUNT(*) AS n FROM artisans WHERE trade = 'mechanic' AND hidden_at IS NULL")['n'] ?? 0);
+    $body = '<section class="hero"><img src="/assets/icons/icon-192.png" alt="" width="72" height="72" style="border-radius:20px"><h1>Mechanics: get customers whose car has broken down near you</h1><p>Buja alerts the nearest mechanics when a car stops in Abuja. First to accept gets the job. Free to join. No commission on your work.</p><a class="btn" href="/p/join/mechanic?src=web">Join as a mechanic</a></section>
+    <div class="wrap"><div class="grid">
+      <div class="card"><h3>How jobs reach you</h3><p class="muted">A driver pins where their car stopped and says what is wrong. Your phone rings with the distance and the problem. Accept, and you see their exact spot and phone number.</p></div>
+      <div class="card"><h3>You set the price</h3><p class="muted">Look at the car, send your price in the app, and the customer accepts before you start. No arguments afterwards.</p></div>
+      <div class="card"><h3>Good work rises</h3><p class="muted">Mechanics who answer quickly and get good ratings are alerted first. Every finished job builds your rating for the next customer.</p></div>
+      <div class="card"><h3>Your hours, your area</h3><p class="muted">Choose how far you travel and when you work. Switch off when you are busy and you will not be disturbed.</p></div>
+    </div>
+    <div class="card"><h3>What you need</h3><ul><li>A smartphone with data</li><li>A clear photo of your face (customers want to know who is coming)</li><li>Your workshop location</li><li>Optional: an ID photo for the Verified badge</li></ul><a class="btn" href="/p/join/mechanic?src=web">Join now, five minutes</a></div>
+    <p class="muted">' . ($n ? $n . ' mechanics are already on Buja. ' : '') . 'Recruiting at a mechanic village? Print a flyer: <a href="/p/mechanics/flyer?src=apo">Apo</a> · <a href="/p/mechanics/flyer?src=kugbo">Kugbo</a> · <a href="/p/mechanics/flyer?src=apo&copies=2">two to a page</a>.</p></div>';
+    page('Mechanics in Abuja: get customers near you', 'Buja alerts the nearest mechanics when a car breaks down in Abuja. Free to join, no commission. First to accept gets the job.', $body, ['path' => 'mechanics', 'app' => '/#/artisans/register?trade=mechanic']);
+}
+
+/* ---------- What the app stores require: privacy policy and a public account deletion page ---------- */
+if ($kind === 'privacy') {
+    $body = '<div class="wrap"><h1>Privacy policy</h1><p class="muted">Last updated 23 September 2026. Buja is operated in Abuja, Nigeria, for residents of the FCT.</p>
+    <div class="card"><h3>What Buja collects</h3><ul>
+      <li><b>Account:</b> name, email or phone, password (stored only as a hash), district, profile photo if you add one.</li>
+      <li><b>Location:</b> only when you use a feature that needs it (Waka, a breakdown request, Trip Share, Light Watch, nearby lists). During an active job or shared trip, your position is sent every few seconds and deleted when it ends.</li>
+      <li><b>What you post:</b> jobs, homes, items for sale, Social posts and photos, reviews, reports, messages you send to other people.</li>
+      <li><b>Mechanics and other artisans:</b> business name, trade, phone and WhatsApp, workshop location, face photo, and an ID photo if you choose to send one; ID photos are seen only by Buja administrators.</li>
+      <li><b>Device:</b> a push notification token if you switch notifications on; basic usage events (which screens are opened) to improve the app.</li></ul></div>
+    <div class="card"><h3>How it is used</h3><p class="muted">To run the features you use: connecting customers with nearby mechanics, showing fares and routes, delivering messages and notifications, and keeping people safe (reports, moderation). Buja does not sell personal data.</p></div>
+    <div class="card"><h3>Who sees what</h3><p class="muted">Public listings (jobs, homes, items, Social posts, artisan profiles) are visible to others. Your exact location is shown to a mechanic only after they accept your request. Phone numbers are shared only between people in an accepted job or a conversation.</p></div>
+    <div class="card"><h3>Services Buja uses</h3><p class="muted">Hosting (Render), database (TiDB Cloud), email (Brevo), maps (OpenFreeMap, OpenStreetMap data), routing (OSRM or OpenRouteService), payments (Paystack), AI answers (Google Gemini), and, where shown, advertising (Google AdSense), which may use cookies to show relevant ads.</p></div>
+    <div class="card"><h3>Your choices</h3><p class="muted">Switch any kind of notification off in Settings. Location is only used when you allow it. You can delete your account at any time in the app (Me, Settings, Delete my account) or <a href="/p/delete-account">on this page</a>.</p></div>
+    <div class="card"><h3>Contact</h3><p class="muted">' . $e((string) Http::config('mail_from', 'the email address in the app')) . '</p></div></div>';
+    page('Privacy policy', 'How Buja collects and uses personal data, and how to delete your account.', $body, ['path' => 'privacy']);
+}
+if ($kind === 'delete-account') {
+    $body = '<div class="wrap"><h1>Delete your Buja account</h1>
+    <div class="card"><h3>In the app, straight away</h3><p class="muted">Open Buja, go to <b>Me</b>, then <b>Settings</b>, then <b>Delete my account</b>, and type DELETE to confirm. You are signed out everywhere at once.</p></div>
+    <div class="card"><h3>What is deleted</h3><ul><li>Your name, email, phone and profile photo are removed</li><li>Your listings, Social posts and artisan profile are taken down</li><li>Notification devices, trusted contacts and saved sign-in keys are deleted</li></ul>
+      <p class="muted">Messages you already sent stay in the other person\'s chat, shown as from "Deleted user". Records we must keep for payments or fraud prevention are kept for as long as the law requires, then deleted.</p></div>
+    <div class="card"><h3>Cannot open the app?</h3><p class="muted">Ask here with the email on your account. We delete it within 30 days and may email you first to confirm it is you.</p>
+      <form id="dr"><input type="email" id="em" required placeholder="you@example.com" style="width:100%;padding:12px;border:1px solid #ccc;border-radius:10px;font-size:15px;margin:6px 0"><textarea id="rs" placeholder="Reason (optional)" style="width:100%;padding:12px;border:1px solid #ccc;border-radius:10px;font-size:15px;height:70px"></textarea><button class="btn" type="submit" style="border:none;cursor:pointer">Request deletion</button><p id="done" class="muted"></p></form></div></div>
+    <script>document.getElementById("dr").addEventListener("submit",async function(e){e.preventDefault();var b=e.target.querySelector("button");b.disabled=true;try{var r=await fetch("/api/account/delete-request",{method:"POST",headers:{"Content-Type":"application/json","X-Buja-Client":"pwa"},body:JSON.stringify({email:document.getElementById("em").value,reason:document.getElementById("rs").value})});document.getElementById("done").textContent=r.ok?"Received. If an account uses that email, it will be deleted within 30 days.":"Please check the email and try again.";}catch(x){document.getElementById("done").textContent="Could not send. Check your connection.";}b.disabled=false;});</script>';
+    page('Delete your Buja account', 'How to delete your Buja account and what is removed.', $body, ['path' => 'delete-account']);
 }
 
 notFound();

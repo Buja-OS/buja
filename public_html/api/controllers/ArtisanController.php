@@ -91,7 +91,8 @@ final class ArtisanController
             'lat' => round($lat, 6), 'lng' => round($lng, 6), 'radius_km' => max(2, min(60, (int) ($b['radiusKm'] ?? 15))), 'years' => max(0, min(60, (int) ($b['years'] ?? 0))),
             'available' => empty($b['available']) ? 0 : 1, 'services' => $list('services', 20), 'brands' => $list('brands', 20),
             'mobile_service' => array_key_exists('mobileService', $b) ? (empty($b['mobileService']) ? 0 : 1) : 1, 'emergency' => empty($b['emergency']) ? 0 : 1,
-            'hours' => mb_substr(trim((string) ($b['hours'] ?? '')), 0, 80) ?: null, 'callout_fee' => isset($b['calloutFee']) && $b['calloutFee'] !== '' ? max(0, (int) $b['calloutFee']) : null,
+            'hours' => mb_substr(trim((string) ($b['hours'] ?? '')), 0, 80) ?: null,
+            'source' => $had ? ($had['source'] ?? null) : (preg_replace('/[^a-z0-9_-]/', '', strtolower((string) ($b['source'] ?? ''))) ?: null), 'callout_fee' => isset($b['calloutFee']) && $b['calloutFee'] !== '' ? max(0, (int) $b['calloutFee']) : null,
             'address' => mb_substr(trim((string) ($b['address'] ?? '')), 0, 160) ?: null, 'landmark' => mb_substr(trim((string) ($b['landmark'] ?? '')), 0, 160) ?: null,
             'updated_at' => Db::now(), 'last_online_at' => Db::now(),
         ];
@@ -129,5 +130,51 @@ final class ArtisanController
         if (!$t) { Db::run("INSERT INTO threads (kind, user_a, user_b, last_message_at, created_at) VALUES ('artisan', ?, ?, ?, ?)", [$a, $b, Db::now(), Db::now()]); $t = ['id' => Db::lastId()]; Db::run('UPDATE artisans SET jobs_done = jobs_done + 1 WHERE user_id = ?', [$id]); }
         Track::hit($u, 'artisan', 'contact');
         Http::json(['threadId' => (int) $t['id']]);
+    }
+
+    /**
+     * GET /artisans/dashboard : the mechanic's own view. Jobs and earnings this week and month (from prices customers
+     * accepted), how quickly they answer, rating, no-shows, what is ringing now, recent jobs, and their hours.
+     */
+    public function dashboard(): void
+    {
+        $u = Auth::require();
+        $a = Db::one('SELECT * FROM artisans WHERE user_id = ?', [$u['id']]); if (!$a) Http::json(['artisan' => null]);
+        $span = function (int $days) use ($u): array {
+            $since = gmdate('Y-m-d H:i:s', time() - $days * 86400);
+            $r = Db::one("SELECT COUNT(*) AS jobs, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done, SUM(CASE WHEN status = 'done' AND quote_status = 'accepted' THEN quote_amount ELSE 0 END) AS earned FROM service_jobs WHERE artisan_id = ? AND created_at > ? AND status NOT IN ('requested','expired','declined')", [$u['id'], $since]) ?: [];
+            return ['jobs' => (int) ($r['jobs'] ?? 0), 'done' => (int) ($r['done'] ?? 0), 'earned' => (int) ($r['earned'] ?? 0)];
+        };
+        $rel = ServiceJobController::reliability((int) $u['id']);
+        $offers = Db::pdo()->prepare("SELECT o.km, o.offered_at, j.id, j.problem, j.trade FROM job_offers o JOIN service_jobs j ON j.id = o.job_id WHERE o.artisan_id = ? AND o.status = 'offered' AND j.status = 'requested' ORDER BY o.offered_at DESC LIMIT 5");
+        $offers->execute([$u['id']]);
+        $recent = Db::pdo()->prepare("SELECT j.id, j.problem, j.status, j.created_at, j.quote_amount, j.quote_status, u.name FROM service_jobs j JOIN users u ON u.id = j.customer_id WHERE j.artisan_id = ? ORDER BY j.id DESC LIMIT 12");
+        $recent->execute([$u['id']]);
+        Http::json(['artisan' => ['name' => $a['business'] ?: $a['owner_name'], 'trade' => self::TRADES[$a['trade']] ?? $a['trade'], 'available' => (bool) $a['available'], 'verified' => !empty($a['verified_at']),
+                'photo' => $a['photo_upload'] ? '/api/uploads/' . (int) $a['photo_upload'] : null, 'schedule' => $a['schedule'] ? json_decode($a['schedule'], true) : null, 'onDuty' => ServiceJobController::onDuty($a['schedule'] ?? null),
+                'profileUrl' => rtrim((string) Http::config('app_origin'), '/') . '/#/artisans/' . (int) $u['id'], 'idSent' => !empty($a['id_upload'])],
+            'week' => $span(7), 'month' => $span(30), 'reliability' => $rel,
+            'offers' => array_map(fn($o) => ['id' => (int) $o['id'], 'problem' => $o['problem'], 'km' => round((float) $o['km'], 1), 'at' => $o['offered_at']], $offers->fetchAll()),
+            'recent' => array_map(fn($r) => ['id' => (int) $r['id'], 'problem' => $r['problem'], 'status' => $r['status'], 'at' => $r['created_at'], 'customer' => explode(' ', trim((string) $r['name']))[0], 'price' => $r['quote_status'] === 'accepted' ? (int) $r['quote_amount'] : null], $recent->fetchAll())]);
+    }
+
+    /** POST /artisans/schedule { available, schedule: { mon: [8, 18], ... } | null } : on/off and working hours */
+    public function schedule(): void
+    {
+        $u = Auth::require(); $b = Http::body();
+        if (!Db::one('SELECT user_id FROM artisans WHERE user_id = ?', [$u['id']])) Http::json(['error' => 'not_found', 'message' => 'Register your trade first.'], 404);
+        $clean = null;
+        if (!empty($b['schedule']) && is_array($b['schedule'])) {
+            $clean = [];
+            foreach (['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as $d) {
+                $v = $b['schedule'][$d] ?? null;
+                if (is_array($v) && count($v) === 2) { $f = max(0, min(24, (float) $v[0])); $t = max(0, min(24, (float) $v[1])); if ($f !== $t) $clean[$d] = [$f, $t]; }
+            }
+        }
+        $sets = ['schedule = ?', 'updated_at = ?']; $vals = [$clean ? json_encode($clean) : null, Db::now()];
+        if (array_key_exists('available', $b)) { $sets[] = 'available = ?'; $vals[] = empty($b['available']) ? 0 : 1; $sets[] = 'last_online_at = ?'; $vals[] = Db::now(); }
+        $vals[] = $u['id'];
+        Db::run('UPDATE artisans SET ' . implode(', ', $sets) . ' WHERE user_id = ?', $vals);
+        $this->dashboard();
     }
 }

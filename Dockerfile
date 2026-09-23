@@ -21,6 +21,7 @@ RUN printf '%s\n' \
  '  RewriteRule ^p(/.*)?$ p/index.php [QSA,L]' \
  '  RewriteRule ^sitemap\.xml$ p/index.php?path=sitemap [L]' \
  '  RewriteRule ^robots\.txt$ p/index.php?path=robots [L]' \
+ '  RewriteRule ^\.well-known/assetlinks\.json$ p/index.php?path=assetlinks [L]' \
  '  RewriteCond %{REQUEST_FILENAME} !-f' \
  '  RewriteCond %{REQUEST_FILENAME} !-d' \
  '  RewriteRule ^ index.html [L]' \

@@ -1,4 +1,4 @@
-# Buja, Phase 27: the mechanic dispatch, and the admin fix
+# Buja, Phase 28: the mechanic side, and ready for the app stores
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -611,8 +611,44 @@ Swept 126 screens cold as an admin and as a resident: no crashes, no server erro
 The `.htaccess` files in `public_html/` and `public_html/api/` carry the routing Render gets from the Dockerfile.
 They had never reached GitHub because file managers hide names that start with a dot. They are in this zip.
 
+## Phase 28: the mechanic side, and ready for the app stores
+
+**Recruiting.** `/p/mechanics` explains the deal to mechanics (free, no commission, you set the price, good work
+rises, your hours). `/p/mechanics/flyer?src=apo` prints an A4 flyer with a large QR code; `&copies=2` prints two to
+a page; any word after `src=` makes a flyer for another place. The QR leads to `/p/join/mechanic?src=...`, which
+counts the scan and opens registration with the source attached. Sign-in now remembers where you were going, so a
+mechanic who is not yet on Buja signs up and lands straight in registration. Admin, Artisans shows sign-ups by
+source, so you can see which village's flyer worked. Print-ready PDFs for Apo and Kugbo are alongside this zip.
+
+**Mechanic dashboard** (`/artisans/dashboard`, under Me): a switch for taking jobs; working hours per day (night
+shifts work; outside them nobody is alerted); jobs and money earned this week and month (from prices customers
+accepted); answer rate, rating and jobs dropped, each explained; what is ringing now; recent jobs; share my profile.
+
+**Agreeing the price.** On an accepted job the mechanic sends a price and what it covers; the customer accepts or
+declines on the same screen; once accepted it is locked, and it becomes the job's earnings.
+
+**Fair dispatch.** Nearest first, then adjusted: seen online in the last 15 minutes moves you up; a low answer rate
+and jobs you accepted then cancelled move you down; 4.5 stars over three or more reviews moves you up. Newcomers start
+from a fair middle. Tested: the nearest mechanic, with three dropped jobs, was left out of the first round.
+
+**Verification queue.** Admin, Artisans lists mechanics waiting for a check first, with the face photo and the ID
+photo side by side. ID photos can be opened only by admins.
+
+**App store requirements.**
+- Delete my account in Settings (type DELETE): wipes name, contacts and photo, hides listings and the artisan
+  profile, removes push devices, trusted contacts and passkeys, signs out everywhere.
+- `/p/delete-account`: the public page both stores require, with a request form for people who cannot open the app.
+- `/p/privacy`: the privacy policy URL for the store listings, matching what Buja actually collects.
+- `/.well-known/assetlinks.json` for the Play Store package, from two new Render settings: `ANDROID_PACKAGE`
+  (for example ng.buja.app) and `ANDROID_SHA256` (the signing fingerprint PWABuilder shows you). Until they are
+  set it returns an empty list, which is harmless.
+
+Fixed on the way: the deletion first used column names and status values that do not exist, which would have left a
+deleted person's flats and items online; the dashboard's switch had no style; the hours rows overflowed small phones.
+Checked all 290 server routes have their code. Swept 127 screens cold as an admin and as a resident: no errors.
+
 ## What is next
 
-Phase 28: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 29: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.
