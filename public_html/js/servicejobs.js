@@ -7,6 +7,8 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
   const starsShort = (r) => r && r.count ? `★ ${Number(r.stars).toFixed(1)}` : 'New';
   const clock = (iso) => new Date(String(iso).replace(' ', 'T') + 'Z').toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const here = (ms = 8000) => new Promise((res) => { if (!navigator.geolocation) return res(null); let done = false; const f = (v) => { if (!done) { done = true; res(v); } }; setTimeout(() => f(null), ms); navigator.geolocation.getCurrentPosition((p) => f({ lat: p.coords.latitude, lng: p.coords.longitude }), () => f(null), { enableHighAccuracy: true, timeout: ms, maximumAge: 30000 }); });
+  const NOUN = { mechanic: ['mechanic', 'mechanics'], vulcanizer: ['tyre man', 'tyre men'], towing: ['tow truck', 'tow trucks'], electrician: ['electrician', 'electricians'], plumber: ['plumber', 'plumbers'], hair: ['barber', 'barbers'], tailor: ['tailor', 'tailors'], ac: ['AC repairer', 'AC repairers'], locksmith: ['locksmith', 'locksmiths'], '': ['artisan', 'artisans'] };
+  const noun = (t, n) => (NOUN[t] || ['artisan', 'artisans'])[n === 1 ? 0 : 1];
   const QUICK = [['mechanic', 'Mechanic'], ['vulcanizer', 'Tyres'], ['towing', 'Towing'], ['electrician', 'Electrician'], ['plumber', 'Plumber'], ['hair', 'Barber & hair'], ['tailor', 'Tailor'], ['ac', 'AC repair'], ['locksmith', 'Locksmith'], ['', 'All']];
 
   /* ============================== ARTISANS ON THE MAP ============================== */
@@ -64,7 +66,11 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       };
       const renderList = () => {
         el.querySelectorAll('.bm-pin.on').forEach((p) => p.classList.remove('on'));
-        sheet.body.innerHTML = `<div class="row" style="padding:2px 0 10px"><div class="grow"><div style="font-size:17px;font-weight:800">${list.length ? list.length + ' ' + (trade ? (QUICK.find((q) => q[0] === trade) || [0, 'artisans'])[1].toLowerCase() : 'artisans') + ' near you' : 'Nobody here yet'}</div><div class="small muted">${me ? 'Closest first. Tap one on the map or below.' : 'Turn on location to see who is closest.'}</div></div></div>
+        const roadside = !trade || ['mechanic', 'vulcanizer', 'towing'].includes(trade);
+        const sos = roadside ? `<a class="card row" href="#/breakdown${trade ? '?trade=' + trade : ''}" style="padding:14px;gap:12px;margin:2px 0 14px;background:#D92D20;border-color:#D92D20;color:#fff;text-decoration:none">
+          <span style="width:44px;height:44px;border-radius:22px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon('car-side')}</span>
+          <span class="grow"><span style="display:block;font-size:16px;font-weight:800">My car broke down</span><span class="small" style="opacity:.9">Pin where you are. The nearest ${trade === 'towing' ? 'tow truck' : trade === 'vulcanizer' ? 'tyre man' : 'mechanic'} who accepts comes to you.</span></span>${icon('chevron-right')}</a>` : '';
+        sheet.body.innerHTML = sos + `<div class="row" style="padding:2px 0 10px"><div class="grow"><div style="font-size:17px;font-weight:800">${list.length ? list.length + ' ' + noun(trade, list.length) + ' near you' : 'Nobody here yet'}</div><div class="small muted">${me ? 'Closest first. Tap one on the map or below.' : 'Turn on location to see who is closest.'}</div></div></div>
           ${list.length ? list.map((a) => `<button class="row card" data-a="${a.id}" style="width:100%;text-align:left;padding:10px 12px;gap:12px;margin-bottom:8px;background:var(--card)"><span style="width:40px;height:40px;border-radius:20px;background:${TRADE_COLOR[a.trade] || '#FF7A1A'};color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon(TRADE_ICON[a.trade] || 'wrench')}</span><span class="grow" style="min-width:0"><span style="display:block;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(a.name)}</span><span class="small muted">${h(a.tradeLabel)}${a.km != null ? ' · ' + a.km + ' km' : ''}</span></span><span class="small" style="font-weight:700;color:#B7791F">${starsShort(a.rating)}</span></button>`).join('') : `<div class="small muted" style="line-height:1.5">No ${trade ? 'one in this trade' : 'artisans'} listed near you yet. Know a good one? Ask them to list themselves under Artisans.</div><a class="btn btn-outline" href="#/artisans/me" style="margin-top:10px">List my own trade</a>`}`;
         sheet.body.querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', () => detail(list.find((x) => String(x.id) === b.dataset.a))));
       };
@@ -189,7 +195,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
   /* ============================== MY CAR BROKE DOWN ============================== */
   const PROBLEMS = { mechanic: ['Will not start', 'Overheating', 'Battery flat', 'Strange noise', 'Brakes', 'Accident'], vulcanizer: ['Flat tyre', 'Puncture', 'Tyre burst'], towing: ['Needs towing', 'Accident', 'Stuck'], electrician: ['No power', 'Sparks', 'Burning smell'] };
   route('/breakdown', { auth: true, tabs: '' }, async () => `<div class="bm-screen"><div class="bm-mapbox" id="map"></div>
-    <div class="bm-top"><a class="bm-fab" href="#/home" aria-label="Back">${icon('arrow-left')}</a><div class="bm-pill" id="pill">Where exactly are you?</div></div>
+    <div class="bm-top"><a class="bm-fab" href="#/artisans/map?trade=mechanic" aria-label="Back to mechanics near me">${icon('arrow-left')}</a><div class="bm-pill" id="pill">Where exactly are you?</div></div>
     <button class="bm-fab bm-locate" id="locate" aria-label="Where am I" style="top:calc(70px + var(--safe-t,0px))">${icon('location-crosshairs')}</button></div>`, {
     async mount(el) {
       const screen = el.querySelector('.bm-screen'); const pill = el.querySelector('#pill');

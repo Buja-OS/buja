@@ -262,8 +262,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/learn', 'book-open', '#101014', '#7ED957', 'Buja Learn', 'Code, AI, certificates. Free.'],
     ['/queues', 'building-columns', '#EAF1FB', '#1F5FBF', 'Office queues', 'NIN, passport, licence: how long now'],
     ['/rides', 'car', '#E7F0EA', '#2E7D1E', 'Commute share', 'Split a seat along your route'],
-    ['/breakdown', 'wrench', '#FDECEA', '#D92D20', 'Car broke down?', 'Nearest mechanic comes to your pin'],
-    ['/artisans/map?trade=mechanic', 'map-location-dot', '#EAF1FB', '#1F5FBF', 'Mechanics near me', 'See them on the map with ratings'],
+    ['/artisans/map?trade=mechanic', 'wrench', '#FDECEA', '#D92D20', 'Mechanic near me', 'Car broke down? The nearest one comes to you'],
   ];
   return `
   <header class="topbar" style="padding-top:8px">
