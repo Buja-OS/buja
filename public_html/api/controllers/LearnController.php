@@ -53,7 +53,7 @@ final class LearnController
         $l = $c['lessons'][$n];
         $saved = Db::one('SELECT code FROM learn_saves WHERE user_id = ? AND course = ? AND lesson = ?', [$u['id'], $slug, $n]);
         $out = ['index' => $n, 'total' => count($c['lessons']), 'title' => $l['title'], 'kind' => $l['kind'], 'minutes' => $l['minutes'], 'body' => $l['body'], 'done' => isset($done[$n]),
-            'lang' => $l['lang'] ?? null, 'starter' => $saved ? $saved['code'] : ($l['starter'] ?? null), 'setup' => $l['setup'] ?? null, 'tests' => $l['tests'] ?? null,
+            'lang' => $l['lang'] ?? null, 'starter' => $saved ? $saved['code'] : ($l['starter'] ?? null), 'setup' => $l['setup'] ?? null, 'tests' => $l['tests'] ?? null, 'hint' => $l['hint'] ?? null, 'answer' => $l['answer'] ?? null,
             'check' => isset($l['check']) ? array_map(fn($q) => ['q' => $q['q'], 'options' => $q['options']], $l['check']) : null,
             'rubric' => $l['rubric'] ?? null, 'courseTitle' => $c['title'], 'color' => $c['color'], 'nextTitle' => $c['lessons'][$n + 1]['title'] ?? null];
         Http::json(['lesson' => $out]);

@@ -109,11 +109,13 @@ export function registerLearn({ route, go, state, api, ui, failed }) {
       <div class="lesson" style="font-size:15px;line-height:1.65;color:var(--ink-2)">${l.body}</div>
       ${l.kind === 'code' ? `
         <div class="card" style="padding:0;overflow:hidden;background:#101014">
-          <div class="row" style="padding:8px 12px;gap:8px;background:#16161B;color:#B5B5BC;font-size:12px"><span>${l.lang === 'html' ? 'index.html' : 'script.js'}</span><span class="grow"></span><button class="btn btn-sm" id="reset" style="width:auto;height:28px;font-size:11px;background:transparent;color:#B5B5BC;border:1px solid #2A2F3A">Reset</button><button class="btn btn-sm" id="run" style="width:auto;height:28px;font-size:12px;background:#7ED957;color:#101014;border:none">${icon('play')} Run</button></div>
-          <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" style="width:100%;min-height:260px;background:#101014;color:#E8E8EC;border:none;padding:12px;font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical;outline:none;tab-size:2">${h(l.starter || '')}</textarea>
+          <div class="row" style="padding:8px 12px;gap:8px;background:#16161B;color:#B5B5BC;font-size:12px"><span>${l.lang === 'html' ? 'index.html' : 'script.js'}</span><span class="grow"></span><button class="btn btn-sm" id="reset" style="width:auto;height:28px;font-size:11px;background:transparent;color:#B5B5BC;border:1px solid #2A2F3A">Reset</button><button class="btn btn-sm" id="run" style="width:auto;height:34px;font-size:13px;font-weight:700;background:#7ED957;color:#101014;border:none">${icon('play')} Check my code</button></div>
+          <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" enterkeyhint="enter" aria-label="Your code" style="width:100%;min-height:200px;background:#101014;color:#E8E8EC;border:none;padding:12px;font:15px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical;outline:none;tab-size:2">${h(l.starter || '')}</textarea>
+          <div class="codekeys" id="codekeys" aria-label="Code keys">${(l.lang === 'html' ? ['<', '>', '/', '=', '"', "'", '{', '}', ';', ':', '.', '#', '(', ')', '⇥'] : ['(', ')', '{', '}', '[', ']', ';', '=', '"', "'", '.', ':', '<', '>', '⇥']).map((k) => `<button type="button" data-k="${h(k)}">${h(k)}</button>`).join('')}${l.lang === 'html' ? '<button type="button" data-close="1" class="wide">&lt;/close&gt;</button>' : ''}</div>
         </div>
         ${l.lang === 'html' ? `<div class="card" style="padding:0;overflow:hidden"><div class="small muted" style="padding:6px 12px;background:var(--surface)">Preview</div><iframe id="preview" sandbox="allow-scripts allow-forms" style="width:100%;height:220px;border:none;background:#fff"></iframe></div>` : `<div class="card" style="padding:10px 12px;background:#16161B;color:#B5B5BC;font:12px/1.5 ui-monospace,monospace;min-height:44px;white-space:pre-wrap" id="console">Console output appears here.</div>`}
-        <div class="card stack" style="padding:12px 14px;gap:6px" id="tests"><div class="small muted">Run your code to check it against ${(l.tests || []).length} tests.</div></div>`
+        <div class="card stack" style="padding:12px 14px;gap:6px" id="tests"><div class="small muted">Type your code, then tap Check my code.</div></div>
+        ${l.hint || l.answer ? `<div class="row" style="gap:8px">${l.hint ? '<button class="btn btn-sm btn-outline" id="hintbtn" style="width:auto">' + icon('circle-info') + ' Hint</button>' : ''}${l.answer ? '<button class="btn btn-sm btn-ghost" id="answerbtn" style="width:auto">Show the answer</button>' : ''}</div><div id="helpbox"></div>` : ''}`
       : l.kind === 'prompt' ? `
         <div class="card stack" style="padding:14px;gap:8px"><div class="section" style="margin:0">THE RUBRIC</div>${(l.rubric || []).map((r) => `<div class="row small" style="gap:8px;align-items:flex-start"><span style="color:var(--ink-3);flex-shrink:0">○</span><span>${h(r)}</span></div>`).join('')}</div>
         <textarea id="prompt" spellcheck="true" style="width:100%;min-height:240px;padding:14px;border:1px solid var(--line);border-radius:14px;font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical;outline:none;background:var(--card);color:var(--ink)" placeholder="Write the prompt exactly as you would give it to the model.">${h(l.starter || '')}</textarea>
@@ -163,13 +165,32 @@ export function registerLearn({ route, go, state, api, ui, failed }) {
         const ta = el.querySelector('#code'); let saveT = null;
         ta.addEventListener('keydown', (e) => { if (e.key === 'Tab') { e.preventDefault(); const s = ta.selectionStart; ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(ta.selectionEnd); ta.selectionStart = ta.selectionEnd = s + 2; } });
         ta.addEventListener('input', () => { clearTimeout(saveT); saveT = setTimeout(() => api.learnSave(slug, n, ta.value).catch(() => {}), 1200); });
+        // Code keys: symbols that phone keyboards hide on a second page. Pressing one keeps the keyboard open.
+        const insert = (text, back = 0) => { const s = ta.selectionStart, e = ta.selectionEnd; ta.value = ta.value.slice(0, s) + text + ta.value.slice(e); const p = s + text.length - back; ta.setSelectionRange(p, p); ta.dispatchEvent(new Event('input')); };
+        const lastOpenTag = () => { const before = ta.value.slice(0, ta.selectionStart); const open = []; const re = /<\/?([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g; let m; const selfClosing = ['br', 'img', 'input', 'meta', 'link', 'hr']; while ((m = re.exec(before))) { const name = m[1].toLowerCase(); if (selfClosing.includes(name)) continue; if (m[0][1] === '/') { const i = open.lastIndexOf(name); if (i >= 0) open.splice(i, 1); } else open.push(name); } return open.pop(); };
+        el.querySelectorAll('#codekeys button').forEach((b) => {
+          let touched = false;
+          b.addEventListener('mousedown', (e) => e.preventDefault());
+          const press = () => { if (b.dataset.close) { const t = lastOpenTag(); if (t) insert('</' + t + '>'); else toast('No tag left open'); } else if (b.dataset.k === '⇥') insert('  '); else if (b.dataset.k === '"') insert('""', 1); else insert(b.dataset.k); ta.focus(); };
+          b.addEventListener('touchend', (e) => { e.preventDefault(); touched = true; press(); });
+          b.addEventListener('click', () => { if (touched) { touched = false; return; } press(); });
+        });
+        // The preview follows your typing, so every character shows its effect.
+        let liveT; if (l.lang === 'html') ta.addEventListener('input', () => { clearTimeout(liveT); liveT = setTimeout(() => { const f = el.querySelector('#preview'); if (f) f.srcdoc = ta.value; }, 500); });
+        let fails = 0;
+        el.querySelector('#hintbtn')?.addEventListener('click', () => { el.querySelector('#helpbox').innerHTML = `<div class="card" style="padding:12px 14px;background:var(--orange-tint);border-color:var(--orange)"><div class="small" style="line-height:1.5"><b>Hint:</b> ${h(l.hint)}</div></div>`; });
+        el.querySelector('#answerbtn')?.addEventListener('click', () => {
+          if (fails < 1 && !confirm('Try once more first? You learn most by typing it yourself.')) return;
+          el.querySelector('#helpbox').innerHTML = `<div class="card stack" style="padding:12px 14px;gap:8px"><div class="small muted">One way to write it. Type it into the editor yourself; it sticks better than copying.</div><pre style="margin:0;padding:10px 12px;background:#101014;color:#E8E8EC;border-radius:10px;font:13px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-x:auto">${h(l.answer)}</pre></div>`;
+        });
         el.querySelector('#reset').addEventListener('click', async () => { if (!confirm('Reset to the starter code?')) return; const fresh = (await api.learnLesson(slug, n)).lesson; ta.value = l.starterOriginal || fresh.starter || ''; });
         el.querySelector('#run').addEventListener('click', async (e) => {
           const runBtn = e.currentTarget; busy(runBtn, true);
           const r = await runInSandbox(el, l, ta.value);
           busy(runBtn, false);
           const box = el.querySelector('#tests');
-          box.innerHTML = r.results.map((t) => `<div class="row small" style="gap:8px;align-items:flex-start"><span style="color:${t.ok ? 'var(--green-dark)' : '#D92D20'};flex-shrink:0">${icon(t.ok ? 'circle-check' : 'xmark')}</span><span>${h(t.msg)}${t.err ? ` <span class="muted">(${h(t.err)})</span>` : ''}</span></div>`).join('') + (r.results.every((t) => t.ok) ? `<div class="small" style="color:var(--green-dark);font-weight:700;margin-top:4px">All ${r.results.length} tests pass.</div>` : `<div class="small muted" style="margin-top:4px">${r.results.filter((t) => t.ok).length} of ${r.results.length} passing.</div>`);
+          box.innerHTML = r.results.map((t) => `<div class="row small" style="gap:8px;align-items:flex-start"><span style="color:${t.ok ? 'var(--green-dark)' : '#D92D20'};flex-shrink:0">${icon(t.ok ? 'circle-check' : 'xmark')}</span><span>${h(t.msg)}${t.err ? ` <span class="muted">(${h(t.err)})</span>` : ''}</span></div>`).join('') + (r.results.every((t) => t.ok) ? `<div class="small" style="color:var(--green-dark);font-weight:700;margin-top:4px">${r.results.length === 1 ? 'Well done, it works.' : 'All ' + r.results.length + ' checks pass. Well done.'}</div>` : `<div class="small muted" style="margin-top:4px">${r.results.filter((t) => t.ok).length} of ${r.results.length} done. Fix the red one and check again.</div>`);
+          if (!r.results.every((t) => t.ok)) fails++;
           if (r.results.every((t) => t.ok) && !passed) { next.disabled = false; next.textContent = 'Continue'; next.onclick = () => finish({ passed: true, code: ta.value }); }
         });
       }
