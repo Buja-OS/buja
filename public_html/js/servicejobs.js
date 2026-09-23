@@ -19,8 +19,13 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       const sheet = bottomSheet(screen, { peek: 170, half: 0.46, start: 'half' });
       sheet.body.innerHTML = `<div class="small muted" style="padding:6px 0">Finding where you are…</div>`;
       el.querySelector('#chips').innerHTML = QUICK.map(([k, l]) => `<button class="chip ${k === trade ? 'on' : ''}" data-t="${k}">${l}</button>`).join('');
-      const me = await here(6000);
+      let me = await here(6000);
+      // Buja covers the FCT. A computer often guesses its position from the internet connection and lands in
+      // Kaduna or Lagos; measuring "km away" from there is nonsense, so such a fix is set aside with a note.
+      const inFct = (p) => p && p.lat > 8.35 && p.lat < 9.65 && p.lng > 6.7 && p.lng < 7.95;
+      let outside = false; if (me && !inFct(me)) { outside = true; me = null; }
       const map = await createMap(box, { center: me ? [me.lng, me.lat] : undefined, zoom: me ? 13 : 12 });
+      if (outside) toast('Your location looks outside Abuja, so distances are hidden. On a phone with GPS this is exact.', 6000);
       if (!map) box.innerHTML = `<div class="placeholder" style="height:100%;padding-top:90px"><div class="small muted">The map could not load on this phone. The list below still works.</div></div>`;
       if (map && me) map.marker('me', { ...me, html: meHtml(), anchor: 'center', z: 3 });
       let list = [];

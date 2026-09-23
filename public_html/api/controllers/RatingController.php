@@ -20,12 +20,14 @@ final class RatingController
     private const GOOD = ['Showed up on time', 'Property as described', 'No hidden fees', 'Answered questions', 'Item as described', 'Fair on price', 'On time', 'Easy to deal with', 'Clear about the role', 'Interview happened', 'Replied quickly', 'Photos were real', 'Respectful', 'Met in public'];
 
     /** The public summary of how somebody deals with people. */
-    public static function summary(int $userId): array
+    /** Stars and the most common tags. With a module, only that kind of review (a mechanic's card shows mechanic reviews). */
+    public static function summary(int $userId, ?string $module = null): array
     {
-        $agg = Db::one('SELECT COUNT(*) AS n, ROUND(AVG(stars), 1) AS avg FROM user_ratings WHERE rated = ? AND hidden_at IS NULL', [$userId]);
+        $mod = $module ? ' AND module = ' . Db::pdo()->quote($module) : '';
+        $agg = Db::one('SELECT COUNT(*) AS n, ROUND(AVG(stars), 1) AS avg FROM user_ratings WHERE rated = ? AND hidden_at IS NULL' . $mod, [$userId]);
         $n = (int) ($agg['n'] ?? 0);
         if ($n === 0) return ['count' => 0, 'stars' => null, 'top' => []];
-        $st = Db::pdo()->prepare('SELECT tags FROM user_ratings WHERE rated = ? AND hidden_at IS NULL ORDER BY id DESC LIMIT 40');
+        $st = Db::pdo()->prepare('SELECT tags FROM user_ratings WHERE rated = ? AND hidden_at IS NULL' . $mod . ' ORDER BY id DESC LIMIT 40');
         $st->execute([$userId]);
         $tally = [];
         foreach ($st->fetchAll() as $r) foreach (json_decode($r['tags'] ?? '[]', true) ?: [] as $t) $tally[$t] = ($tally[$t] ?? 0) + 1;

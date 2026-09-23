@@ -77,24 +77,47 @@ final class UploadsController
     }
 
     /** GET /uploads/{id} : the owner, or anyone in a thread or post it is attached to. */
+    /**
+     * GET /uploads/{id}. Two kinds of picture:
+     *  - public: shown on listings anyone can open, including signed-out visitors and Google (Social posts and
+     *    their photo sets, artisans' faces, company logos, landlord photos, place photos, event covers,
+     *    open lost-and-found posts). Anyone may load them.
+     *  - private: chat attachments and a breakdown's photo. Only the people in that conversation or job.
+     * Everything else is visible to its owner only.
+     */
     public function show(int $id): void
     {
-        $u = Auth::require();
+        $u = Auth::user();
         $f = Db::one('SELECT * FROM uploads WHERE id = ?', [$id]); if (!$f) Http::json(['error' => 'not_found'], 404);
-        $allowed = (int) $f['user_id'] === (int) $u['id']
-            || Db::one('SELECT 1 AS x FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.upload_id = ? AND (t.user_a = ? OR t.user_b = ?)', [$id, $u['id'], $u['id']]) !== null
-            || Db::one('SELECT 1 AS x FROM social_posts WHERE upload_id = ? AND hidden_at IS NULL', [$id]) !== null
-            || Db::one('SELECT 1 AS x FROM social_replies WHERE upload_id = ? AND hidden_at IS NULL', [$id]) !== null
-            || Db::one('SELECT 1 AS x FROM companies WHERE logo_upload_id = ?', [$id]) !== null
-            || Db::one('SELECT 1 AS x FROM landlord_profiles WHERE photo_upload_id = ?', [$id]) !== null
-            || Db::one('SELECT 1 AS x FROM spot_photos WHERE upload_id = ? AND hidden_at IS NULL', [$id]) !== null;
-        if (!$allowed) Http::json(['error' => 'forbidden'], 403);
+        $public = (function () use ($id): bool {
+            $checks = [
+                'SELECT 1 AS x FROM social_posts WHERE upload_id = ? AND hidden_at IS NULL',
+                'SELECT 1 AS x FROM social_replies WHERE upload_id = ? AND hidden_at IS NULL',
+                'SELECT 1 AS x FROM social_images i LEFT JOIN social_posts p ON p.id = i.post_id LEFT JOIN social_replies r ON r.id = i.reply_id WHERE i.upload_id = ? AND (p.hidden_at IS NULL AND (i.post_id IS NOT NULL) OR r.hidden_at IS NULL AND (i.reply_id IS NOT NULL))',
+                'SELECT 1 AS x FROM artisans WHERE photo_upload = ? AND hidden_at IS NULL',
+                'SELECT 1 AS x FROM companies WHERE logo_upload_id = ?',
+                'SELECT 1 AS x FROM landlord_profiles WHERE photo_upload_id = ?',
+                'SELECT 1 AS x FROM spot_photos WHERE upload_id = ? AND hidden_at IS NULL',
+                'SELECT 1 AS x FROM meetups WHERE cover_upload = ? AND hidden_at IS NULL',
+                "SELECT 1 AS x FROM lost_found WHERE upload_id = ? AND status = 'open'",
+            ];
+            foreach ($checks as $q) { try { if (Db::one($q, [$id]) !== null) return true; } catch (Throwable $e) { /* a table not migrated yet */ } }
+            return false;
+        })();
+        $allowed = $public;
+        if (!$allowed && $u) {
+            $allowed = (int) $f['user_id'] === (int) $u['id']
+                || Db::one('SELECT 1 AS x FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.upload_id = ? AND (t.user_a = ? OR t.user_b = ?)', [$id, $u['id'], $u['id']]) !== null
+                || (function () use ($id, $u): bool { try { return Db::one('SELECT 1 AS x FROM service_jobs WHERE photo_upload = ? AND (customer_id = ? OR artisan_id = ?)', [$id, $u['id'], $u['id']]) !== null; } catch (Throwable $e) { return false; } })();
+        }
+        if (!$allowed) Http::json(['error' => $u ? 'forbidden' : 'unauthorized'], $u ? 403 : 401);
+        if ($public) header('Cache-Control: public, max-age=86400'); // listings: safe to cache for everyone
         if ($f['storage_key']) { header('Location: ' . Media::url($f['storage_key'], 900)); header('Cache-Control: private, max-age=300'); exit; }
         header('Content-Type: ' . ($f['mime'] ?: 'application/octet-stream'));
         header('Content-Length: ' . (int) $f['size']);
         header('Accept-Ranges: none');
         if ($f['kind'] === 'file') header('Content-Disposition: inline; filename="' . preg_replace('/[^A-Za-z0-9._-]/', '_', (string) ($f['name'] ?? 'file')) . '"');
-        header('Cache-Control: private, max-age=86400'); header('X-Content-Type-Options: nosniff');
+        if (!$public) header('Cache-Control: private, max-age=86400'); header('X-Content-Type-Options: nosniff');
         echo $f['data']; exit;
     }
 

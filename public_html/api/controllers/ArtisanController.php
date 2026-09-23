@@ -16,7 +16,7 @@ final class ArtisanController
             'trade' => $a['trade'], 'tradeLabel' => self::TRADES[$a['trade']] ?? $a['trade'], 'about' => $a['about'], 'phone' => $a['phone'], 'whatsapp' => $a['whatsapp'] ?: $a['phone'],
             'district' => $a['base_district'], 'radiusKm' => (int) $a['radius_km'], 'years' => (int) $a['years'], 'available' => (bool) $a['available'],
             'verified' => !empty($a['verified_at']) || !empty($u['selfie_verified_at']), 'bujaVerified' => !empty($a['verified_at']), 'photo' => $a['photo_upload'] ? '/api/uploads/' . (int) $a['photo_upload'] : (Db::one('SELECT 1 AS x FROM avatars WHERE user_id = ?', [$a['user_id']]) ? '/api/avatar/' . (int) $a['user_id'] : null),
-            'rating' => RatingController::summary((int) $a['user_id']), 'jobs' => (int) $a['jobs_done'], 'lat' => $a['lat'] !== null ? (float) $a['lat'] : null, 'lng' => $a['lng'] !== null ? (float) $a['lng'] : null,
+            'rating' => RatingController::summary((int) $a['user_id'], 'artisan'), 'jobs' => (int) $a['jobs_done'], 'lat' => $a['lat'] !== null ? (float) $a['lat'] : null, 'lng' => $a['lng'] !== null ? (float) $a['lng'] : null,
             'owner' => $a['owner_name'] ?? null, 'services' => json_decode((string) ($a['services'] ?? '[]'), true) ?: [], 'brands' => json_decode((string) ($a['brands'] ?? '[]'), true) ?: [],
             'mobileService' => (bool) ($a['mobile_service'] ?? 1), 'emergency' => (bool) ($a['emergency'] ?? 0), 'hours' => $a['hours'] ?? null, 'calloutFee' => isset($a['callout_fee']) && $a['callout_fee'] !== null ? (int) $a['callout_fee'] : null,
             'address' => $a['address'] ?? null, 'landmark' => $a['landmark'] ?? null, 'hasId' => !empty($a['id_upload']),

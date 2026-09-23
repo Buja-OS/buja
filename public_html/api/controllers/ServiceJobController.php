@@ -33,6 +33,8 @@ final class ServiceJobController
         }
         return $j;
     }
+    /** The FCT and its immediate edges (Mararaba, Madalla, Suleja): where a breakdown can be answered. */
+    public static function inFct(float $lat, float $lng): bool { return $lat > 8.35 && $lat < 9.65 && $lng > 6.7 && $lng < 7.95; }
     private static function metres(float $a, float $b, float $c, float $d): float { return WakaRules::km($a, $b, $c, $d) * 1000; }
     private function shape(array $j, array $u): array
     {
@@ -63,7 +65,7 @@ final class ServiceJobController
             'photo' => $isCustomer && !$pending ? (($p = Db::one('SELECT photo_upload FROM artisans WHERE user_id = ?', [$j['artisan_id']])) && $p['photo_upload'] ? '/api/uploads/' . (int) $p['photo_upload'] : Auth::picture((int) $j['artisan_id'])) : null,
             'other' => ($pending && $isCustomer) ? ['id' => 0, 'name' => 'Finding the nearest ' . strtolower(ArtisanController::TRADES[$j['trade']] ?? 'hand'), 'phone' => null, 'avatar' => null, 'rating' => ['count' => 0]] : ['id' => $other, 'name' => $isCustomer ? ($art['business'] ?: explode(' ', trim((string) ($o['name'] ?? '')))[0]) : explode(' ', trim((string) ($o['name'] ?? '')))[0],
                 'phone' => in_array($j['status'], ['accepted', 'enroute', 'arrived'], true) ? ($isCustomer ? ($art['phone'] ?: $o['phone']) : $o['phone']) : null,
-                'avatar' => Auth::picture($other), 'rating' => RatingController::summary($other)],
+                'avatar' => Auth::picture($other), 'rating' => RatingController::summary($other, $isCustomer ? 'artisan' : null)],
             'live' => $live, 'route' => ($live && $j['route_json']) ? json_decode($j['route_json'], true) : null,
             'threadId' => $j['thread_id'] ? (int) $j['thread_id'] : null, 'rated' => (bool) $j['rated'],
             'times' => ['created' => $j['created_at'], 'accepted' => $j['accepted_at'], 'started' => $j['started_at'], 'arrived' => $j['arrived_at'], 'done' => $j['done_at']],
@@ -90,7 +92,7 @@ final class ServiceJobController
         $a = Db::one('SELECT * FROM artisans WHERE user_id = ? AND hidden_at IS NULL', [$aid]); if (!$a) Http::json(['error' => 'not_found', 'message' => 'That artisan is not listed.'], 404);
         if (!(int) $a['available']) Http::json(['error' => 'validation', 'message' => 'They are not taking jobs right now. Try another, or let Buja find the nearest.'], 422);
         $lat = (float) ($b['lat'] ?? 0); $lng = (float) ($b['lng'] ?? 0);
-        if ($lat < 8 || $lat > 10 || $lng < 6.5 || $lng > 8) Http::json(['error' => 'validation', 'message' => 'Turn on location so they can find you. Buja works inside the FCT.'], 422);
+        if (!self::inFct($lat, $lng)) Http::json(['error' => 'validation', 'message' => 'Your location is outside the FCT. Buja mechanics work inside Abuja; on a phone, turn on GPS so the pin is exact.'], 422);
         $problem = mb_substr(trim((string) ($b['problem'] ?? '')), 0, 400); if (mb_strlen($problem) < 5) Http::json(['error' => 'validation', 'fields' => ['problem' => 'Say what is wrong in a few words.']], 422);
         if (Db::one("SELECT id FROM service_jobs WHERE customer_id = ? AND artisan_id = ? AND status IN ('requested','accepted','enroute','arrived')", [$u['id'], $aid])) Http::json(['error' => 'validation', 'message' => 'You already have an open job with them.'], 409);
         Db::run('INSERT INTO service_jobs (customer_id, artisan_id, trade, problem, lat, lng, landmark, created_at) VALUES (?,?,?,?,?,?,?,?)', [$u['id'], $aid, $a['trade'], $problem, round($lat, 6), round($lng, 6), mb_substr(trim((string) ($b['landmark'] ?? '')), 0, 160) ?: null, Db::now()]);
@@ -227,7 +229,7 @@ final class ServiceJobController
         $u = Auth::require(); RateLimit::hit('servicejob', 8, 3600); $b = Http::body();
         $trade = (string) ($b['trade'] ?? 'mechanic'); if (!isset(ArtisanController::TRADES[$trade])) Http::json(['error' => 'validation', 'message' => 'Which kind of help?'], 422);
         $lat = (float) ($b['lat'] ?? 0); $lng = (float) ($b['lng'] ?? 0);
-        if ($lat < 8 || $lat > 10 || $lng < 6.5 || $lng > 8) Http::json(['error' => 'validation', 'message' => 'Turn on location and place the pin where you are. Buja works inside the FCT.'], 422);
+        if (!self::inFct($lat, $lng)) Http::json(['error' => 'validation', 'message' => 'Turn on location and place the pin where you are. Buja works inside the FCT.'], 422);
         $problem = mb_substr(trim((string) ($b['problem'] ?? '')), 0, 400); if (mb_strlen($problem) < 5) Http::json(['error' => 'validation', 'fields' => ['problem' => 'Say what is wrong in a few words.']], 422);
         if ($open = Db::one("SELECT id FROM service_jobs WHERE customer_id = ? AND mode = 'nearest' AND status IN ('requested','accepted','enroute','arrived')", [$u['id']])) Http::json(['error' => 'open', 'message' => 'You already have a request running.', 'id' => (int) $open['id']], 409);
         Db::run('INSERT INTO service_jobs (customer_id, artisan_id, trade, problem, lat, lng, landmark, created_at, mode, accuracy_m, trades) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
@@ -314,7 +316,7 @@ final class ServiceJobController
         if ((int) $j['customer_id'] !== (int) $u['id']) Http::json(['error' => 'forbidden'], 403);
         if (!in_array($j['status'], ['requested', 'accepted', 'enroute'], true)) Http::json(['job' => $this->shape($j, $u)]);
         $b = Http::body(); $lat = (float) ($b['lat'] ?? 0); $lng = (float) ($b['lng'] ?? 0);
-        if ($lat < 8 || $lat > 10 || $lng < 6.5 || $lng > 8) Http::json(['error' => 'validation'], 422);
+        if (!self::inFct($lat, $lng)) Http::json(['error' => 'validation'], 422);
         if (self::metres((float) $j['lat'], (float) $j['lng'], $lat, $lng) >= 15) {
             Db::run('UPDATE service_jobs SET lat = ?, lng = ?, accuracy_m = ?, route_at = NULL WHERE id = ?', [round($lat, 6), round($lng, 6), isset($b['accuracy']) ? (int) $b['accuracy'] : null, $id]);
             if ((int) $j['artisan_id'] && in_array($j['status'], ['accepted', 'enroute'], true)) Notify::user((int) $j['artisan_id'], 'work', 'Your customer moved their pin', 'Check the map for the new spot.', '/#/jobs/' . $id);
