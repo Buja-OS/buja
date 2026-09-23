@@ -153,6 +153,7 @@ $router->get('/admin/analytics',             [AdminController::class, 'analytics
 
 // News, Abuja Social, Radio, Match suggestions
 $router->get('/news',                        [NewsController::class, 'index']);
+$router->get('/news/{id}',                   [NewsController::class, 'item']);
 $router->post('/news/refresh',               [NewsController::class, 'refreshEndpoint']);
 $router->get('/social',                      [SocialController::class, 'index']);
 $router->post('/social',                     [SocialController::class, 'create']);
@@ -337,3 +338,9 @@ $router->post('/service-jobs/{id}/{action}', [ServiceJobController::class, 'act'
 $router->post('/safety/ride',                [SafetyController::class, 'startRide']);
 $router->get('/safety/board',                [SafetyController::class, 'board']);
 $router->post('/safety/fare-asked',          [SafetyController::class, 'fareAsked']);
+
+// Social and news moderation
+$router->get('/admin/social',                [SocialController::class, 'adminIndex']);
+$router->post('/admin/social/{id}/{action}', [SocialController::class, 'adminAct']);
+$router->get('/admin/news',                  [NewsController::class, 'adminIndex']);
+$router->post('/admin/news/{id}/{action}',   [NewsController::class, 'adminAct']);

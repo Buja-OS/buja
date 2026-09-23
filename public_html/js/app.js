@@ -7,6 +7,7 @@ import { registerCall } from './call.js';
 import { registerAlerts } from './alerts.js';
 import { registerTrustAlerts, ringer } from './trustalerts.js';
 import { registerEngage } from './engage.js';
+import { registerAdminShell } from './adminshell.js';
 import { passkeyAvailable, registerPasskey, loginWithPasskey } from './passkey.js';
 import { registerRtc, watchIncoming } from './rtc.js';
 
@@ -447,6 +448,7 @@ function preloadRest() {
   idle(next);
 }
 const push = registerMessages({ route, go, state, setState, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify }, failed });
+registerAdminShell({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed });
 registerEngage({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon }, failed, push });
 
 route('/404', {}, async () => `${topbar('Not found', '/home')}<div class="placeholder"><div class="h-md">That page does not exist</div><a class="btn btn-ink" href="#/home" style="width:auto">Go home</a></div>`);

@@ -202,3 +202,31 @@ select.input { appearance: none; -webkit-appearance: none; background-image: lin
 .bm-locate{position:absolute;right:12px;z-index:5}
 .maplibregl-ctrl-attrib{font-size:10px!important}
 .bm-offline::after{content:'Street map unavailable offline';position:absolute;left:50%;top:calc(76px + var(--safe-t,0px));transform:translateX(-50%);background:rgba(16,16,20,.78);color:#fff;font:600 11px Inter,system-ui,sans-serif;padding:5px 10px;border-radius:12px;z-index:4;pointer-events:none;white-space:nowrap}
+
+/* ---------- Admin on a computer (Phase 26) ----------
+   Admin work is spreadsheet work: on a wide screen the phone column becomes a sidebar plus a wide sheet. */
+@media (min-width: 900px) {
+  body.admin-wide .app { max-width: 1240px; padding-left: 232px; background: var(--bg); }
+  body.admin-wide .topbar { max-width: 1008px; margin-left: 232px; }
+  body.admin-wide main.pad, body.admin-wide form.pad { max-width: 1008px; padding-left: 28px; padding-right: 28px; }
+  body.admin-wide .tabbar { display: none; }
+  body.admin-wide .screen { padding-bottom: 40px; }
+  .adminnav { position: fixed; left: 0; top: 0; bottom: 0; width: 232px; background: var(--night); color: #fff; padding: 18px 12px; overflow-y: auto; z-index: 30; display: none; }
+  body.admin-wide .adminnav { display: block; }
+  .adminnav .brand { display: flex; align-items: center; gap: 10px; padding: 6px 10px 16px; font-weight: 800; font-size: 17px; }
+  .adminnav .brand svg { width: 22px; height: 22px; fill: var(--green); }
+  .adminnav a { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; color: #B5B5BC; text-decoration: none; font-size: 14px; font-weight: 500; }
+  .adminnav a svg { width: 15px; height: 15px; fill: currentColor; opacity: .9; }
+  .adminnav a:hover { background: rgba(255,255,255,.07); color: #fff; }
+  .adminnav a.on { background: var(--orange); color: #fff; font-weight: 700; }
+  .adminnav .sect { font-size: 11px; letter-spacing: 1px; color: #6B6B73; padding: 14px 10px 6px; font-weight: 700; }
+  .adminnav .back { margin-top: 12px; border-top: 1px solid rgba(255,255,255,.1); padding-top: 12px; }
+  /* Admin lists breathe on a wide screen */
+  body.admin-wide .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  body.admin-wide .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  body.admin-wide .card.list .item { padding-top: 12px; padding-bottom: 12px; }
+}
+.kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+.kpi b { display: block; font-size: 22px; font-weight: 800; line-height: 1.1; }
+.kpi span { font-size: 12px; color: var(--muted); }

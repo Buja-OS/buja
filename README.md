@@ -1,4 +1,4 @@
-# Buja, Phase 25: boarding a vehicle safely, and fares that correct themselves
+# Buja, Phase 26: photos in Social, news inside Buja, and admin on a computer
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -554,8 +554,32 @@ so this phase is built around that moment.
 Fixed on the way: sharing the trip link threw when a browser denied clipboard access; it now falls back to
 showing the link. Swept all 121 screens cold as an admin and as a resident: no crashes, no server errors.
 
+## Phase 26: several photos, a news reader, and an admin dashboard for a desk
+
+- **Several photos on a Social post.** Up to six, chosen at once, with thumbnails in the composer and an x to
+  drop any of them before posting. Posts show them as a grid (one fills the width, two sit side by side, three
+  put a tall one beside a stack, four make a square, more show +N), and tapping one opens a full-screen viewer
+  with arrows and swipe. Replies can carry photos too. Migration 032 moves every photo already posted into the
+  new `social_images` table, so nothing that exists breaks. A layout bug found on the way: a photo spanning two
+  rows with an aspect ratio forced its column to 320px, so a three-photo grid came out lopsided; rows now have a
+  fixed height and the halves are even.
+- **News opens in Buja.** Feed items now carry their picture (media:content, media:thumbnail, an enclosure, or
+  the first image in the description), so the list has thumbnails and the lead story a cover. Opening one shows
+  a reader inside Buja: the article is fetched once from the publisher, kept for a week, and shown with the
+  source's name, the reading time, and a link to the original. Where a publisher blocks us, the summary shows
+  with "Read it on ...". Related stories sit at the bottom.
+- **Admin on a computer.** On screens wider than 900px the phone column becomes a fixed sidebar with every admin
+  screen grouped (Overview, People, Content, Learning, Send, Settings), and the content area widens to 1,240px
+  with four-across counters. On a phone nothing changes. The sidebar marks where you are and disappears outside
+  the admin area.
+- **Gaps filled in the dashboard**: Social moderation (search, live and hidden filters, counters, hide, restore,
+  pin, and the author is told when a post comes down) and the News feed (what the papers gave us, which stories
+  have a picture, which read inside Buja, how many opened them, hide anything wrong, pull the feeds now).
+
+Swept 124 screens cold as an admin and as a resident: no crashes, no server errors.
+
 ## What is next
 
-Phase 26: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 27: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

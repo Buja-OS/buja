@@ -47,8 +47,8 @@ final class NewsController
         $cat = (string) ($_GET['category'] ?? '');
         $where = '1=1'; $p = [];
         if ($cat !== '' && $cat !== 'all') { $where = 'category = ?'; $p[] = $cat; }
-        $st = Db::pdo()->prepare("SELECT * FROM news_items WHERE $where ORDER BY published_at DESC LIMIT 60"); $st->execute($p);
-        $rows = array_map(fn($r) => ['id' => (int) $r['id'], 'title' => $r['title'], 'summary' => $r['summary'], 'url' => $r['url'], 'source' => $r['source'], 'category' => $r['category'], 'priority' => (int) $r['priority'], 'at' => $r['published_at']], $st->fetchAll());
+        $st = Db::pdo()->prepare("SELECT * FROM news_items WHERE $where AND hidden_at IS NULL ORDER BY published_at DESC LIMIT 60"); $st->execute($p);
+        $rows = array_map(fn($r) => ['id' => (int) $r['id'], 'title' => $r['title'], 'summary' => $r['summary'], 'url' => $r['url'], 'image' => $r['image_url'] ?? null, 'hasBody' => !empty($r['body']), 'source' => $r['source'], 'category' => $r['category'], 'priority' => (int) $r['priority'], 'at' => $r['published_at']], $st->fetchAll());
         Http::json(['news' => $rows, 'categories' => array_merge(['all', 'general'], array_keys(self::CATS))]);
     }
 
@@ -90,13 +90,82 @@ final class NewsController
                 $hash = sha1($link);
                 if (Db::one('SELECT id FROM news_items WHERE url_hash = ?', [$hash])) continue;
                 [$prio, $cat] = $this->score($title . ' ' . $desc);
-                Db::run('INSERT INTO news_items (title, summary, url, source, category, priority, published_at, url_hash, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
-                    [mb_substr($title, 0, 250), mb_substr($desc, 0, 600) ?: null, mb_substr($link, 0, 500), $source, $cat, $prio, gmdate('Y-m-d H:i:s', $date), $hash, Db::now()]);
+                $img = self::itemImage($it);
+                Db::run('INSERT INTO news_items (title, summary, url, source, category, priority, published_at, url_hash, image_url, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                    [mb_substr($title, 0, 250), mb_substr($desc, 0, 600) ?: null, mb_substr($link, 0, 500), $source, $cat, $prio, gmdate('Y-m-d H:i:s', $date), $hash, $img, Db::now()]);
                 $added++;
                 if ($push && $prio >= 3) { $id = Db::lastId(); $pushed += $this->pushItem((int) $id, $title, $source); }
             }
         }
         return ['seen' => $seen, 'added' => $added, 'pushed' => $pushed];
+    }
+
+    /** The picture a feed item carries: media:content, media:thumbnail, an enclosure, or the first img in the description. */
+    private static function itemImage(SimpleXMLElement $it): ?string
+    {
+        $media = $it->children('http://search.yahoo.com/mrss/');
+        foreach ([$media->content ?? null, $media->thumbnail ?? null] as $m) {
+            if ($m && isset($m[0]['url'])) { $u = (string) $m[0]['url']; if (self::okImage($u)) return mb_substr($u, 0, 500); }
+        }
+        if (isset($it->enclosure['url']) && str_contains((string) ($it->enclosure['type'] ?? 'image'), 'image')) { $u = (string) $it->enclosure['url']; if (self::okImage($u)) return mb_substr($u, 0, 500); }
+        $html = (string) ($it->description ?? $it->summary ?? '') . (string) ($it->children('http://purl.org/rss/1.0/modules/content/')->encoded ?? '');
+        if (preg_match('/<img[^>]+src=["\']([^"\']+)["\']/i', $html, $m2) && self::okImage($m2[1])) return mb_substr($m2[1], 0, 500);
+        return null;
+    }
+    private static function okImage(string $u): bool { return str_starts_with($u, 'https://') && !preg_match('/\\.(svg|gif)(\\?|$)/i', $u); }
+
+    /**
+     * GET /news/{id} : read it inside Buja. The article text is fetched once from the publisher, cached for a
+     * week, and shown with the source's name and a link to the original, the way a reader view works.
+     */
+    public function item(int $id): void
+    {
+        $u = Auth::require();
+        $r = Db::one('SELECT * FROM news_items WHERE id = ? AND hidden_at IS NULL', [$id]); if (!$r) Http::json(['error' => 'not_found'], 404);
+        $body = $r['body']; $fresh = $r['body_at'] && strtotime($r['body_at'] . ' UTC') > time() - 7 * 86400;
+        if (!$fresh) {
+            $fetched = self::readable((string) $r['url']);
+            if ($fetched !== null) {
+                $body = $fetched['text'];
+                Db::run('UPDATE news_items SET body = ?, body_at = ?, image_url = COALESCE(image_url, ?) WHERE id = ?', [$body, Db::now(), $fetched['image'], $id]);
+                if ($fetched['image'] && !$r['image_url']) $r['image_url'] = $fetched['image'];
+            } else Db::run('UPDATE news_items SET body_at = ? WHERE id = ?', [Db::now(), $id]); // do not retry for a week
+        }
+        Db::run('UPDATE news_items SET reads = reads + 1 WHERE id = ?', [$id]);
+        Track::hit($u, 'news', 'read');
+        $more = Db::pdo()->prepare('SELECT id, title, source, image_url, published_at FROM news_items WHERE id <> ? AND hidden_at IS NULL AND category = ? ORDER BY published_at DESC LIMIT 4');
+        $more->execute([$id, $r['category']]);
+        Http::json(['item' => ['id' => (int) $r['id'], 'title' => $r['title'], 'summary' => $r['summary'], 'url' => $r['url'], 'source' => $r['source'], 'category' => $r['category'],
+            'image' => $r['image_url'], 'at' => $r['published_at'], 'body' => $body ?: null, 'minutes' => $body ? max(1, (int) round(str_word_count(strip_tags($body)) / 220)) : null, 'reads' => (int) $r['reads'] + 1],
+            'more' => array_map(fn($m) => ['id' => (int) $m['id'], 'title' => $m['title'], 'source' => $m['source'], 'image' => $m['image_url'], 'at' => $m['published_at']], $more->fetchAll())]);
+    }
+
+    /** Pulls an article and keeps the paragraphs. Publishers who block us simply fall back to the summary. */
+    private static function readable(string $url): ?array
+    {
+        if (!str_starts_with($url, 'https://') || !function_exists('curl_init')) return null;
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 9, CURLOPT_CONNECTTIMEOUT => 4, CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 3,
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; BujaReader/1.0; +https://buja.onrender.com)']);
+        $html = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+        if ($code !== 200 || !$html || strlen($html) > 4000000) return null;
+        $image = null;
+        if (preg_match('/<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)/i', $html, $m) && self::okImage($m[1])) $image = mb_substr($m[1], 0, 500);
+        // Keep only the article's paragraphs; drop scripts, styles, navigation and comment blocks.
+        $html = preg_replace('#<(script|style|noscript|iframe|form|nav|aside|footer|header)[^>]*>.*?</\\1>#is', ' ', $html);
+        if (preg_match('#<article[^>]*>(.*?)</article>#is', $html, $a)) $html = $a[1];
+        preg_match_all('#<p[^>]*>(.*?)</p>#is', $html, $ps);
+        $paras = [];
+        foreach ($ps[1] ?? [] as $p) {
+            $t = trim(html_entity_decode(strip_tags($p), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+            $t = preg_replace('/\\s+/u', ' ', $t);
+            if (mb_strlen($t) < 60) continue;                                   // menus, captions, share prompts
+            if (preg_match('/^(share|follow us|read also|also read|advertisement|click here|subscribe)/i', $t)) continue;
+            $paras[] = $t;
+            if (count($paras) >= 40) break;
+        }
+        if (count($paras) < 2) return null;
+        return ['text' => mb_substr(implode("\n\n", $paras), 0, 12000), 'image' => $image];
     }
 
     /** Only high-priority items notify, and at most 3 a day, so the drawer stays useful. */
@@ -108,5 +177,26 @@ final class NewsController
         $st = Db::pdo()->query('SELECT id FROM users WHERE deleted_at IS NULL AND notify_news = 1');
         $n = 0; foreach ($st->fetchAll() as $u) { Notify::user((int) $u['id'], 'news', 'Abuja: ' . mb_substr($title, 0, 90), $source, '/#/news'); $n++; }
         return $n;
+    }
+
+    /** GET /admin/news and POST /admin/news/{id}/{action} : what the feeds pulled in, and hide anything wrong */
+    public function adminIndex(): void
+    {
+        $u = Auth::require(); if (empty($u['is_admin']) && !in_array($u['role'] ?? '', ['admin', 'moderator'], true)) Http::json(['error' => 'forbidden'], 403);
+        $st = Db::pdo()->query('SELECT * FROM news_items ORDER BY published_at DESC LIMIT 60');
+        Http::json(['news' => array_map(fn($r) => ['id' => (int) $r['id'], 'title' => $r['title'], 'source' => $r['source'], 'category' => $r['category'], 'priority' => (int) $r['priority'],
+            'image' => $r['image_url'] ?? null, 'hasBody' => !empty($r['body']), 'reads' => (int) ($r['reads'] ?? 0), 'hidden' => !empty($r['hidden_at']), 'url' => $r['url'], 'at' => $r['published_at']], $st->fetchAll()),
+            'counts' => ['total' => (int) (Db::one('SELECT COUNT(*) AS n FROM news_items')['n'] ?? 0), 'today' => (int) (Db::one('SELECT COUNT(*) AS n FROM news_items WHERE created_at > ?', [gmdate('Y-m-d H:i:s', time() - 86400)])['n'] ?? 0),
+                'withImage' => (int) (Db::one('SELECT COUNT(*) AS n FROM news_items WHERE image_url IS NOT NULL')['n'] ?? 0), 'readable' => (int) (Db::one('SELECT COUNT(*) AS n FROM news_items WHERE body IS NOT NULL')['n'] ?? 0)]]);
+    }
+    public function adminAct(int $id, string $action): void
+    {
+        $u = Auth::require(); if (empty($u['is_admin']) && !in_array($u['role'] ?? '', ['admin', 'moderator'], true)) Http::json(['error' => 'forbidden'], 403);
+        match ($action) {
+            'hide' => Db::run('UPDATE news_items SET hidden_at = ? WHERE id = ?', [Db::now(), $id]),
+            'show' => Db::run('UPDATE news_items SET hidden_at = NULL WHERE id = ?', [$id]),
+            default => Http::json(['error' => 'not_found'], 404),
+        };
+        Http::json(['ok' => true]);
     }
 }
