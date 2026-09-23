@@ -1,8 +1,8 @@
 // Buja: artisans on a map, "ask them to come", and live tracking while they travel. Registered lazily by app.js.
-import { createMap, pinHtml, carHtml, meHtml, bottomSheet, keepAwake, metres, TRADE_ICON, TRADE_COLOR } from './map.js';
+import { createMap, pinHtml, carHtml, avatarHtml, meHtml, bottomSheet, keepAwake, metres, TRADE_ICON, TRADE_COLOR } from './map.js';
 
 export function registerJobs({ route, go, state, api, ui, failed }) {
-  const { h, toast, topbar, icon, busy, avatar } = ui;
+  const { h, toast, topbar, icon, busy, avatar, field, showErrors } = ui;
   const stars = (r) => r && r.count ? `★ ${Number(r.stars).toFixed(1)} (${r.count})` : 'New';
   const starsShort = (r) => r && r.count ? `★ ${Number(r.stars).toFixed(1)}` : 'New';
   const clock = (iso) => new Date(String(iso).replace(' ', 'T') + 'Z').toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -80,13 +80,176 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
     }
   });
 
+  /* ============================== REGISTER AS A MECHANIC (or any trade) ============================== */
+  const SERVICES = {
+    mechanic: ['Engine', 'Electrical and wiring', 'Brakes', 'Suspension', 'Gearbox', 'AC', 'Diagnostics scan', 'Battery', 'Oil service', 'Overheating', 'Body work', 'Towing arranged'],
+    vulcanizer: ['Puncture', 'Tyre change', 'Wheel balancing', 'Alignment', 'Tube and tubeless'],
+    towing: ['Tow truck', 'Flatbed', 'Jump start', 'Fuel delivery'],
+    electrician: ['House wiring', 'Faults and trips', 'Inverter', 'Meters', 'Lighting'],
+  };
+  const BRANDS = ['All makes', 'Toyota', 'Honda', 'Lexus', 'Hyundai', 'Kia', 'Nissan', 'Mercedes', 'Ford', 'Peugeot', 'Volkswagen', 'Mitsubishi'];
+  const shrinkImg = async (f, max = 1100) => { const b = await createImageBitmap(f).catch(() => null); if (!b) return f; const s = Math.min(1, max / Math.max(b.width, b.height)); const c = document.createElement('canvas'); c.width = Math.round(b.width * s); c.height = Math.round(b.height * s); c.getContext('2d').drawImage(b, 0, 0, c.width, c.height); const bl = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85)); return new File([bl], 'photo.jpg', { type: 'image/jpeg' }); };
+
+  route('/artisans/register', { auth: true, tabs: '' }, async () => {
+    const [{ artisan: me }, meta] = await Promise.all([api.artisanMe().catch(() => ({ artisan: null })), api.artisans({}).catch(() => ({ trades: {} }))]);
+    const f = new URLSearchParams(location.hash.split('?')[1] || ''); const startTrade = (me && me.trade) || f.get('trade') || 'mechanic';
+    const trades = meta.trades || {};
+    return `${topbar(me ? 'My artisan profile' : 'Join as an artisan', '/artisans')}
+    <div class="pad" style="padding-bottom:0"><div class="row" style="gap:6px" id="steps">${[1, 2, 3].map((n) => `<div style="flex:1;height:5px;border-radius:3px;background:${n === 1 ? 'var(--orange)' : 'var(--line)'}" data-bar="${n}"></div>`).join('')}</div></div>
+    <form id="af" class="pad stack" style="gap:14px" novalidate>
+      <section data-step="1" class="stack" style="gap:14px">
+        <div><div class="h-md">You and your work</div><div class="small muted">Step 1 of 3. Customers see this before they call you.</div></div>
+        ${field({ id: 'ownerName', label: 'Your full name', value: (me && me.owner) || state.user.name || '' })}
+        ${field({ id: 'business', label: 'Workshop or business name (optional)', value: (me && me.name !== me.person ? me.name : '') || '', placeholder: 'Musa Auto Clinic' })}
+        <div class="field" style="margin:0"><label for="trade">Your trade</label><select class="input" id="trade">${Object.entries(trades).map(([k, l]) => `<option value="${k}" ${k === startTrade ? 'selected' : ''}>${h(l)}</option>`).join('')}</select><div class="error" data-error="trade"></div></div>
+        <div class="field" style="margin:0"><label>What you fix</label><div class="row" id="svc" style="gap:6px;flex-wrap:wrap"></div></div>
+        <div class="field" style="margin:0" id="brandsbox"><label>Car makes you know</label><div class="row" id="brands" style="gap:6px;flex-wrap:wrap">${BRANDS.map((b) => `<button type="button" class="chip ${me && (me.brands || []).includes(b) ? 'on' : ''}" data-b="${h(b)}">${h(b)}</button>`).join('')}</div></div>
+        <div class="row" style="gap:10px">${field({ id: 'years', label: 'Years of experience', type: 'number', value: me ? me.years : '', inputmode: 'numeric' })}${field({ id: 'calloutFee', label: 'Call-out fee ₦ (optional)', type: 'number', value: me && me.calloutFee != null ? me.calloutFee : '', inputmode: 'numeric', placeholder: '2000' })}</div>
+        <div class="field" style="margin:0"><label for="about">About your work (optional)</label><textarea class="input" id="about" maxlength="600" style="height:84px;padding:12px 14px;resize:none" placeholder="Toyota and Honda specialist, 12 years, genuine parts, I explain the fault before I fix it.">${h((me && me.about) || '')}</textarea></div>
+        <button type="button" class="btn btn-primary" data-next="2">Next: where you work</button>
+      </section>
+      <section data-step="2" class="stack" style="gap:14px;display:none">
+        <div><div class="h-md">Where you work</div><div class="small muted">Step 2 of 3. Put the pin exactly on your workshop. Breakdowns near it will reach you first.</div></div>
+        <div id="pinmap" style="height:260px;border-radius:16px;overflow:hidden;position:relative"></div>
+        <div class="row" style="gap:8px"><button type="button" class="btn btn-sm btn-outline grow" id="gps">${icon('location-crosshairs')} I am at my workshop now</button></div>
+        <div class="small muted" id="pinnote">Drag the pin, or tap the map, to move it.</div><div class="error" data-error="lat"></div>
+        ${field({ id: 'address', label: 'Address (optional)', value: (me && me.address) || '', placeholder: 'Plot 12, Mechanic Village, Kugbo' })}
+        ${field({ id: 'landmark', label: 'Landmark', value: (me && me.landmark) || '', placeholder: 'Opposite the Total filling station' })}
+        <div class="row" style="gap:10px">${field({ id: 'phone', label: 'Phone', value: (me && me.phone) || state.user.phone || '', inputmode: 'tel' })}${field({ id: 'whatsapp', label: 'WhatsApp (optional)', value: (me && me.whatsapp) || '', inputmode: 'tel' })}</div>
+        <div class="row" style="gap:10px"><div class="field grow" style="margin:0"><label for="radiusKm">How far you travel</label><select class="input" id="radiusKm">${[5, 10, 15, 20, 30, 45].map((n) => `<option value="${n}" ${(me ? me.radiusKm : 15) === n ? 'selected' : ''}>${n} km</option>`).join('')}</select></div>${field({ id: 'hours', label: 'Working hours', value: (me && me.hours) || '', placeholder: 'Mon to Sat, 7am to 7pm' })}</div>
+        <label class="check" style="align-items:center"><input type="checkbox" id="mobileService" ${!me || me.mobileService ? 'checked' : ''}>I come to the customer (roadside and home repairs)</label>
+        <label class="check" style="align-items:center"><input type="checkbox" id="emergency" ${me && me.emergency ? 'checked' : ''}>I take night and weekend emergencies</label>
+        <div class="row" style="gap:8px"><button type="button" class="btn btn-outline" data-next="1" style="width:auto">Back</button><button type="button" class="btn btn-primary grow" data-next="3">Next: photos</button></div>
+      </section>
+      <section data-step="3" class="stack" style="gap:14px;display:none">
+        <div><div class="h-md">Photos</div><div class="small muted">Step 3 of 3. Customers trust a face, and it shows on the map while you drive to them.</div></div>
+        <div class="row" style="gap:14px;align-items:center"><div id="facebox" style="width:88px;height:88px;border-radius:44px;background:var(--surface);overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0">${me && me.photo ? `<img src="${h(me.photo)}" alt="" style="width:100%;height:100%;object-fit:cover">` : icon('user')}</div>
+          <div class="stack" style="gap:6px"><label class="btn btn-sm btn-primary" style="width:auto;cursor:pointer">${icon('camera')} ${me && me.photo ? 'Change photo' : 'Add a photo of your face'}<input type="file" accept="image/*" capture="user" id="face" style="display:none"></label><div class="small muted">Clear, facing the camera, no sunglasses.</div></div></div>
+        <div class="error" data-error="photo"></div>
+        <div class="card stack" style="padding:12px 14px;gap:8px"><div style="font-size:14px;font-weight:700">ID for the verified badge (optional)</div><div class="small muted" style="line-height:1.5">A photo of your NIN slip, driver's licence or voter's card. Only Buja admins see it. Verified mechanics are shown first and get more jobs.</div>
+          <label class="btn btn-sm btn-outline" style="width:auto;cursor:pointer">${icon('shield-halved')} ${me && me.hasId ? 'Replace ID photo' : 'Add ID photo'}<input type="file" accept="image/*" id="idp" style="display:none"></label><div class="small" id="idname">${me && me.hasId ? 'ID on file' : ''}</div></div>
+        <label class="check" style="align-items:center"><input type="checkbox" id="available" ${!me || me.available ? 'checked' : ''}>I am taking jobs now</label>
+        <div class="row" style="gap:8px"><button type="button" class="btn btn-outline" data-next="2" style="width:auto">Back</button><button class="btn btn-primary grow" type="submit">${icon('circle-check')} ${me ? 'Save my profile' : 'Register'}</button></div>
+        <div class="small muted" style="line-height:1.5">Once registered, keep notifications on. When a car breaks down near you, your phone rings with the job, and the first mechanic to accept gets it.</div>
+      </section>
+    </form>`;
+  }, {
+    async mount(el) {
+      const { artisan: me } = await api.artisanMe().catch(() => ({ artisan: null }));
+      let pin = me && me.lat != null ? { lat: me.lat, lng: me.lng } : null, photoId = null, idId = null;
+      const picked = new Set(me ? me.services : []);
+      const drawSvc = () => { const t = el.querySelector('#trade').value; el.querySelector('#svc').innerHTML = (SERVICES[t] || []).map((s) => `<button type="button" class="chip ${picked.has(s) ? 'on' : ''}" data-s="${h(s)}">${h(s)}</button>`).join('') || '<span class="small muted">Describe it under About.</span>'; el.querySelector('#brandsbox').style.display = ['mechanic', 'vulcanizer', 'towing'].includes(t) ? '' : 'none'; el.querySelectorAll('#svc [data-s]').forEach((b) => b.addEventListener('click', () => { picked.has(b.dataset.s) ? picked.delete(b.dataset.s) : picked.add(b.dataset.s); b.classList.toggle('on'); })); };
+      el.querySelector('#trade').addEventListener('change', drawSvc); drawSvc();
+      el.querySelectorAll('#brands [data-b]').forEach((b) => b.addEventListener('click', () => b.classList.toggle('on')));
+      let map = null;
+      const show = async (n) => {
+        el.querySelectorAll('[data-step]').forEach((s) => { s.style.display = s.dataset.step === String(n) ? '' : 'none'; });
+        el.querySelectorAll('[data-bar]').forEach((b) => { b.style.background = +b.dataset.bar <= n ? 'var(--orange)' : 'var(--line)'; });
+        window.scrollTo(0, 0);
+        if (n === 2 && !map) {
+          if (!pin) { const p = await here(6000); if (p) pin = p; }
+          map = await createMap(el.querySelector('#pinmap'), { center: pin ? [pin.lng, pin.lat] : undefined, zoom: pin ? 16 : 12 });
+          const put = (p) => { pin = p; if (map) map.marker('ws', { lng: p.lng, lat: p.lat, z: 3, draggable: true, html: pinHtml({ iconName: TRADE_ICON[el.querySelector('#trade').value] || 'wrench', color: '#FF7A1A', label: 'My workshop' }), onDragEnd: (lng, lat) => { pin = { lng, lat }; el.querySelector('#pinnote').textContent = 'Pin set. ' + lat.toFixed(5) + ', ' + lng.toFixed(5); } }); el.querySelector('#pinnote').textContent = 'Pin set. Drag it if it is not exactly on your workshop.'; };
+          if (map) { if (pin) put(pin); map.raw.on('click', (e) => put({ lng: e.lngLat.lng, lat: e.lngLat.lat })); }
+          el.querySelector('#gps').onclick = async () => { const p = await here(10000); if (!p) { toast('Could not find you. Is location on?'); return; } put(p); map && map.center(p.lng, p.lat, 17); };
+        }
+      };
+      el.querySelectorAll('[data-next]').forEach((b) => b.addEventListener('click', () => {
+        if (b.dataset.next === '2' && el.querySelector('#ownerName').value.trim().length < 3) { showErrors(el, { ownerName: 'Your full name.' }); return; }
+        if (b.dataset.next === '3' && !pin) { showErrors(el, { lat: 'Put the pin on your workshop first.' }); return; }
+        showErrors(el, {}); show(+b.dataset.next);
+      }));
+      el.querySelector('#face').addEventListener('change', async (e) => { const f = e.target.files[0]; if (!f) return; el.querySelector('#facebox').innerHTML = `<img src="${URL.createObjectURL(f)}" alt="" style="width:100%;height:100%;object-fit:cover">`; try { const r = await api.upload(await shrinkImg(f, 800), 'image'); photoId = r.upload.id; } catch (err) { failed(el, err); } });
+      el.querySelector('#idp').addEventListener('change', async (e) => { const f = e.target.files[0]; if (!f) return; el.querySelector('#idname').textContent = 'Uploading…'; try { const r = await api.upload(await shrinkImg(f, 1400), 'image'); idId = r.upload.id; el.querySelector('#idname').textContent = 'ID attached. Only admins will see it.'; } catch (err) { el.querySelector('#idname').textContent = ''; failed(el, err); } });
+      el.querySelector('#af').addEventListener('submit', async (e) => {
+        e.preventDefault(); const btn = e.target.querySelector('[type=submit]'); showErrors(el, {}); busy(btn, true);
+        try {
+          await api.artisanSave({ ownerName: el.querySelector('#ownerName').value, business: el.querySelector('#business').value, trade: el.querySelector('#trade').value, services: [...picked],
+            brands: [...el.querySelectorAll('#brands .on')].map((b) => b.dataset.b), years: el.querySelector('#years').value, calloutFee: el.querySelector('#calloutFee').value, about: el.querySelector('#about').value,
+            lat: pin && pin.lat, lng: pin && pin.lng, address: el.querySelector('#address').value, landmark: el.querySelector('#landmark').value, phone: el.querySelector('#phone').value, whatsapp: el.querySelector('#whatsapp').value,
+            radiusKm: el.querySelector('#radiusKm').value, hours: el.querySelector('#hours').value, mobileService: el.querySelector('#mobileService').checked, emergency: el.querySelector('#emergency').checked,
+            available: el.querySelector('#available').checked, uploadId: photoId, idUploadId: idId });
+          const r = await api.me(); state.user = r.user;
+          toast(me ? 'Saved' : 'You are registered. Keep notifications on so you never miss a breakdown.');
+          go('/jobs');
+        } catch (err) {
+          busy(btn, false);
+          const fl = (err && err.fields) || {}; if (fl.ownerName || fl.trade) show(1); else if (fl.lat || fl.phone) show(2);
+          failed(el, err);
+        }
+      });
+    }
+  });
+
+  /* ============================== MY CAR BROKE DOWN ============================== */
+  const PROBLEMS = { mechanic: ['Will not start', 'Overheating', 'Battery flat', 'Strange noise', 'Brakes', 'Accident'], vulcanizer: ['Flat tyre', 'Puncture', 'Tyre burst'], towing: ['Needs towing', 'Accident', 'Stuck'], electrician: ['No power', 'Sparks', 'Burning smell'] };
+  route('/breakdown', { auth: true, tabs: '' }, async () => `<div class="bm-screen"><div class="bm-mapbox" id="map"></div>
+    <div class="bm-top"><a class="bm-fab" href="#/home" aria-label="Back">${icon('arrow-left')}</a><div class="bm-pill" id="pill">Where exactly are you?</div></div>
+    <button class="bm-fab bm-locate" id="locate" aria-label="Where am I" style="top:calc(70px + var(--safe-t,0px))">${icon('location-crosshairs')}</button></div>`, {
+    async mount(el) {
+      const screen = el.querySelector('.bm-screen'); const pill = el.querySelector('#pill');
+      const sheet = bottomSheet(screen, { peek: 200, half: 0.56, start: 'half' });
+      let trade = new URLSearchParams(location.hash.split('?')[1] || '').get('trade') || 'mechanic'; let pos = null, acc = null; const chosen = new Set();
+      sheet.body.innerHTML = `<div class="small muted" style="padding:8px 0">Finding your exact location…</div>`;
+      const fix = await new Promise((res) => { if (!navigator.geolocation) return res(null); let best = null; const t = setTimeout(() => { navigator.geolocation.clearWatch(w); res(best); }, 9000); const w = navigator.geolocation.watchPosition((p) => { if (!best || p.coords.accuracy < best.acc) best = { lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy) }; if (best.acc <= 25) { clearTimeout(t); navigator.geolocation.clearWatch(w); res(best); } }, () => {}, { enableHighAccuracy: true, maximumAge: 0, timeout: 9000 }); });
+      if (fix) { pos = { lat: fix.lat, lng: fix.lng }; acc = fix.acc; }
+      const map = await createMap(el.querySelector('#map'), { center: pos ? [pos.lng, pos.lat] : undefined, zoom: pos ? 17 : 12 });
+      const put = (p, note) => {
+        pos = p;
+        if (map) { map.marker('me', { lng: p.lng, lat: p.lat, z: 4, draggable: true, html: pinHtml({ iconName: 'car-side', color: '#D92D20', size: 46, label: 'My car is here' }), onDragEnd: (lng, lat) => { pos = { lng, lat }; acc = null; map.removeLine('acc'); pill.textContent = 'Pin moved. That is where they will come.'; } }); 
+          // Centre the car in the part of the map the sheet leaves visible, not behind it.
+          const sh = el.querySelector('.bm-sheet'); const top = sh ? sh.getBoundingClientRect().top : window.innerHeight * 0.5;
+          map.raw.easeTo({ center: [p.lng, p.lat], zoom: Math.max(map.raw.getZoom(), 16), padding: { top: 80, bottom: Math.max(0, window.innerHeight - top + 20), left: 20, right: 20 }, duration: 500 }); if (acc) map.circle('acc', p.lng, p.lat, acc, { color: '#1F5FBF' }); }
+        pill.textContent = note || (acc && acc > 60 ? `GPS is rough (±${acc} m). Drag the pin to your car.` : 'Drag the pin if it is not exactly on your car');
+      };
+      if (map && pos) put(pos);
+      if (map) map.raw.on('click', (e) => { acc = null; map.removeLine('acc'); put({ lng: e.lngLat.lng, lat: e.lngLat.lat }, 'Pin set. That is where they will come.'); });
+      el.querySelector('#locate').addEventListener('click', async () => { const p = await here(9000); if (!p) { toast('Could not find you. Is location on?'); return; } acc = null; put(p); map && map.center(p.lng, p.lat, 17); });
+      const draw = () => {
+        sheet.body.innerHTML = `<div class="stack" style="gap:12px;padding-top:2px">
+          <div style="font-size:18px;font-weight:800">Get help to you now</div>
+          <div class="row" style="gap:6px;flex-wrap:wrap">${[['mechanic', 'Mechanic'], ['vulcanizer', 'Tyres'], ['towing', 'Towing']].map(([k, l]) => `<button type="button" class="chip ${k === trade ? 'on' : ''}" data-tr="${k}">${icon(TRADE_ICON[k])} ${l}</button>`).join('')}</div>
+          <div class="row" style="gap:6px;flex-wrap:wrap">${(PROBLEMS[trade] || []).map((p) => `<button type="button" class="chip ${chosen.has(p) ? 'on' : ''}" data-p="${h(p)}">${h(p)}</button>`).join('')}</div>
+          <textarea class="input" id="prob" maxlength="400" placeholder="Anything else? Car make, what happened" style="height:64px;padding:10px 12px;resize:none"></textarea>
+          <input class="input" id="lm" maxlength="160" placeholder="Landmark: beside the NNPC station, blue Corolla">
+          <button class="btn btn-primary" id="send" style="background:#D92D20;height:54px;font-size:16px">${icon('bolt')} Send to the nearest ${trade === 'vulcanizer' ? 'vulcanizers' : trade === 'towing' ? 'tow trucks' : 'mechanics'}</button>
+          <div class="small muted" style="line-height:1.5">The three closest available get it at once; if nobody answers in a minute, the next ones do. The first to accept comes to your pin, and you watch them on the map. Agree the price on the phone before work starts.</div>
+          <a class="btn btn-ghost small" href="#/artisans/map?trade=${trade}">Or choose one yourself on the map</a></div>`;
+        sheet.body.querySelectorAll('[data-tr]').forEach((b) => b.addEventListener('click', () => { trade = b.dataset.tr; chosen.clear(); draw(); }));
+        sheet.body.querySelectorAll('[data-p]').forEach((b) => b.addEventListener('click', () => { chosen.has(b.dataset.p) ? chosen.delete(b.dataset.p) : chosen.add(b.dataset.p); b.classList.toggle('on'); }));
+        sheet.body.querySelector('#send').addEventListener('click', async (e) => {
+          const b = e.currentTarget; if (!pos) { toast('Put the pin on your car first'); return; }
+          const problem = [...chosen].concat(sheet.body.querySelector('#prob').value.trim() ? [sheet.body.querySelector('#prob').value.trim()] : []).join('. ');
+          if (problem.length < 5) { toast('Tap what is wrong, or describe it'); return; }
+          busy(b, true);
+          try { const r = await api.jobNearest({ trade, problem, lat: pos.lat, lng: pos.lng, accuracy: acc, landmark: sheet.body.querySelector('#lm').value }); go('/jobs/' + r.id); }
+          catch (err) { busy(b, false); if (err && err.id) { go('/jobs/' + err.id); return; } failed(el, err); }
+        });
+      };
+      draw();
+    }
+  });
+
   /* ============================== MY JOBS ============================== */
   const STATUS = { requested: ['Waiting for a reply', '#B7791F'], accepted: ['Accepted', '#1F5FBF'], enroute: ['On the way', '#2E7D1E'], arrived: ['Arrived', '#2E7D1E'], done: ['Done', '#6B6B73'], declined: ['Declined', '#D92D20'], cancelled: ['Cancelled', '#6B6B73'], expired: ['No reply', '#6B6B73'] };
   route('/jobs', { auth: true, tabs: '' }, async () => {
+    try { const r = await api.me(); state.user = r.user; } catch {}
     const { jobs } = await api.jobs();
+    const art = state.user.artisan;
     return `${topbar('My jobs', '/me', `<a class="iconbtn" href="#/artisans/map?trade=mechanic" aria-label="Find someone">${icon('map-location-dot')}</a>`)}<main class="pad stack" style="gap:10px">
+      ${art ? `<div class="card row" style="padding:14px;gap:12px;border:2px solid ${art.available ? 'var(--green)' : 'var(--line)'}"><div class="grow"><div style="font-size:16px;font-weight:800">${art.available ? 'You are online' : 'You are offline'}</div><div class="small muted">${art.available ? 'Breakdowns near you will ring your phone.' : 'You will not get new jobs until you switch on.'}</div></div>
+        <button class="toggle ${art.available ? 'on' : ''}" id="online" role="switch" aria-checked="${art.available}" aria-label="Taking jobs"><span></span></button></div>
+        <a class="card row" href="#/artisans/register" style="padding:12px 14px;gap:10px"><span class="grow small" style="font-weight:600">Edit my profile, photo and workshop pin</span>${icon('chevron-right')}</a>`
+      : `<a class="card row" href="#/artisans/register" style="padding:14px;gap:12px;border-style:dashed"><span style="width:40px;height:40px;border-radius:12px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center">${icon('wrench')}</span><span class="grow"><span style="display:block;font-size:14px;font-weight:700">Are you a mechanic or artisan?</span><span class="small muted">Register in three steps and get breakdown jobs near you.</span></span>${icon('chevron-right')}</a>`}
       ${jobs.length ? jobs.map((j) => `<a class="card row" href="#/jobs/${j.id}" style="padding:12px 14px;gap:12px"><span style="width:42px;height:42px;border-radius:21px;background:${TRADE_COLOR[j.trade] || '#FF7A1A'};color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon(TRADE_ICON[j.trade] || 'wrench')}</span><span class="grow" style="min-width:0"><span style="display:block;font-size:14px;font-weight:700">${h(j.role === 'customer' ? j.other.name : j.tradeLabel + ' job for ' + j.other.name)}</span><span class="small muted" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(j.problem)}</span></span><span class="tag" style="color:${STATUS[j.status][1]}">${STATUS[j.status][0]}</span></a>`).join('') : `<div class="placeholder" style="padding:50px 0"><div class="mi card">${icon('wrench')}</div><div class="h-md">No jobs yet</div><div class="small muted" style="max-width:280px;line-height:1.5">Car broke down, lights out, a tap that will not stop? Find the nearest trusted hand and watch them come to you.</div><a class="btn btn-primary" href="#/artisans/map?trade=mechanic" style="width:auto">Find a mechanic near me</a></div>`}
     </main>`;
+  }, {
+    mount(el) {
+      el.querySelector('#online')?.addEventListener('click', async (e) => {
+        const b = e.currentTarget; const next = !b.classList.contains('on'); b.disabled = true;
+        try { await api.artisanOnline(next); const r = await api.me(); state.user = r.user; toast(next ? 'You are online. Keep Buja open or notifications on.' : 'You are offline'); location.reload(); } catch (err) { b.disabled = false; failed(el, err); }
+      });
+    }
   });
 
   /* ============================== LIVE TRACKING ============================== */
@@ -110,10 +273,13 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
 
       const draw = (j) => {
         if (!map) return;
-        map.marker('dest', { lng: j.place.lng, lat: j.place.lat, z: 2, html: j.place.exact ? pinHtml({ iconName: j.role === 'customer' ? 'person' : 'flag-checkered', color: '#101014', label: j.role === 'customer' ? 'You' : 'Customer', sub: j.landmark || '' }) : `<div style="width:120px;height:120px;border-radius:50%;background:rgba(255,122,26,.18);border:2px dashed #FF7A1A"></div>`, anchor: j.place.exact ? 'bottom' : 'center' });
+        if (j.role === 'customer' && j.status === 'requested' && j.mode === 'nearest') {
+          if (!map.has('radar')) map.marker('radar', { lng: j.place.lng, lat: j.place.lat, z: 1, anchor: 'center', html: `<div class="bm-radar"></div>` });
+        } else map.remove('radar');
+        map.marker('dest', { lng: j.place.lng, lat: j.place.lat, z: 2, draggable: j.role === 'customer' && ['requested', 'accepted'].includes(j.status), onDragEnd: async (lng, lat) => { try { const r = await api.jobWhere(id, { lat, lng }); toast('Pin moved. They will come to the new spot.'); job = r.job; } catch (err) { failed(el, err); } }, html: j.place.exact ? pinHtml({ iconName: j.role === 'customer' ? 'person' : 'flag-checkered', color: '#101014', label: j.role === 'customer' ? 'You' : 'Customer', sub: j.landmark || '' }) : `<div style="width:120px;height:120px;border-radius:50%;background:rgba(255,122,26,.18);border:2px dashed #FF7A1A"></div>`, anchor: j.place.exact ? 'bottom' : 'center' });
         if (j.live) {
           if (map.has('art')) map.move('art', j.live.lng, j.live.lat, { heading: j.live.heading, ms: 3500 });
-          else map.marker('art', { lng: j.live.lng, lat: j.live.lat, z: 4, anchor: 'center', html: carHtml(color, j.trade === 'mechanic' || j.trade === 'towing' || j.trade === 'vulcanizer' ? 'car-side' : tIcon) });
+          else map.marker('art', { lng: j.live.lng, lat: j.live.lat, z: 4, anchor: 'center', html: j.role === 'customer' ? avatarHtml(j.photo || j.other.avatar, color, (j.other.name || '?').slice(0, 1).toUpperCase()) : carHtml(color, j.trade === 'mechanic' || j.trade === 'towing' || j.trade === 'vulcanizer' ? 'car-side' : tIcon) });
           if (j.route && j.route.length > 1) map.line('route', j.route, { color, width: 5 }); else map.line('route', [[j.live.lng, j.live.lat], [j.place.lng, j.place.lat]], { color, width: 4, dashed: true });
           // Follow like Bolt: frame the vehicle, where it is gliding from, and the destination, on every update.
           if (follow || !fitted) {
@@ -128,6 +294,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
 
       const headline = (j) => {
         const n = j.other.name; const L = j.live;
+        if (j.status === 'requested' && j.mode === 'nearest' && j.role === 'customer') return j.dispatch && j.dispatch.alerted ? `${j.dispatch.alerted} ${j.dispatch.alerted === 1 ? 'mechanic' : 'mechanics'} alerted` : 'Finding a mechanic';
         if (j.status === 'requested') return j.role === 'customer' ? `Waiting for ${n} to reply` : 'New job request';
         if (j.status === 'accepted') return j.role === 'customer' ? `${n} accepted` : 'You accepted. Set off when ready';
         if (j.status === 'enroute' && L) { if (L.lost) return `Signal lost ${Math.round(L.age / 60)} min ago`; if (L.stopped) return `${j.role === 'customer' ? n + ' has' : 'You have'} stopped for ${L.stoppedMin} min`; return L.etaMin != null ? `${L.etaMin <= 1 ? 'Arriving now' : L.etaMin + ' min away'}` : 'On the way'; }
@@ -146,7 +313,12 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           ${L.lost ? `<div class="card" style="padding:10px 12px;background:#FDECEA;border-color:#D92D20"><div class="small"><strong>No location for ${Math.round(L.age / 60)} min.</strong> ${C ? 'Their phone may have locked or lost data. Call them.' : 'Keep Buja open on this screen so your customer can follow you.'}</div></div>` : ''}` : '';
         let body = '';
         if (C) {
-          if (j.status === 'requested') body = `<div class="small muted" style="line-height:1.5">They have your rough area, not your exact spot, until they accept. Requests expire after 20 minutes.</div><button class="btn btn-outline" data-act="cancel">Cancel request</button>`;
+          if (j.status === 'requested' && j.mode === 'nearest') body = `<div class="stack" style="gap:8px"><div style="font-size:15px;font-weight:700">Alerting the nearest ${h(j.tradeLabel.toLowerCase())}s</div>
+            <div class="small muted" style="line-height:1.5">${j.dispatch ? `${j.dispatch.alerted} alerted so far, round ${Math.max(1, j.dispatch.ring)} of ${j.dispatch.maxRings}.` : ''} The first to accept comes to your pin. If nobody answers in a minute, Buja asks the next ones further out.</div>
+            <div style="height:6px;border-radius:3px;background:var(--surface);overflow:hidden"><div style="height:6px;background:var(--orange);width:${j.dispatch ? Math.round(j.dispatch.ring / j.dispatch.maxRings * 100) : 10}%;transition:width .6s"></div></div>
+            <div class="small muted">Not exactly where your car is? Drag the red pin.</div></div>
+            <button class="btn btn-outline" data-act="cancel">Cancel request</button>`;
+          else if (j.status === 'requested') body = `<div class="small muted" style="line-height:1.5">They have your rough area, not your exact spot, until they accept. Requests expire after 20 minutes.</div><button class="btn btn-outline" data-act="cancel">Cancel request</button>`;
           else if (j.status === 'accepted') body = `<div class="small muted" style="line-height:1.5">They can now see where you are. When they set off you will see them move on the map.</div><button class="btn btn-outline" data-act="cancel">Cancel</button>`;
           else if (j.status === 'enroute') body = `${eta}<button class="btn btn-outline" data-act="cancel">Cancel</button>`;
           else if (j.status === 'arrived') body = `<div class="small muted">When the work is finished, mark it done and rate them.</div><button class="btn btn-primary" data-rate>${icon('star')} Fixed. Rate ${h(j.other.name)}</button>`;
@@ -154,7 +326,8 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           else if (j.status === 'done') body = `<div class="small muted">Thank you for rating. It helps the next person choose.</div>`;
           else body = `<a class="btn btn-primary" href="#/artisans/map?trade=${h(j.trade)}">Find someone else nearby</a>`;
         } else {
-          if (j.status === 'requested') body = `<div class="card" style="padding:12px;background:var(--surface);border:none"><div class="small muted">Problem</div><div style="font-size:15px;font-weight:600;margin-top:2px">${h(j.problem)}</div><div class="small muted" style="margin-top:6px">${j.km != null ? 'About ' + (j.km < 1 ? 'under 1' : j.km) + ' km from your workshop. ' : ''}You will see the exact spot once you accept.</div></div><div class="row" style="gap:8px"><button class="btn btn-primary grow" data-act="accept">Accept</button><button class="btn btn-outline" data-act="decline" style="width:auto">Decline</button></div>`;
+          if (j.status === 'requested' && j.mode === 'nearest') body = `<div class="card" style="padding:12px;background:var(--orange-tint);border-color:var(--orange)"><div class="small" style="font-weight:700;color:var(--orange-dark)">Breakdown near you. First to accept gets it.</div><div style="font-size:15px;font-weight:600;margin-top:4px">${h(j.problem)}</div><div class="small muted" style="margin-top:6px">${j.km != null ? 'About ' + (j.km < 1 ? 'under 1' : j.km) + ' km from your workshop. ' : ''}You see the exact spot once you accept.</div></div><div class="row" style="gap:8px"><button class="btn btn-primary grow" data-act="accept" style="height:52px">Accept and go</button><button class="btn btn-outline" data-act="decline" style="width:auto">Not now</button></div>`;
+          else if (j.status === 'requested') body = `<div class="card" style="padding:12px;background:var(--surface);border:none"><div class="small muted">Problem</div><div style="font-size:15px;font-weight:600;margin-top:2px">${h(j.problem)}</div><div class="small muted" style="margin-top:6px">${j.km != null ? 'About ' + (j.km < 1 ? 'under 1' : j.km) + ' km from your workshop. ' : ''}You will see the exact spot once you accept.</div></div><div class="row" style="gap:8px"><button class="btn btn-primary grow" data-act="accept">Accept</button><button class="btn btn-outline" data-act="decline" style="width:auto">Decline</button></div>`;
           else if (j.status === 'accepted') body = `<div class="card" style="padding:12px;background:var(--surface);border:none"><div class="small muted">Problem</div><div style="font-size:15px;font-weight:600">${h(j.problem)}</div>${j.landmark ? `<div class="small" style="margin-top:4px">Landmark: ${h(j.landmark)}</div>` : ''}</div><button class="btn btn-primary" data-start>${icon('car-side')} I am setting off</button><div class="small muted" style="line-height:1.5">Your customer will see you move on the map with your arrival time. Keep this screen open while you travel.</div>`;
           else if (j.status === 'enroute') body = `${eta}<a class="btn btn-outline" href="https://www.google.com/maps/dir/?api=1&destination=${j.place.lat},${j.place.lng}&travelmode=driving" target="_blank" rel="noopener">${icon('route')} Directions in Google Maps</a><button class="btn btn-primary" data-act="arrived">I have arrived</button><div class="small muted" id="share">${watch != null ? 'Sharing your location' : 'Location not being shared'}</div>`;
           else if (j.status === 'arrived') body = `<div class="small muted">When the work is finished:</div><button class="btn btn-primary" data-act="done">${icon('circle-check')} Job done</button>`;
@@ -163,7 +336,9 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
         sheet.body.innerHTML = `<div class="stack" style="gap:14px;padding-top:4px">${who}${j.role === 'customer' || j.status !== 'requested' ? `<div class="small" style="color:var(--ink-2)"><strong>${h(j.tradeLabel)}:</strong> ${h(j.problem)}</div>` : ''}${body}</div>`;
         sheet.body.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
           const a = b.dataset.act; if ((a === 'cancel' || a === 'decline') && !confirm(a === 'cancel' ? 'Cancel this job?' : 'Decline this job?')) return;
-          busy(b, true); try { const r = await api.jobAct(id, a); if (a === 'arrived' || a === 'done' || a === 'cancel') stopSharing(); draw(r.job); render(r.job); } catch (err) { busy(b, false); failed(el, err); }
+          busy(b, true);
+          try { const r = await api.jobAct(id, a); if (r.declined) { toast('Declined'); go('/jobs'); return; } if (a === 'arrived' || a === 'done' || a === 'cancel') stopSharing(); draw(r.job); render(r.job); }
+          catch (err) { busy(b, false); if (err && (err.error === 'taken' || err.error === 'not_found')) { toast('Another mechanic took this one'); go('/jobs'); return; } failed(el, err); }
         }));
         sheet.body.querySelector('[data-start]')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); const p = await here(10000); try { const r = await api.jobAct(id, 'start', p || {}); startSharing(); draw(r.job); render(r.job); } catch (err) { busy(b, false); failed(el, err); } });
         sheet.body.querySelector('[data-rate]')?.addEventListener('click', () => rateForm());
@@ -200,7 +375,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       const tick = async () => {
         if (!alive) return; if (gone()) { alive = false; stopSharing(); return; }
         if (!document.hidden) { try { const r = await api.job(id); draw(r.job); if (JSON.stringify(r.job) !== JSON.stringify(job) || sheet.body.querySelector('#rs') == null) { if (!sheet.body.querySelector('#rs')) render(r.job); else job = r.job; } } catch {} }
-        timer = setTimeout(tick, 4000);
+        timer = setTimeout(tick, job && job.status === 'enroute' ? 3000 : 4000); // quicker while someone is on the way
       };
       draw(job); render(job);
       if (job.role === 'artisan' && job.status === 'enroute') startSharing(); // reopened mid-journey

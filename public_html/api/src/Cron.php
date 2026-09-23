@@ -20,6 +20,8 @@ final class Cron
             // Digest: Monday mornings Abuja time, five people per poll until everyone due is done.
             $lagos = new DateTime('now', new DateTimeZone('Africa/Lagos'));
             if ((int) $lagos->format('N') === 1 && (int) $lagos->format('G') >= 7 && self::stamp('digest_tick') < $now - 60) { self::mark('digest_tick'); self::digest(5); return; }
+            // Breakdown requests waiting on a mechanic: next round every minute, even when the customer's screen is closed.
+            if (Db::one("SELECT 1 AS x FROM service_jobs WHERE mode = 'nearest' AND status = 'requested' LIMIT 1") && self::stamp('dispatch_tick') < $now - 30) { self::mark('dispatch_tick'); ServiceJobController::escalateAll(20); }
             // Broadcasts still queued: forty more per poll.
             if (Db::one('SELECT 1 AS x FROM broadcast_queue LIMIT 1') && self::stamp('bcast_tick') < $now - 20) { self::mark('bcast_tick'); EngageController::sendQueued(40); return; }
             // Learning reminders: daytime only, 9am to 7pm Abuja, ten people every five minutes.

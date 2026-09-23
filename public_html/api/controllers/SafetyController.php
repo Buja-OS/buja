@@ -152,6 +152,14 @@ final class SafetyController
         Http::json(['trip' => $this->shape(Db::one('SELECT * FROM safety_sessions WHERE id = ?', [$s['id']]))]);
     }
 
+    /** POST /safety/fare-asked { id } : the rider has been offered the fare prompt; do not ask again for this ride */
+    public function fareAsked(): void
+    {
+        $u = Auth::require(); $b = Http::body();
+        Db::run('UPDATE safety_sessions SET fare_asked = 1 WHERE id = ? AND user_id = ?', [(int) ($b['id'] ?? 0), $u['id']]);
+        Http::json(['ok' => true]);
+    }
+
     /** GET /safety/trip/{token} : the friend's view. No sign-in, link only, no personal details beyond a first name. */
     public function publicTrip(string $token): void
     {

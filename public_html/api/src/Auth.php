@@ -65,6 +65,7 @@ final class Auth
             'verified' => $u['email_verified_at'] !== null,
             'google'   => $u['google_sub'] !== null,
             'admin'    => !empty($u['is_admin']) || ($u['role'] ?? '') === 'admin',
+            'artisan'  => (($ar = Db::one('SELECT available FROM artisans WHERE user_id = ? AND hidden_at IS NULL', [$u['id']])) ? ['available' => (bool) $ar['available']] : null),
             'role'     => $u['role'] ?? (!empty($u['is_admin']) ? 'admin' : 'user'),
             'plus'     => !empty($u['plus_until']) && $u['plus_until'] > Db::now(),
             'plusUntil'=> $u['plus_until'] ?? null,

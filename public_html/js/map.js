@@ -30,6 +30,11 @@ export function pinHtml({ iconName = 'location-dot', color = '#FF7A1A', label = 
 export function carHtml(color = '#101014', iconName = 'car-side') {
   return `<div class="bm-car" style="--c:${color}"><div class="bm-rot"><div class="bm-carbody">${icon(iconName)}</div><div class="bm-arrow"></div></div></div>`;
 }
+/** The person on their way: their face in a coloured ring that turns with their heading. */
+export function avatarHtml(photo, color = '#1F5FBF', initials = '') {
+  const face = photo ? `<img src="${h(photo)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block">` : `<span style="font:800 15px Inter,system-ui,sans-serif;color:#fff">${h(initials)}</span>`;
+  return `<div class="bm-car bm-face" style="--c:${color}"><div class="bm-rot"><div class="bm-arrow"></div></div><div class="bm-facebody">${face}</div></div>`;
+}
 export const meHtml = () => `<div class="bm-me"><span></span></div>`;
 
 /**
@@ -60,10 +65,11 @@ export async function createMap(el, { center = ABUJA, zoom = 12, interactive = t
   const api = {
     raw: map,
     /** Adds or replaces a marker. */
-    marker(id, { lng, lat, html, onClick, anchor = 'bottom', z = 1 }) {
+    marker(id, { lng, lat, html, onClick, anchor = 'bottom', z = 1, draggable = false, onDragEnd }) {
       api.remove(id);
       const node = document.createElement('div'); node.innerHTML = html; node.style.zIndex = z;
-      const m = new ml.Marker({ element: node, anchor }).setLngLat([lng, lat]).addTo(map);
+      const m = new ml.Marker({ element: node, anchor, draggable }).setLngLat([lng, lat]).addTo(map);
+      if (draggable && onDragEnd) m.on('dragend', () => { const p = m.getLngLat(); if (markers[id]) { markers[id].lng = p.lng; markers[id].lat = p.lat; } onDragEnd(p.lng, p.lat); });
       if (onClick) node.addEventListener('click', (e) => { e.stopPropagation(); onClick(id); });
       markers[id] = { m, node, lng, lat };
       return node;
@@ -94,7 +100,16 @@ export async function createMap(el, { center = ABUJA, zoom = 12, interactive = t
         map.addLayer({ id, type: 'line', source: id, layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': color, 'line-width': width, ...(dashed ? { 'line-dasharray': [1.5, 1.5] } : {}) } });
       } catch {}
     },
-    removeLine(id) { try { if (map.getLayer(id)) map.removeLayer(id); if (map.getLayer(id + '-case')) map.removeLayer(id + '-case'); if (map.getSource(id)) map.removeSource(id); } catch {} },
+    /** A translucent circle of `metres` around a point: the GPS accuracy, or the search radius. */
+    async circle(id, lng, lat, metres, { color = '#1F5FBF', opacity = 0.14 } = {}) {
+      await loaded;
+      const pts = []; const R = 6371000;
+      for (let i = 0; i <= 48; i++) { const b = (i / 48) * 2 * Math.PI; const dLat = (metres * Math.cos(b)) / R; const dLng = (metres * Math.sin(b)) / (R * Math.cos(lat * Math.PI / 180)); pts.push([lng + dLng * 180 / Math.PI, lat + dLat * 180 / Math.PI]); }
+      const data = { type: 'Feature', geometry: { type: 'Polygon', coordinates: [pts] }, properties: {} };
+      if (map.getSource(id)) { map.getSource(id).setData(data); return; }
+      try { map.addSource(id, { type: 'geojson', data }); map.addLayer({ id, type: 'fill', source: id, paint: { 'fill-color': color, 'fill-opacity': opacity } }); map.addLayer({ id: id + '-edge', type: 'line', source: id, paint: { 'line-color': color, 'line-width': 1.5, 'line-opacity': .6 } }); } catch {}
+    },
+    removeLine(id) { try { for (const l of [id, id + '-case', id + '-edge']) if (map.getLayer(l)) map.removeLayer(l); if (map.getSource(id)) map.removeSource(id); } catch {} },
     /** Frames a set of [lng, lat] points, leaving room for a bottom sheet. */
     fit(points, { bottom = 220, top = 90, side = 40, maxZoom = 15, ms = 700 } = {}) {
       const pts = points.filter((p) => p && isFinite(p[0]) && isFinite(p[1])); if (!pts.length) return;

@@ -7,7 +7,7 @@ const NAV = [
   ['Content', [['/admin/social', 'message', 'Social posts'], ['/admin/news', 'circle-info', 'News feed'], ['/admin/spots', 'location-dot', 'Places'], ['/admin/meetups', 'ticket', 'Events'], ['/admin/artisans', 'screwdriver-wrench', 'Artisans'], ['/admin/citizen', 'building-columns', 'Citizen reports']]],
   ['Learning', [['/admin/learn', 'book-open', 'Learn analytics'], ['/admin/learners', 'user', 'Learners']]],
   ['Send', [['/admin/broadcast', 'paper-plane', 'Notifications']]],
-  ['Settings', [['/admin/waka-pricing', 'gas-pump', 'Waka pricing']]],
+  ['Settings', [['/admin/waka-pricing', 'gas-pump', 'Waka pricing'], ['/admin/ads', 'bolt', 'Ads']]],
 ];
 
 export function registerAdminShell({ route, go, state, api, ui, failed }) {
@@ -83,6 +83,51 @@ export function registerAdminShell({ route, go, state, api, ui, failed }) {
     mount(el) {
       el.querySelector('#pull')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.refreshNews(); toast(r.added ? r.added + ' new' : 'Nothing new'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } });
       el.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { await api.adminNewsAct(b.dataset.id, b.dataset.act); location.reload(); } catch (err) { busy(b, false); failed(el, err); } }));
+    }
+  });
+
+  /* ---------------- Ads ---------------- */
+  route('/admin/ads', { auth: true, tabs: '' }, async () => {
+    if (!state.user.admin) return guard() || `${topbar('', '/admin')}<div class="placeholder"><div class="h-md">Admins only</div></div>`;
+    const { ads: a, never } = await api.adminAds();
+    const tg = (id, on, label, sub) => `<div class="row" style="gap:12px;padding:6px 0"><div class="grow"><div style="font-size:14px;font-weight:650">${label}</div>${sub ? `<div class="small muted">${sub}</div>` : ''}</div><button type="button" class="toggle ${on ? 'on' : ''}" data-tg="${id}" role="switch" aria-checked="${on}"><span></span></button></div>`;
+    const tx = (id, v, label, ph) => `<div class="field" style="margin:0"><label for="${id}">${label}</label><input class="input" id="${id}" value="${h(v || '')}" placeholder="${ph || ''}" autocomplete="off"></div>`;
+    const nm = (id, v, label) => `<div class="field" style="margin:0"><label for="${id}">${label}</label><input class="input" id="${id}" type="number" value="${v}"></div>`;
+    return `${topbar('Ads', '/admin')}<main class="pad stack" style="gap:14px">
+      <div class="card stack" style="padding:14px;gap:6px">${tg('enabled', a.enabled, 'Show ads', 'Off until you are ready. Buja Plus members never see ads.')}</div>
+      <div class="cols2">
+      <div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Website and installed app (AdSense)</div>
+        <div class="small muted" style="line-height:1.5">AdSense approves the domain first, so use your own domain, not onrender.com. Buja serves the ads.txt it needs automatically from the publisher ID.</div>
+        ${tx('adsenseClient', a.adsenseClient, 'Publisher ID', 'ca-pub-0000000000000000')}${tx('infeedSlot', a.infeedSlot, 'In-feed unit ID', '1234567890')}${tx('bannerSlot', a.bannerSlot, 'Display unit ID', '1234567890')}
+        ${tg('webBreaks', a.webBreaks, 'Interstitial and rewarded breaks', 'AdSense Ad Placement API. Needs approval for that format.')}</div>
+      <div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Android and iPhone apps (AdMob)</div>
+        <div class="small muted" style="line-height:1.5">Only works in an app build that includes the Buja ad bridge (a WebView Android build, or the PWABuilder iOS project with the AdMob SDK added). The standard PWABuilder Android build runs in Chrome and cannot show AdMob.</div>
+        ${tg('native', a.native, 'Use AdMob inside the apps', '')}
+        ${tx('admobAppIdAndroid', a.admobAppIdAndroid, 'Android app ID', 'ca-app-pub-…~…')}${tx('admobAppIdIos', a.admobAppIdIos, 'iOS app ID', 'ca-app-pub-…~…')}
+        ${tx('admobBanner', a.admobBanner, 'Banner unit', 'ca-app-pub-…/…')}${tx('admobInterstitial', a.admobInterstitial, 'Interstitial unit', '')}${tx('admobRewarded', a.admobRewarded, 'Rewarded unit', '')}${tx('admobAppOpen', a.admobAppOpen, 'App open unit', '')}</div>
+      </div>
+      <div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Where</div>
+        <div class="row" style="gap:6px;flex-wrap:wrap">${Object.entries(a.places).map(([k, on]) => `<button type="button" class="chip ${on ? 'on' : ''}" data-pl="${k}">${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div>
+        <div class="small muted" style="line-height:1.5">Never shown on: ${never.map((n) => h(n)).join(', ')}. Those are breakdowns, tracking, safety, calls, payments, lessons, sign-in and admin, and cannot be switched on.</div></div>
+      <div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">How often</div>
+        <div class="row" style="gap:10px">${nm('infeedEvery', a.infeedEvery, 'In-feed: every N cards')}${nm('interstitialEveryScreens', a.interstitialEveryScreens, 'Interstitial: every N screens')}</div>
+        <div class="row" style="gap:10px">${nm('interstitialMinGapSec', a.interstitialMinGapSec, 'At least N seconds apart')}${nm('sessionGraceSec', a.sessionGraceSec, 'None in the first N seconds')}</div>
+        ${nm('appOpenGapSec', a.appOpenGapSec, 'App open: at most every N seconds')}</div>
+      <button class="btn btn-primary" id="save">Save</button>
+    </main>`;
+  }, {
+    mount(el) {
+      el.querySelectorAll('[data-tg]').forEach((b) => b.addEventListener('click', () => { b.classList.toggle('on'); b.setAttribute('aria-checked', b.classList.contains('on')); }));
+      el.querySelectorAll('[data-pl]').forEach((b) => b.addEventListener('click', () => b.classList.toggle('on')));
+      el.querySelector('#save')?.addEventListener('click', async (e) => {
+        const b = e.currentTarget; busy(b, true);
+        const body = { places: {} };
+        el.querySelectorAll('[data-tg]').forEach((t) => { body[t.dataset.tg] = t.classList.contains('on'); });
+        el.querySelectorAll('[data-pl]').forEach((t) => { body.places[t.dataset.pl] = t.classList.contains('on'); });
+        el.querySelectorAll('input.input').forEach((i) => { body[i.id] = i.type === 'number' ? +i.value : i.value.trim(); });
+        try { await api.adminAdsSave(body); toast('Saved. Apps pick it up within five minutes.'); } catch (err) { failed(el, err); }
+        busy(b, false);
+      });
     }
   });
 }

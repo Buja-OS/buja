@@ -25,6 +25,7 @@ $money = fn($n) => '₦' . number_format((int) $n);
 $district = fn($s) => $s ? $e($s) . ', Abuja' : 'Abuja';
 
 /* ---------- robots and sitemap ---------- */
+if ($path === 'ads') { header('Content-Type: text/plain'); echo AdsController::adsTxt(); exit; }
 if ($path === 'robots') { header('Content-Type: text/plain'); echo "User-agent: *\nAllow: /p/\nDisallow: /api/\nSitemap: {$origin}/sitemap.xml\n"; exit; }
 if ($path === 'sitemap') {
     header('Content-Type: application/xml; charset=utf-8');

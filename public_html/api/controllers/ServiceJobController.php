@@ -17,22 +17,29 @@ final class ServiceJobController
     public const STOP_SEC = 180;         // ... for this long while on the way counts as stopped
     public const LOST_SEC = 75;          // no ping for this long: signal lost
     public const REQUEST_TTL_MIN = 20;   // unanswered requests expire
+    public const RING_SIZE = 3;          // mechanics alerted at once
+    public const RING_SEC = 60;          // wait this long before alerting the next ones
+    public const MAX_RINGS = 5;          // five rounds, widening each time, then the customer is told
 
     private function job(int $id, array $u): array
     {
         $j = Db::one('SELECT * FROM service_jobs WHERE id = ?', [$id]);
-        if (!$j || ((int) $j['customer_id'] !== (int) $u['id'] && (int) $j['artisan_id'] !== (int) $u['id'])) Http::json(['error' => 'not_found', 'message' => 'That job is not yours.'], 404);
+        $offered = $j && (int) $j['artisan_id'] !== (int) $u['id'] && (int) $j['customer_id'] !== (int) $u['id'] && ($j['mode'] ?? 'direct') === 'nearest' && $j['status'] === 'requested'
+            && Db::one("SELECT 1 AS x FROM job_offers WHERE job_id = ? AND artisan_id = ? AND status = 'offered'", [$id, $u['id']]);
+        if (!$j || ((int) $j['customer_id'] !== (int) $u['id'] && (int) $j['artisan_id'] !== (int) $u['id'] && !$offered)) Http::json(['error' => 'not_found', 'message' => 'That job is no longer available.'], 404);
+        if (($j['mode'] ?? 'direct') === 'nearest' && $j['status'] === 'requested') { self::escalate($j); $j = Db::one('SELECT * FROM service_jobs WHERE id = ?', [$id]); }
         if ($j['status'] === 'requested' && strtotime($j['created_at'] . ' UTC') < time() - self::REQUEST_TTL_MIN * 60) {
             Db::run("UPDATE service_jobs SET status = 'expired' WHERE id = ? AND status = 'requested'", [$id]); $j['status'] = 'expired';
         }
         return $j;
     }
     private static function metres(float $a, float $b, float $c, float $d): float { return WakaRules::km($a, $b, $c, $d) * 1000; }
-
     private function shape(array $j, array $u): array
     {
         $isCustomer = (int) $j['customer_id'] === (int) $u['id'];
         $other = (int) ($isCustomer ? $j['artisan_id'] : $j['customer_id']);
+        $pending = (int) $j['artisan_id'] === 0; // a nearest-mechanic request nobody has accepted yet
+        if ($pending) $other = $isCustomer ? 0 : (int) $j['customer_id'];
         $o = Db::one('SELECT name, phone FROM users WHERE id = ?', [$other]);
         $art = Db::one('SELECT business, trade, phone FROM artisans WHERE user_id = ?', [$j['artisan_id']]);
         $accepted = !in_array($j['status'], ['requested', 'declined', 'expired'], true) || (!$isCustomer && false);
@@ -51,7 +58,10 @@ final class ServiceJobController
             'id' => (int) $j['id'], 'status' => $j['status'], 'role' => $isCustomer ? 'customer' : 'artisan', 'trade' => $j['trade'], 'tradeLabel' => ArtisanController::TRADES[$j['trade']] ?? $j['trade'],
             'problem' => $j['problem'], 'landmark' => $showExact ? $j['landmark'] : null,
             'place' => $showExact ? ['lat' => (float) $j['lat'], 'lng' => (float) $j['lng'], 'exact' => true] : ['lat' => round((float) $j['lat'] / 0.005) * 0.005, 'lng' => round((float) $j['lng'] / 0.005) * 0.005, 'exact' => false],
-            'other' => ['id' => $other, 'name' => $isCustomer ? ($art['business'] ?: explode(' ', trim((string) ($o['name'] ?? '')))[0]) : explode(' ', trim((string) ($o['name'] ?? '')))[0],
+            'mode' => $j['mode'] ?? 'direct', 'accuracyM' => isset($j['accuracy_m']) && $j['accuracy_m'] !== null ? (int) $j['accuracy_m'] : null,
+            'dispatch' => ($j['mode'] ?? '') === 'nearest' ? ['ring' => (int) $j['ring'], 'maxRings' => self::MAX_RINGS, 'alerted' => (int) (Db::one('SELECT COUNT(*) AS n FROM job_offers WHERE job_id = ?', [$j['id']])['n'] ?? 0), 'declined' => (int) (Db::one("SELECT COUNT(*) AS n FROM job_offers WHERE job_id = ? AND status = 'declined'", [$j['id']])['n'] ?? 0)] : null,
+            'photo' => $isCustomer && !$pending ? (($p = Db::one('SELECT photo_upload FROM artisans WHERE user_id = ?', [$j['artisan_id']])) && $p['photo_upload'] ? '/api/uploads/' . (int) $p['photo_upload'] : Auth::picture((int) $j['artisan_id'])) : null,
+            'other' => ($pending && $isCustomer) ? ['id' => 0, 'name' => 'Finding the nearest ' . strtolower(ArtisanController::TRADES[$j['trade']] ?? 'hand'), 'phone' => null, 'avatar' => null, 'rating' => ['count' => 0]] : ['id' => $other, 'name' => $isCustomer ? ($art['business'] ?: explode(' ', trim((string) ($o['name'] ?? '')))[0]) : explode(' ', trim((string) ($o['name'] ?? '')))[0],
                 'phone' => in_array($j['status'], ['accepted', 'enroute', 'arrived'], true) ? ($isCustomer ? ($art['phone'] ?: $o['phone']) : $o['phone']) : null,
                 'avatar' => Auth::picture($other), 'rating' => RatingController::summary($other)],
             'live' => $live, 'route' => ($live && $j['route_json']) ? json_decode($j['route_json'], true) : null,
@@ -78,7 +88,7 @@ final class ServiceJobController
         $aid = (int) ($b['artisanId'] ?? 0);
         if ($aid === (int) $u['id']) Http::json(['error' => 'validation', 'message' => 'You cannot book yourself.'], 422);
         $a = Db::one('SELECT * FROM artisans WHERE user_id = ? AND hidden_at IS NULL', [$aid]); if (!$a) Http::json(['error' => 'not_found', 'message' => 'That artisan is not listed.'], 404);
-        if (!(int) $a['available']) Http::json(['error' => 'validation', 'message' => 'They are not taking jobs right now. Try another.'], 422);
+        if (!(int) $a['available']) Http::json(['error' => 'validation', 'message' => 'They are not taking jobs right now. Try another, or let Buja find the nearest.'], 422);
         $lat = (float) ($b['lat'] ?? 0); $lng = (float) ($b['lng'] ?? 0);
         if ($lat < 8 || $lat > 10 || $lng < 6.5 || $lng > 8) Http::json(['error' => 'validation', 'message' => 'Turn on location so they can find you. Buja works inside the FCT.'], 422);
         $problem = mb_substr(trim((string) ($b['problem'] ?? '')), 0, 400); if (mb_strlen($problem) < 5) Http::json(['error' => 'validation', 'fields' => ['problem' => 'Say what is wrong in a few words.']], 422);
@@ -106,6 +116,15 @@ final class ServiceJobController
         $bad = fn() => Http::json(['error' => 'validation', 'message' => 'That is not possible at this stage (' . $j['status'] . ').'], 422);
         switch ($action) {
             case 'accept':
+                if (($j['mode'] ?? 'direct') === 'nearest' && (int) $j['artisan_id'] !== (int) $u['id']) {
+                    // First to accept wins: one guarded update decides, even if two mechanics tap at the same instant.
+                    $won = Db::run("UPDATE service_jobs SET artisan_id = ? WHERE id = ? AND status = 'requested' AND artisan_id = 0", [$u['id'], $id]);
+                    if ($won !== 1) { Db::run("UPDATE job_offers SET status = 'taken', answered_at = ? WHERE job_id = ? AND artisan_id = ?", [Db::now(), $id, $u['id']]); Http::json(['error' => 'taken', 'message' => 'Another mechanic took this one a moment ago.'], 409); }
+                    Db::run("UPDATE job_offers SET status = 'won', answered_at = ? WHERE job_id = ? AND artisan_id = ?", [Db::now(), $id, $u['id']]);
+                    Db::run("UPDATE job_offers SET status = 'taken' WHERE job_id = ? AND artisan_id <> ? AND status = 'offered'", [$id, $u['id']]);
+                    $j = Db::one('SELECT * FROM service_jobs WHERE id = ?', [$id]); $isArtisan = true; $to = (int) $j['customer_id'];
+                    $name = (Db::one('SELECT business FROM artisans WHERE user_id = ?', [$u['id']])['business'] ?? '') ?: explode(' ', trim((string) $u['name']))[0];
+                }
                 if (!$isArtisan || $j['status'] !== 'requested') $bad();
                 $a = min((int) $j['customer_id'], (int) $j['artisan_id']); $b = max((int) $j['customer_id'], (int) $j['artisan_id']);
                 $t = Db::one("SELECT id FROM threads WHERE kind = 'artisan' AND user_a = ? AND user_b = ?", [$a, $b]);
@@ -114,6 +133,11 @@ final class ServiceJobController
                 Notify::user($to, 'work', $name . ' accepted your job', 'They will set off soon. You can follow them on the map.', $url, true);
                 break;
             case 'decline':
+                if (($j['mode'] ?? 'direct') === 'nearest' && (int) $j['artisan_id'] !== (int) $u['id']) {
+                    Db::run("UPDATE job_offers SET status = 'declined', answered_at = ? WHERE job_id = ? AND artisan_id = ? AND status = 'offered'", [Db::now(), $id, $u['id']]);
+                    self::escalate(Db::one('SELECT * FROM service_jobs WHERE id = ?', [$id]));
+                    Http::json(['ok' => true, 'declined' => true]);
+                }
                 if (!$isArtisan || $j['status'] !== 'requested') $bad();
                 Db::run("UPDATE service_jobs SET status = 'declined' WHERE id = ?", [$id]);
                 Notify::user($to, 'work', $name . ' cannot come this time', 'Try another one near you.', '/#/artisans/map?trade=' . $j['trade'], true);
@@ -189,6 +213,113 @@ final class ServiceJobController
             $name = (Db::one('SELECT business FROM artisans WHERE user_id = ?', [$j['artisan_id']])['business'] ?? '') ?: explode(' ', trim((string) (Db::one('SELECT name FROM users WHERE id = ?', [$j['artisan_id']])['name'] ?? 'They')))[0];
             Notify::user((int) $j['customer_id'], 'work', $name . ' has arrived', 'They are at your location.', '/#/jobs/' . $id, true);
         }
+    }
+
+    /* ------------------------------------------------ NEAREST-MECHANIC DISPATCH ------------------------------------------------ */
+
+    /**
+     * POST /service-jobs/nearest { trade, problem, lat, lng, accuracy, landmark }
+     * The breakdown button: no need to choose someone. The request goes to the closest available mechanics, a few
+     * at a time, widening every minute, and the first to accept gets the job.
+     */
+    public function nearest(): void
+    {
+        $u = Auth::require(); RateLimit::hit('servicejob', 8, 3600); $b = Http::body();
+        $trade = (string) ($b['trade'] ?? 'mechanic'); if (!isset(ArtisanController::TRADES[$trade])) Http::json(['error' => 'validation', 'message' => 'Which kind of help?'], 422);
+        $lat = (float) ($b['lat'] ?? 0); $lng = (float) ($b['lng'] ?? 0);
+        if ($lat < 8 || $lat > 10 || $lng < 6.5 || $lng > 8) Http::json(['error' => 'validation', 'message' => 'Turn on location and place the pin where you are. Buja works inside the FCT.'], 422);
+        $problem = mb_substr(trim((string) ($b['problem'] ?? '')), 0, 400); if (mb_strlen($problem) < 5) Http::json(['error' => 'validation', 'fields' => ['problem' => 'Say what is wrong in a few words.']], 422);
+        if ($open = Db::one("SELECT id FROM service_jobs WHERE customer_id = ? AND mode = 'nearest' AND status IN ('requested','accepted','enroute','arrived')", [$u['id']])) Http::json(['error' => 'open', 'message' => 'You already have a request running.', 'id' => (int) $open['id']], 409);
+        Db::run('INSERT INTO service_jobs (customer_id, artisan_id, trade, problem, lat, lng, landmark, created_at, mode, accuracy_m, trades) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+            [$u['id'], 0, $trade, $problem, round($lat, 6), round($lng, 6), mb_substr(trim((string) ($b['landmark'] ?? '')), 0, 160) ?: null, Db::now(), 'nearest', isset($b['accuracy']) ? max(1, min(9999, (int) $b['accuracy'])) : null, $trade]);
+        $id = (int) Db::lastId();
+        $n = self::ring($id);
+        Track::hit($u, 'artisan', 'job_nearest');
+        Http::json(['id' => $id, 'alerted' => $n], 201);
+    }
+
+    /** Alerts the next few mechanics, nearest and most recently online first, inside a radius that grows each round. */
+    public static function ring(int $id): int
+    {
+        $j = Db::one('SELECT * FROM service_jobs WHERE id = ?', [$id]);
+        if (!$j || $j['status'] !== 'requested') return 0;
+        $ring = (int) $j['ring'] + 1;
+        if ($ring > self::MAX_RINGS) {
+            Db::run("UPDATE service_jobs SET status = 'expired' WHERE id = ? AND status = 'requested'", [$id]);
+            Db::run("UPDATE job_offers SET status = 'expired' WHERE job_id = ? AND status = 'offered'", [$id]);
+            Notify::user((int) $j['customer_id'], 'work', 'No one could take it just now', 'Open the map to call a mechanic directly, or try again in a few minutes.', '/#/artisans/map?trade=' . $j['trade'], true);
+            return 0;
+        }
+        $lat = (float) $j['lat']; $lng = (float) $j['lng'];
+        $radius = min(60, 6 * $ring + 2);                                   // 8, 14, 20, 26, 32 km
+        $dLat = $radius / 111; $dLng = $radius / (111 * max(0.2, cos(deg2rad($lat))));
+        // Bounding box first, so this stays fast with thousands of artisans (index: trade, available, lat, lng)
+        $st = Db::pdo()->prepare("SELECT a.user_id, a.lat, a.lng, a.radius_km, a.last_online_at FROM artisans a WHERE a.trade = ? AND a.available = 1 AND a.hidden_at IS NULL
+            AND a.lat BETWEEN ? AND ? AND a.lng BETWEEN ? AND ? AND a.user_id <> ? AND a.user_id NOT IN (SELECT artisan_id FROM job_offers WHERE job_id = ?) LIMIT 200");
+        $st->execute([$j['trade'], $lat - $dLat, $lat + $dLat, $lng - $dLng, $lng + $dLng, $j['customer_id'], $id]);
+        $c = [];
+        foreach ($st->fetchAll() as $a) {
+            $km = WakaRules::km($lat, $lng, (float) $a['lat'], (float) $a['lng']);
+            if ($km > $radius || ($ring < 3 && $km > max(3, (float) $a['radius_km'] * 1.2))) continue; // early rounds respect how far they said they travel
+            $recent = $a['last_online_at'] && strtotime($a['last_online_at'] . ' UTC') > time() - 900;
+            $c[] = ['id' => (int) $a['user_id'], 'km' => $km, 'score' => $km - ($recent ? 3 : 0)];
+        }
+        usort($c, fn($x, $y) => $x['score'] <=> $y['score']);
+        $pick = array_slice($c, 0, self::RING_SIZE);
+        foreach ($pick as $p) {
+            Db::run('INSERT INTO job_offers (job_id, artisan_id, km, ring, status, offered_at) VALUES (?,?,?,?,?,?)', [$id, $p['id'], round($p['km'], 2), $ring, 'offered', Db::now()]);
+            Notify::user($p['id'], 'work', 'Breakdown ' . ($p['km'] < 1 ? 'under 1' : round($p['km'], 1)) . ' km from you', mb_substr((string) $j['problem'], 0, 90) . ' First to accept gets the job.', '/#/jobs/' . $id, true);
+        }
+        Db::run('UPDATE service_jobs SET ring = ?, ring_at = ? WHERE id = ?', [$ring, Db::now(), $id]);
+        if (!$pick && $ring < self::MAX_RINGS) return self::ring($id); // nobody in this circle: widen straight away
+        return count($pick);
+    }
+
+    /** Called whenever the customer's screen polls, and by Cron: next round when the current one has gone quiet. */
+    public static function escalate(array $j): void
+    {
+        if (($j['mode'] ?? '') !== 'nearest' || $j['status'] !== 'requested') return;
+        $quiet = !$j['ring_at'] || strtotime($j['ring_at'] . ' UTC') < time() - self::RING_SEC;
+        $allNo = !Db::one("SELECT 1 AS x FROM job_offers WHERE job_id = ? AND status = 'offered'", [$j['id']]);
+        if ($quiet || $allNo) self::ring((int) $j['id']);
+    }
+    public static function escalateAll(int $limit = 20): int
+    {
+        $n = 0;
+        foreach (Db::pdo()->query("SELECT * FROM service_jobs WHERE mode = 'nearest' AND status = 'requested' ORDER BY id LIMIT " . (int) $limit)->fetchAll() as $j) {
+            if (strtotime($j['created_at'] . ' UTC') < time() - self::REQUEST_TTL_MIN * 60) { Db::run("UPDATE service_jobs SET status = 'expired' WHERE id = ? AND status = 'requested'", [$j['id']]); continue; }
+            self::escalate($j); $n++;
+        }
+        return $n;
+    }
+
+    /**
+     * GET /service-jobs/offers : what is ringing for this mechanic right now. The app polls this in the
+     * background, which also marks them as online, so dispatch prefers people who are actually looking.
+     */
+    public function offers(): void
+    {
+        $u = Auth::require();
+        Db::run('UPDATE artisans SET last_online_at = ? WHERE user_id = ?', [Db::now(), $u['id']]);
+        $st = Db::pdo()->prepare("SELECT o.km, o.offered_at, j.* FROM job_offers o JOIN service_jobs j ON j.id = o.job_id WHERE o.artisan_id = ? AND o.status = 'offered' AND j.status = 'requested' AND j.created_at > ? ORDER BY o.offered_at DESC LIMIT 5");
+        $st->execute([$u['id'], gmdate('Y-m-d H:i:s', time() - self::REQUEST_TTL_MIN * 60)]);
+        Http::json(['offers' => array_map(fn($r) => ['id' => (int) $r['id'], 'trade' => $r['trade'], 'tradeLabel' => ArtisanController::TRADES[$r['trade']] ?? $r['trade'], 'problem' => $r['problem'], 'km' => (float) $r['km'],
+            'district' => Osm::districtFor((float) $r['lat'], (float) $r['lng']) ?: null, 'age' => max(0, time() - strtotime($r['offered_at'] . ' UTC'))], $st->fetchAll())]);
+    }
+
+    /** POST /service-jobs/{id}/where { lat, lng, accuracy } : the customer corrects or updates where they are */
+    public function where(int $id): void
+    {
+        $u = Auth::require(); $j = $this->job($id, $u);
+        if ((int) $j['customer_id'] !== (int) $u['id']) Http::json(['error' => 'forbidden'], 403);
+        if (!in_array($j['status'], ['requested', 'accepted', 'enroute'], true)) Http::json(['job' => $this->shape($j, $u)]);
+        $b = Http::body(); $lat = (float) ($b['lat'] ?? 0); $lng = (float) ($b['lng'] ?? 0);
+        if ($lat < 8 || $lat > 10 || $lng < 6.5 || $lng > 8) Http::json(['error' => 'validation'], 422);
+        if (self::metres((float) $j['lat'], (float) $j['lng'], $lat, $lng) >= 15) {
+            Db::run('UPDATE service_jobs SET lat = ?, lng = ?, accuracy_m = ?, route_at = NULL WHERE id = ?', [round($lat, 6), round($lng, 6), isset($b['accuracy']) ? (int) $b['accuracy'] : null, $id]);
+            if ((int) $j['artisan_id'] && in_array($j['status'], ['accepted', 'enroute'], true)) Notify::user((int) $j['artisan_id'], 'work', 'Your customer moved their pin', 'Check the map for the new spot.', '/#/jobs/' . $id);
+        }
+        Http::json(['job' => $this->shape(Db::one('SELECT * FROM service_jobs WHERE id = ?', [$id]), $u)]);
     }
 
     /** POST /service-jobs/{id}/rate { stars, tags, comment } : the customer, once, after the job */

@@ -8,6 +8,7 @@ import { registerAlerts } from './alerts.js';
 import { registerTrustAlerts, ringer } from './trustalerts.js';
 import { registerEngage } from './engage.js';
 import { registerAdminShell } from './adminshell.js';
+import { afterScreen, appOpen, hideBanner } from './ads.js';
 import { passkeyAvailable, registerPasskey, loginWithPasskey } from './passkey.js';
 import { registerRtc, watchIncoming } from './rtc.js';
 
@@ -102,6 +103,7 @@ async function render() {
   app.appendChild(el);
   if (r.tabs) app.insertAdjacentHTML('beforeend', tabbar(r.tabs, state.unread || 0));
   if (r.mount && html !== null) { try { r.mount(el, params); } catch (err) { console.error('[buja mount]', err); } } // no setup on an error page
+  if (html !== null && state.user) { hideBanner(); setTimeout(() => afterScreen(api, path, el).catch(() => {}), 700); } // ads decide for themselves whether this screen may carry one
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', render);
@@ -260,7 +262,8 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/learn', 'book-open', '#101014', '#7ED957', 'Buja Learn', 'Code, AI, certificates. Free.'],
     ['/queues', 'building-columns', '#EAF1FB', '#1F5FBF', 'Office queues', 'NIN, passport, licence: how long now'],
     ['/rides', 'car', '#E7F0EA', '#2E7D1E', 'Commute share', 'Split a seat along your route'],
-    ['/artisans/map?trade=mechanic', 'wrench', '#EAF1FB', '#1F5FBF', 'Mechanic near me', 'See who is close, watch them come'],
+    ['/breakdown', 'wrench', '#FDECEA', '#D92D20', 'Car broke down?', 'Nearest mechanic comes to your pin'],
+    ['/artisans/map?trade=mechanic', 'map-location-dot', '#EAF1FB', '#1F5FBF', 'Mechanics near me', 'See them on the map with ratings'],
   ];
   return `
   <header class="topbar" style="padding-top:8px">
@@ -434,7 +437,7 @@ const LAZY = {
   admin: ['trust', 'services', 'citymore'], plus: ['trust'], verify: ['trust'],
   news: ['city'], radio: ['city'], social: ['city'], safety: ['safety'], trip: ['safety'],
   install: ['growth'], invite: ['growth'], join: ['growth'], privacy: ['growth'], terms: ['growth'], search: ['growth'], report: ['growth', 'services'],
-  artisans: ['services', 'jobs'], jobs: ['jobs'], meetup: ['services'], tickets: ['services'],
+  artisans: ['services', 'jobs'], jobs: ['jobs'], breakdown: ['jobs'], meetup: ['services'], tickets: ['services'],
   blood: ['citysignals'], fuel: ['citysignals'], light: ['citysignals'], lostfound: ['citysignals'], plates: ['citysignals'], prices: ['citysignals'],
   cert: ['learn'], learn: ['learn'], queues: ['citymore'], 'rent-index': ['citymore'], rides: ['citymore'],
 };
@@ -571,6 +574,45 @@ function farePrompt(t) {
   });
 }
 
+/* ---------------- Mechanics: never miss a breakdown ----------------
+   While Buja is open on a mechanic's phone, it checks for breakdown requests every 8 seconds and rings like a
+   call when one arrives. When Buja is closed, the push notification does the same job. */
+const jobRinger = ringer();
+let offerSeen = new Set(), offerTimer = null;
+async function pollOffers() {
+  clearTimeout(offerTimer);
+  if (state.user && state.user.artisan && state.user.artisan.available && !document.hidden && !api.isMock()) {
+    try {
+      const { offers } = await api.jobOffers();
+      const fresh = offers.find((o) => !offerSeen.has(o.id));
+      if (fresh && !document.getElementById('ringcard') && !location.hash.startsWith('#/jobs/' + fresh.id)) showOffer(fresh);
+      if (!offers.length) { document.getElementById('ringcard')?.remove(); jobRinger.stop(); }
+    } catch {}
+  }
+  offerTimer = setTimeout(pollOffers, 8000);
+}
+function showOffer(o) {
+  offerSeen.add(o.id);
+  const c = document.createElement('div'); c.id = 'ringcard'; c.className = 'ring-card';
+  c.innerHTML = `<div class="inner">
+    <div class="row" style="gap:14px"><div class="ring-pulse">${icon('wrench')}</div><div class="grow"><div style="font-size:19px;font-weight:800">Breakdown ${o.km < 1 ? 'under 1' : o.km.toFixed(1)} km away</div><div class="small muted">${h(o.tradeLabel)}${o.district ? ' · ' + h(o.district) : ''} · first to accept gets it</div></div></div>
+    <div class="card" style="padding:12px;background:var(--surface);border:none;font-size:15px;font-weight:600">${h(o.problem)}</div>
+    <div class="row" style="gap:8px"><button class="btn btn-primary grow" data-yes style="height:56px;font-size:16px">Accept and go</button><button class="btn btn-outline" data-view style="width:auto;height:56px">See it</button></div>
+    <button class="btn btn-ghost" data-no>Not now</button></div>`;
+  document.body.appendChild(c);
+  jobRinger.start('incoming'); try { navigator.vibrate && navigator.vibrate([400, 200, 400, 200, 400]); } catch {}
+  const close = () => { jobRinger.stop(); c.remove(); };
+  setTimeout(() => { if (document.body.contains(c)) close(); }, 60000); // stop ringing after a minute; the job stays in My jobs
+  c.querySelector('[data-no]').addEventListener('click', async () => { close(); try { await api.jobAct(o.id, 'decline'); } catch {} });
+  c.querySelector('[data-view]').addEventListener('click', () => { close(); go('/jobs/' + o.id); });
+  c.querySelector('[data-yes]').addEventListener('click', async (e) => {
+    const b = e.currentTarget; busy(b, true);
+    try { await api.jobAct(o.id, 'accept'); close(); go('/jobs/' + o.id); }
+    catch (err) { close(); toast(err && err.error === 'not_found' ? 'Another mechanic took this one' : ((err && err.message) || 'Could not accept')); }
+  });
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pollOffers(); });
+
 /* ---------------- Boot ---------------- */
 (async function boot() {
   applyTheme(state.theme);
@@ -581,6 +623,8 @@ function farePrompt(t) {
   if (!location.hash) go(state.user ? '/home' : '/welcome');
   await render();
   setTimeout(preloadRest, 1500); // after the first screen is painted
+  pollOffers();
+  if (state.user) appOpen(api).catch(() => {});
   setInterval(() => { if (!state.user || document.hidden || api.isMock() || !navigator.geolocation) return; navigator.geolocation.getCurrentPosition((p) => { api.pingTrip(p.coords.latitude, p.coords.longitude).then((r) => arrivalCheck(r, p.coords)).catch(() => {}); }, () => {}, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }); }, 120000);
   setInterval(async () => { if (state.user && !document.hidden && !api.isMock()) { try { const t = await api.today(); if (t.unread !== state.unread) { state.unread = t.unread; setBadge(t.unread); } } catch {} } }, 60000);
   if ('serviceWorker' in navigator && !api.isMock() && location.protocol === 'https:') {

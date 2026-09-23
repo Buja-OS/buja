@@ -227,6 +227,7 @@ $router->post('/events/{id}/cancel',         [MeetupController::class, 'cancel']
 $router->post('/events/{id}/checkin',        [MeetupController::class, 'checkin']);
 $router->get('/events/{id}/ics',             [MeetupController::class, 'ics']);
 $router->get('/artisans',                    [ArtisanController::class, 'index']);
+$router->post('/artisans/me/online',         [ArtisanController::class, 'online']);
 $router->get('/artisans/me',                 [ArtisanController::class, 'me']);
 $router->post('/artisans/me',                [ArtisanController::class, 'save']);
 $router->get('/artisans/{id}',               [ArtisanController::class, 'show']);
@@ -329,7 +330,10 @@ $router->get('/route',                       [WakaController::class, 'road']);
 // On-demand service jobs with live tracking
 $router->get('/service-jobs',                [ServiceJobController::class, 'index']);
 $router->post('/service-jobs',               [ServiceJobController::class, 'create']);
+$router->get('/service-jobs/offers',         [ServiceJobController::class, 'offers']);
+$router->post('/service-jobs/nearest',       [ServiceJobController::class, 'nearest']);
 $router->get('/service-jobs/{id}',           [ServiceJobController::class, 'show']);
+$router->post('/service-jobs/{id}/where',    [ServiceJobController::class, 'where']);
 $router->post('/service-jobs/{id}/ping',     [ServiceJobController::class, 'ping']);
 $router->post('/service-jobs/{id}/rate',     [ServiceJobController::class, 'rate']);
 $router->post('/service-jobs/{id}/{action}', [ServiceJobController::class, 'act']);
@@ -344,3 +348,8 @@ $router->get('/admin/social',                [SocialController::class, 'adminInd
 $router->post('/admin/social/{id}/{action}', [SocialController::class, 'adminAct']);
 $router->get('/admin/news',                  [NewsController::class, 'adminIndex']);
 $router->post('/admin/news/{id}/{action}',   [NewsController::class, 'adminAct']);
+
+// Ads (off until an admin switches them on)
+$router->get('/ads/config',                  [AdsController::class, 'show']);
+$router->get('/admin/ads',                   [AdsController::class, 'admin']);
+$router->post('/admin/ads',                  [AdsController::class, 'save']);

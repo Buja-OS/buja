@@ -203,6 +203,10 @@ select.input { appearance: none; -webkit-appearance: none; background-image: lin
 .maplibregl-ctrl-attrib{font-size:10px!important}
 .bm-offline::after{content:'Street map unavailable offline';position:absolute;left:50%;top:calc(76px + var(--safe-t,0px));transform:translateX(-50%);background:rgba(16,16,20,.78);color:#fff;font:600 11px Inter,system-ui,sans-serif;padding:5px 10px;border-radius:12px;z-index:4;pointer-events:none;white-space:nowrap}
 
+/* The admin sidebar exists only on wide screens. Without this rule outside the media query, a phone showed it
+   as a raw list of giant icons over the page (Phase 27 fix). */
+.adminnav { display: none; }
+
 /* ---------- Admin on a computer (Phase 26) ----------
    Admin work is spreadsheet work: on a wide screen the phone column becomes a sidebar plus a wide sheet. */
 @media (min-width: 900px) {
@@ -211,7 +215,7 @@ select.input { appearance: none; -webkit-appearance: none; background-image: lin
   body.admin-wide main.pad, body.admin-wide form.pad { max-width: 1008px; padding-left: 28px; padding-right: 28px; }
   body.admin-wide .tabbar { display: none; }
   body.admin-wide .screen { padding-bottom: 40px; }
-  .adminnav { position: fixed; left: 0; top: 0; bottom: 0; width: 232px; background: var(--night); color: #fff; padding: 18px 12px; overflow-y: auto; z-index: 30; display: none; }
+  .adminnav { position: fixed; left: 0; top: 0; bottom: 0; width: 232px; background: var(--night); color: #fff; padding: 18px 12px; overflow-y: auto; z-index: 30; }
   body.admin-wide .adminnav { display: block; }
   .adminnav .brand { display: flex; align-items: center; gap: 10px; padding: 6px 10px 16px; font-weight: 800; font-size: 17px; }
   .adminnav .brand svg { width: 22px; height: 22px; fill: var(--green); }
@@ -230,3 +234,15 @@ select.input { appearance: none; -webkit-appearance: none; background-image: lin
 .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
 .kpi b { display: block; font-size: 22px; font-weight: 800; line-height: 1.1; }
 .kpi span { font-size: 12px; color: var(--muted); }
+.bm-face{position:relative;width:54px;height:54px}
+.bm-face .bm-rot{position:absolute;inset:0}
+.bm-face .bm-arrow{top:-7px}
+.bm-facebody{position:absolute;inset:6px;border-radius:50%;background:var(--c);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px #fff,0 0 0 6px var(--c),0 8px 18px rgba(0,0,0,.35);overflow:hidden}
+.bm-radar{width:180px;height:180px;border-radius:50%;border:2px solid rgba(255,122,26,.7);animation:bmRadar 1.8s ease-out infinite}
+@keyframes bmRadar{0%{transform:scale(.2);opacity:1}100%{transform:scale(1.4);opacity:0}}
+.ring-card{position:fixed;left:0;right:0;top:0;bottom:0;z-index:95;background:rgba(16,16,20,.94);display:flex;align-items:flex-end;justify-content:center}
+.ring-card .inner{width:100%;max-width:480px;background:var(--card);border-radius:24px 24px 0 0;padding:20px 18px calc(24px + var(--safe-b,0px));display:flex;flex-direction:column;gap:12px}
+.ring-pulse{width:64px;height:64px;border-radius:32px;background:var(--orange);color:#fff;display:flex;align-items:center;justify-content:center;animation:ringPulse 1s infinite}
+.ring-pulse svg{width:28px;height:28px;fill:currentColor}
+@keyframes ringPulse{0%{box-shadow:0 0 0 0 rgba(255,122,26,.6)}70%{box-shadow:0 0 0 22px rgba(255,122,26,0)}100%{box-shadow:0 0 0 0 rgba(255,122,26,0)}}
+.ad-slot{background:var(--card);border:1px dashed var(--line);border-radius:14px;padding:8px 10px;min-height:60px}

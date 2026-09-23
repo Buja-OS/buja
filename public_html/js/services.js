@@ -174,38 +174,7 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
     el.querySelectorAll('[data-wa]').forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); window.open(b.dataset.wa, '_blank', 'noopener'); }));
   } });
 
-  route('/artisans/register', { auth: true, tabs: '' }, async () => {
-    const { artisan: a, trades } = await api.artisanMe();
-    return `${topbar(a ? 'Your listing' : 'List yourself', '/artisans')}
-    <form id="rf" class="pad stack" style="gap:14px">
-      <div class="field"><label for="trade">Your trade</label><select class="input" id="trade">${Object.entries(trades).map(([k, l]) => `<option value="${k}" ${a && a.trade === k ? 'selected' : ''}>${h(l)}</option>`).join('')}</select></div>
-      ${field({ id: 'business', label: 'Business name (optional)', placeholder: 'Musa Auto Clinic', value: a ? a.name : '' })}
-      ${field({ id: 'phone', label: 'Phone people can call', placeholder: '0803 000 0000', value: a ? a.phone : (state.user.phone || ''), inputmode: 'tel' })}
-      ${field({ id: 'whatsapp', label: 'WhatsApp (if different)', placeholder: '0803 000 0000', value: a && a.whatsapp !== a.phone ? a.whatsapp : '', inputmode: 'tel' })}
-      <div class="field"><label for="district">Based in</label><select class="input" id="district">${DISTRICTS.map((d) => `<option ${(a ? a.district : state.user.district) === d ? 'selected' : ''}>${d}</option>`).join('')}</select></div>
-      <div class="field"><label for="radiusKm">How far you will travel</label><select class="input" id="radiusKm">${[5, 10, 15, 25, 40, 60].map((n) => `<option value="${n}" ${(a ? a.radiusKm : 15) === n ? 'selected' : ''}>Up to ${n} km</option>`).join('')}</select></div>
-      ${field({ id: 'years', label: 'Years of experience', type: 'number', placeholder: '5', value: a ? a.years : '', inputmode: 'numeric' })}
-      <div class="field"><label for="about">What you do</label><textarea class="input" id="about" maxlength="600" placeholder="Toyota and Honda specialist, roadside call-outs, diagnostics" style="height:100px;padding:12px 14px;resize:none">${a ? h(a.about || '') : ''}</textarea></div>
-      <div class="row" style="gap:8px;align-items:center"><label class="btn btn-sm btn-outline" style="width:auto;cursor:pointer">${icon('camera')} Photo of you or your shop<input type="file" accept="image/*" id="pic" style="display:none"></label><span class="small muted" id="picname"></span></div>
-      <button type="button" class="btn btn-outline" id="pin">${icon('location-dot')} <span>${a && a.lat ? 'Update my shop location' : 'Pin my shop location'}</span></button>
-      ${a ? `<label class="check" style="align-items:center"><input type="checkbox" id="available" ${a.available ? 'checked' : ''}>Available for work right now</label>` : ''}
-      <button class="btn btn-primary" type="submit">${icon('screwdriver-wrench')} ${a ? 'Save' : 'List me'}</button>
-      <div class="small muted" style="line-height:1.55">Your phone number is shown so people can call you. Ratings come only from people who contacted you through Buja. A selfie verification badge helps; do it under Me.</div>
-    </form>`;
-  }, {
-    mount(el) {
-      clearOnInput(el); let pos = null, picId = null;
-      el.querySelector('#pin').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); const p = await here(10000); busy(b, false); if (!p) { toast('Could not get your location. Check the permission.'); return; } pos = p; b.querySelector('span').textContent = 'Location pinned'; b.classList.add('btn-ink'); });
-      el.querySelector('#pic').addEventListener('change', async (e) => { const f = e.target.files[0]; if (!f) return; el.querySelector('#picname').textContent = 'Uploading…'; try { const up = await api.upload(await shrink(f, 1000), 'image'); picId = up.upload.id; el.querySelector('#picname').textContent = 'Photo ready'; } catch (err) { failed(el, err); } });
-      el.querySelector('#rf').addEventListener('submit', async (e) => {
-        e.preventDefault(); const btn = e.target.querySelector('[type=submit]'); showErrors(el, {}); busy(btn, true);
-        const body = { trade: el.querySelector('#trade').value, business: el.querySelector('#business').value, phone: el.querySelector('#phone').value, whatsapp: el.querySelector('#whatsapp').value, district: el.querySelector('#district').value, radiusKm: el.querySelector('#radiusKm').value, years: el.querySelector('#years').value, about: el.querySelector('#about').value, uploadId: picId, lat: pos ? pos.lat : undefined, lng: pos ? pos.lng : undefined };
-        const av = el.querySelector('#available'); if (av) body.available = av.checked;
-        try { await api.artisanSave(body); toast('Listed. People near you can find you now.'); go('/artisans?trade=' + body.trade); } catch (err) { busy(btn, false); failed(el, err); }
-      });
-    }
-  });
-
+  // /artisans/register now lives in servicejobs.js: the full mechanic registration with a map pin.
   route('/artisans/:id', { auth: true, tabs: '' }, async ({ id }) => {
     if (id === 'register') return '';
     const { artisan: a } = await api.artisan(id);

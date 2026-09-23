@@ -1,4 +1,4 @@
-# Buja, Phase 26: photos in Social, news inside Buja, and admin on a computer
+# Buja, Phase 27: the mechanic dispatch, and the admin fix
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -578,8 +578,41 @@ showing the link. Swept all 121 screens cold as an admin and as a resident: no c
 
 Swept 124 screens cold as an admin and as a resident: no crashes, no server errors.
 
+## Phase 27: mechanic near me, made robust
+
+**Dispatch.** "Car broke down?" on Home opens a map with a red car pin on your GPS position; drag it to the exact
+spot, pick the problem (won't start, battery flat, overheating, strange noise, brakes, accident), add a landmark,
+and send. Buja alerts the three nearest available mechanics at once, preferring those seen online in the last 15
+minutes. The first to accept gets the job; the claim is a single conditional UPDATE, so two mechanics tapping at
+the same moment cannot both win, and the others are told it was taken. If nobody answers in a minute, the next
+three are alerted inside a wider circle (8, 14, 20, 26, 32 km); after five rounds the customer is told to call one
+directly. Rounds advance from the customer's screen, the mechanics' polling, and Cron, so a job never waits on one
+phone being open. Lookups use a bounding box on an indexed (trade, available, lat, lng), which stays fast with
+thousands of artisans.
+**Never missing a job.** With Buja open, a mechanic's phone checks every 8 seconds and rings and vibrates with a
+full-screen card: distance, problem, "Accept and go". Push notifications cover the rest.
+**Getting there.** The customer can move their pin after sending; the mechanic is notified and the route redraws.
+While travelling, the mechanic's own photo (or initials) moves on the customer's map with the ETA, "stopped",
+"signal lost", and automatic arrival.
+**Joining.** Mechanics register with their face photo, workshop pin, phone and WhatsApp, services and brands,
+hours, call-out fee, emergency cover and ID for the verified badge.
+**Ads.** `js/ads.js` and `AdsController` with admin settings: AdSense and Buja's own house ads, in banner, in-feed,
+interstitial (frequency-capped) and app-open formats, never on safety, tracking, payment or admin screens.
+AdMob needs a native SDK; the PWABuilder Android package is a Trusted Web Activity (Chrome showing the site),
+so AdSense is what runs inside it.
+
+Fixed: the admin sidebar printed as a raw list over the dashboard on phones (its hide rule lived only inside the
+wide-screen query); the Phase 25 fare prompt could not record that it had asked (`fareAsked` never got added);
+two stale routes pointed at methods that did not exist; the car pin sat half under the sheet.
+Checked every one of 284 server routes has its method, and every client call has a server route.
+Swept 126 screens cold as an admin and as a resident: no crashes, no server errors.
+
+## Moving to cPanel later
+The `.htaccess` files in `public_html/` and `public_html/api/` carry the routing Render gets from the Dockerfile.
+They had never reached GitHub because file managers hide names that start with a dot. They are in this zip.
+
 ## What is next
 
-Phase 27: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 28: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.
