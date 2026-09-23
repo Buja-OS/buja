@@ -1,0 +1,47 @@
+# Buja PWA on shared hosting. Serves the app shell, routes /api to PHP, and sets cache + security headers.
+Options -Indexes
+RewriteEngine On
+
+# Force HTTPS (comment these two lines out only while testing without SSL)
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# API lives in /api (its own .htaccess takes over there)
+RewriteRule ^api/ - [L]
+
+# Public, indexable pages, the sitemap and robots are rendered by PHP
+RewriteRule ^p(/.*)?$ p/index.php [QSA,L]
+RewriteRule ^sitemap\.xml$ p/index.php?path=sitemap [L]
+RewriteRule ^robots\.txt$ p/index.php?path=robots [L]
+RewriteRule ^ads\.txt$ p/index.php?path=ads [L]
+
+# Everything else that is not a real file serves the app shell (hash routing, so this is rarely hit)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [L]
+
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+  Header set Permissions-Policy "camera=(self), microphone=(self), geolocation=(self)"
+  # The shell and service worker must always be fresh; assets are versioned by filename in later phases
+  <FilesMatch "\.(html|webmanifest)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+  <FilesMatch "^sw\.js$">
+    Header set Cache-Control "no-cache"
+    Header set Service-Worker-Allowed "/"
+  </FilesMatch>
+  <FilesMatch "\.(css|js)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+  <FilesMatch "\.(svg|woff2|png|jpg|webp)$">
+    Header set Cache-Control "public, max-age=604800"
+  </FilesMatch>
+</IfModule>
+
+AddType application/manifest+json .webmanifest
+AddType image/svg+xml .svg

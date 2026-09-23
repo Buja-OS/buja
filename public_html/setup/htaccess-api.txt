@@ -1,0 +1,14 @@
+# Buja API: every request under /api goes through index.php
+Options -Indexes
+RewriteEngine On
+RewriteBase /api/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [QSA,L]
+# Never serve these directly
+<FilesMatch "^(config\.php|config\.sample\.php|routes\.php)$">
+  Require all denied
+</FilesMatch>
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
