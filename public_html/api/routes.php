@@ -392,6 +392,7 @@ $router->post('/artisans/{id}/save',         [ServiceJobController::class, 'save
 $router->post('/kart/gp',                    [KartController::class, 'gpFinish']);
 $router->get('/kart/garage',                 [KartController::class, 'garage']);
 $router->post('/kart/garage/upgrade',        [KartController::class, 'upgrade']);
+$router->post('/kart/garage/item',         [KartController::class, 'item']);
 $router->post('/kart/garage/paint',          [KartController::class, 'paint']);
 
 // Declutter escrow: Buy safely

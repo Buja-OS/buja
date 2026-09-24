@@ -1,4 +1,4 @@
-# Buja, Phase 36: Play Store billing rules and live launch checks
+# Buja, Phase 37: the Buja Kart shop
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -739,6 +739,32 @@ app. Members keep every benefit. The website is unchanged.
 **Launch checklist, live.** New checks: migrations 036 and 037 present (each table tried), the Paystack webhook actually
 arriving (recorded on every call), seller payouts and escrow problems waiting, the Android app's signing fingerprints
 (a reminder to add Google Play's), mechanics signed up (target 20), and the Play billing rule.
+
+## Phase 37: the Buja Kart shop
+
+Home shows Buja Kart with Font Awesome's gamepad icon. The garage is rebuilt around a 3D turntable of your own kart and
+six tabs:
+- **Performance** (levels 1 to 5, bought with coins; they change the physics): Speed (top speed), Acceleration, Wheels
+  (grip: tighter turns, less slowdown on grass), Nitro (stronger, longer boosts). Rivals scale with your level.
+- **Paint** (as before). "Use my driver's colour" now really resets the paint on the server (it only cleared a local
+  setting before, so the bought paint stayed on).
+- **Design**: classic, racing stripes (300), green-white-green (500), flames (700), carbon (900), neon with underglow
+  (1,200). Built into the kart as it is made, so they cost almost nothing to draw.
+- **Helmet**: classic, chevron (200), naija (400), gold (600), carbon (700), chrome (800).
+- **World** (the race environment): afternoon, sunset (400), harmattan haze (600), night with headlights and glowing
+  streetlamps (800). Applied before the sky is built, so reflections match.
+- **Engine sound**: kart (the recording), okada (the motorcycle rev, looped; 300), electric (400), V8 (500). Tap to hear
+  a short rev before buying.
+First tap previews, second tap buys (or uses, if owned). Buying and owning happen in one database statement, so two taps
+cannot spend the same coins twice. Friends in a race room see each other's paint, design and helmet.
+
+**Unlimited access**, checked on the server: femiayor@gmail.com (or whoever KART_UNLIMITED lists, comma separated) sees
+∞ coins, owns everything and upgrades for free. Everyone else earns coins.
+
+**Daily bonus**: the first race of each Abuja day pays 100 coins, 25 more for each day in a row, up to a week.
+
+Migration 038 adds owned, equipped, daily_on and streak to kart_profiles. Before it runs, the shop says it is waiting
+and everything else works; the Launch checklist reports it.
 
 ## What is next
 

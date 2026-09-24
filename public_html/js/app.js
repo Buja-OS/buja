@@ -267,7 +267,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/queues', 'building-columns', '#EAF1FB', '#1F5FBF', 'Office queues', 'NIN, passport, licence: how long now'],
     ['/rides', 'car', '#E7F0EA', '#2E7D1E', 'Commute share', 'Split a seat along your route'],
     ['/artisans/map?trade=mechanic', 'wrench', '#FDECEA', '#D92D20', 'Mechanic near me', 'Car broke down? The nearest one comes to you'],
-    ['/kart', 'flag-checkered', '#FFF1E6', '#E8660A', 'Buja Kart', 'Race round Eagle Square and Aso Rock'],
+    ['/kart', 'gamepad', '#FFF1E6', '#E8660A', 'Buja Kart', 'Race round Eagle Square and Aso Rock'],
     ['/friends', 'users', '#EEF0FF', '#4B4FC4', 'Friends', 'People you know, and people to meet'],
   ];
   return `

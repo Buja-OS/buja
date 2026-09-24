@@ -264,6 +264,7 @@ export const api = {
   escrowSaveAccount: (b) => request('POST', '/escrow/account', b),
   adminEscrow:     () => request('GET', '/admin/escrow'),
   adminEscrowAct:  (id, action) => request('POST', '/admin/escrow/' + id + '/' + action),
+  kartItem:        (cat, id) => request('POST', '/kart/garage/item', { cat, id }),
   kartGpFinish:    (b) => request('POST', '/kart/gp', b),
   kartSaveTime:    (b) => request('POST', '/kart/times', b),
   kartGhost:       (f) => request('GET', '/kart/ghost' + qs(f)),

@@ -15,6 +15,26 @@ const TRACKS = {
 // Reversed circuits: the same streets driven the other way round
 TRACKS['abuja-r'] = { url: CIRCUIT_URL, reverse: true, name: 'City streets, reversed', blurb: 'Tafawa Balewa Way back to Independence Avenue' };
 TRACKS['gp-r'] = { url: '/assets/kart/abuja-gp.json', reverse: true, name: 'Grand Prix, reversed', blurb: 'Through the City Gate the other way, Aso Rock on your left' };
+/** The garage's turntable: the real kart model, slowly turning, restyled as you browse. */
+function turntable(canvas, colour, look) {
+  const w = canvas.clientWidth || 340, hgt = canvas.clientHeight || 200;
+  const r = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); r.setSize(w, hgt, false);
+  r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.1;
+  const scene = new THREE.Scene(); const cam = new THREE.PerspectiveCamera(32, w / hgt, 0.1, 100); cam.position.set(4.6, 2.4, 4.6); cam.lookAt(0, 0.65, 0);
+  scene.add(new THREE.HemisphereLight('#FFFFFF', '#5A5A66', 1.3)); const d = new THREE.DirectionalLight('#FFF4E0', 2.4); d.position.set(3, 6, 4); scene.add(d);
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(2.8, 48), new THREE.MeshStandardMaterial({ color: '#2A2A33', roughness: 0.6 })); floor.rotation.x = -Math.PI / 2; scene.add(floor);
+  const ctx = { tier: 'high', scene, decorate: Race.prototype.decorate }; let kart = null, running = true;
+  const set = (c, l) => { if (kart) scene.remove(kart); kart = Race.prototype.makeKart.call(ctx, c, false, false, l); kart.rotation.y = kart._spin || 0.6; };
+  set(colour, look);
+  const loop = () => { if (!running) return; kart.rotation.y += 0.008; kart._spin = kart.rotation.y; r.render(scene, cam); requestAnimationFrame(loop); }; loop();
+  return { set: (c, l) => { const s = kart ? kart.rotation.y : 0.6; set(c, l); kart.rotation.y = s; }, stop: () => { running = false; r.dispose(); } };
+}
+/** Hear an engine before buying it: a short rev from idle to full speed. */
+function previewSound(pack) {
+  const a = new KartAudio(); a.musicOn = false; a.sfxOn = true; a.wake(); if (!a.ctx) return;
+  const go = () => { a.setPack(pack); let v = 4; const t = setInterval(() => { v = Math.min(38, v + 2.5); a.update(v, true, false, false, false); }, 90); setTimeout(() => { clearInterval(t); a.update(0, false, false, false, true); setTimeout(() => a.stop(), 500); }, 2200); };
+  setTimeout(go, pack === 'kart' || pack === 'okada' ? 700 : 50); // the recordings need a moment to load
+}
 /** Flip a circuit's direction: the start stays put, every position along the lap is mirrored. */
 function reverseCircuit(c) {
   const n = c.lap.length, flip = (s) => (n - s) % n;
@@ -41,6 +61,19 @@ const PAINT_NAMES = { green: 'Amaka green', red: 'Tunde red', yellow: 'Ngozi yel
 const UPGRADE = { engine: (l) => ({ topMul: 1 + 0.03 * l }), accel: (l) => ({ accMul: 1 + 0.08 * l }), handling: (l) => ({ turnMul: 1 + 0.05 * l, offBonus: l }), boost: (l) => ({ boostMul: 1 + 0.12 * l }) };
 const myDriver = () => { try { const d = localStorage.getItem('buja_kart_driver'); return DRIVERS[d] ? d : 'green'; } catch { return 'green'; } };
 const TEX = '/assets/kart/';
+/** What the shop sells. Prices live on the server; these are the names and blurbs. */
+const SHOP_INFO = {
+  design: { title: 'Design', items: { classic: ['Classic', 'Your colour, clean'], stripes: ['Racing stripes', 'Twin white stripes, nose to tail'], naija: ['Green-white-green', 'The flag, down the middle'], flames: ['Flames', 'Hot-rod flames on the side pods'], carbon: ['Carbon', 'Matte carbon with an orange line'], neon: ['Neon', 'Glowing trims and underglow, made for night'] } },
+  helmet: { title: 'Helmet', items: { classic: ['Classic', 'Your colour'], chevron: ['Chevron', 'Your colour with a cream stripe'], naija: ['Naija', 'Green with a white stripe'], gold: ['Gold', 'Polished gold'], carbon: ['Carbon', 'Matte black, orange stripe'], chrome: ['Chrome', 'Mirror finish'] } },
+  env: { title: 'World', items: { day: ['Afternoon', 'Bright Abuja sun'], sunset: ['Sunset', 'Golden light behind Aso Rock'], harmattan: ['Harmattan', 'Dusty haze, low visibility'], night: ['Night', 'Headlights and glowing streetlamps'] } },
+  sound: { title: 'Engine sound', items: { kart: ['Kart', 'The real go-kart recording'], okada: ['Okada', 'A motorcycle rev'], electric: ['Electric', 'A smooth, rising whine'], v8: ['V8', 'A deep, rough roar'] } },
+};
+const ENVS = {
+  day:       { elev: 38, azim: 205, turb: 7,  ray: 1.6, mie: 0.006, sun: '#FFF0D8', sunI: 2.4, hemi: 0.35, fog: '#C9DCE6', near: 500, far: 2600, exp: 0.78 },
+  sunset:    { elev: 5,  azim: 250, turb: 10, ray: 3.2, mie: 0.01,  sun: '#FFB06A', sunI: 1.9, hemi: 0.28, fog: '#E6B089', near: 350, far: 2200, exp: 0.74 },
+  harmattan: { elev: 26, azim: 215, turb: 18, ray: 0.5, mie: 0.03,  sun: '#FFE0B0', sunI: 1.7, hemi: 0.45, fog: '#D7C29E', near: 90,  far: 900,  exp: 0.8 },
+  night:     { elev: -4, azim: 200, turb: 2,  ray: 0.4, mie: 0.002, sun: '#9DB7FF', sunI: 0.35, hemi: 0.14, fog: '#0B1426', near: 150, far: 1300, exp: 1.0, night: true },
+};
 const BOOSTS = [0.1, 0.33, 0.52, 0.8];
 
 export function registerKart({ route, go, state, api, ui, failed }) {
@@ -91,26 +124,54 @@ export function registerKart({ route, go, state, api, ui, failed }) {
   /* ============================== GARAGE ============================== */
   route('/kart/garage', { auth: true, tabs: '' }, async () => {
     const { garage: g } = await api.kartGarage();
-    const desc = { engine: 'Higher top speed', accel: 'Faster off the line and out of corners', handling: 'Tighter turns, less slowdown on grass', boost: 'Longer boosts from pads, drifts and pepper' };
-    return `${topbar('Garage', '/kart')}<main class="pad stack" style="gap:14px">
-      <div class="card row" style="padding:16px;gap:12px"><span style="font-size:34px">🪙</span><div class="grow"><div style="font:900 26px Inter,system-ui">${g.coins}</div><div class="small muted">coins · ${g.races} races, ${g.wins} wins</div></div></div>
-      <div class="small muted" style="line-height:1.5">Earn coins every race: 120 for a win, 80 for 2nd, 60 for 3rd, 40 otherwise, 50 more for a personal best, and a bonus for racing friends. Your rivals get a little quicker as you upgrade, so races stay close.</div>
-      <div class="section">UPGRADES</div>
-      ${g.stats.map((s) => `<div class="card stack" style="padding:12px 14px;gap:8px"><div class="row" style="gap:10px"><div class="grow"><div style="font-weight:800">${s.label}</div><div class="small muted">${desc[s.id]}</div></div>
-        ${s.next ? `<button class="btn btn-sm ${g.coins >= s.next ? 'btn-primary' : 'btn-ghost'}" data-up="${s.id}" style="width:auto" ${g.coins >= s.next ? '' : 'disabled'}>🪙 ${s.next}</button>` : '<span class="tag green">Maxed</span>'}</div>
-        <div class="kart-pips">${Array.from({ length: g.maxLevel }, (_, i) => `<i class="${i < s.level ? 'on' : ''}"></i>`).join('')}</div></div>`).join('')}
-      <div class="section">PAINT</div>
-      <div class="kart-paints">${g.paints.map((p) => `<button class="kart-paint ${g.paint === p.id ? 'on' : ''}" data-paint="${p.id}" style="--c:${PAINTS[p.id]}"><i></i><b>${PAINT_NAMES[p.id]}</b><span>${p.owned ? (g.paint === p.id ? 'In use' : 'Owned') : '🪙 ' + p.price}</span></button>`).join('')}</div>
-      <button class="btn btn-ghost" data-paint="">Use my driver's colour</button>
+    const tab = new URLSearchParams(location.hash.split('?')[1] || '').get('tab') || 'perf';
+    const desc = { engine: 'Higher top speed', accel: 'Faster off the line and out of corners', handling: 'Grippier wheels: tighter turns, less slowdown on grass', boost: 'Stronger, longer nitro from pads, drifts and pepper' };
+    const coins = g.unlimited ? '∞' : g.coins.toLocaleString('en-NG');
+    const TABS = [['perf', 'Performance'], ['paint', 'Paint'], ['design', 'Design'], ['helmet', 'Helmet'], ['env', 'World'], ['sound', 'Sound']];
+    const ENV_SWATCH = { day: 'linear-gradient(#6DB7EC,#BFE0F7 60%,#7FA65A 61%)', sunset: 'linear-gradient(#3B3F7A,#F08A4B 55%,#5C4A3A 56%)', harmattan: 'linear-gradient(#D9C39C,#E8D8BA 60%,#9C8E6A 61%)', night: 'linear-gradient(#070B16,#18233F 60%,#1B2230 61%)' };
+    const shopTab = (cat) => { const info = SHOP_INFO[cat]; const items = (g.shop && g.shop[cat]) || [];
+      if (!g.shopReady) return '<div class="card" style="padding:14px"><div class="small">The shop opens once the latest database update (migration 038) is installed.</div></div>';
+      return `<div class="kart-shop">${items.map((it) => { const [name, blurb] = info.items[it.id] || [it.id, '']; return `<button class="kart-item-card ${it.equipped ? 'on' : ''}" data-cat="${cat}" data-id="${it.id}" data-owned="${it.owned ? 1 : 0}" data-price="${it.price}">
+        ${cat === 'env' ? `<i class="kart-swatch" style="background:${ENV_SWATCH[it.id]}"></i>` : cat === 'sound' ? '<i class="kart-swatch kart-swatch-sound">🔊</i>' : ''}
+        <b>${h(name)}</b><span>${h(blurb)}</span><em>${it.equipped ? 'In use' : it.owned ? 'Owned · tap to use' : (g.unlimited ? 'Free for you' : '🪙 ' + it.price.toLocaleString('en-NG'))}</em></button>`; }).join('')}</div>`; };
+    return `${topbar('Garage', '/kart')}<main class="pad stack" style="gap:12px">
+      <div class="kart-turntable"><canvas id="tt"></canvas><div class="kart-tt-coins">🪙 <b>${coins}</b>${g.unlimited ? '<span>Unlimited</span>' : ''}</div></div>
+      <div class="kart-tabs">${TABS.map(([id, t]) => `<a class="chip ${tab === id ? 'on' : ''}" href="#/kart/garage?tab=${id}">${t}</a>`).join('')}</div>
+      ${tab === 'perf' ? `${g.stats.map((s) => `<div class="card stack" style="padding:12px 14px;gap:8px"><div class="row" style="gap:10px"><div class="grow"><div style="font-weight:800">${h(s.label)}</div><div class="small muted">${desc[s.id]}</div></div>
+          ${s.next !== null ? `<button class="btn btn-sm ${g.unlimited || g.coins >= s.next ? 'btn-primary' : 'btn-ghost'}" data-up="${s.id}" style="width:auto" ${g.unlimited || g.coins >= s.next ? '' : 'disabled'}>${g.unlimited ? 'Upgrade' : '🪙 ' + s.next.toLocaleString('en-NG')}</button>` : '<span class="tag green">Maxed</span>'}</div>
+          <div class="kart-pips">${Array.from({ length: g.maxLevel }, (_, i) => `<i class="${i < s.level ? 'on' : ''}"></i>`).join('')}</div></div>`).join('')}
+        <div class="small muted" style="line-height:1.5">Earn coins every race: 120 for a win, 80 for 2nd, 60 for 3rd, 40 otherwise, 50 for a personal best, a Grand Prix bonus, and a daily bonus for your first race (bigger each day in a row${g.streak ? `; you are on ${g.streak}` : ''}). Rivals get a little quicker as you upgrade, so races stay close.</div>`
+      : tab === 'paint' ? `<div class="kart-paints">${g.paints.map((p) => `<button class="kart-paint ${g.paint === p.id ? 'on' : ''}" data-paint="${p.id}" style="--c:${PAINTS[p.id]}"><i></i><b>${PAINT_NAMES[p.id]}</b><span>${p.owned ? (g.paint === p.id ? 'In use' : 'Owned') : '🪙 ' + p.price}</span></button>`).join('')}</div><button class="btn btn-ghost" data-paint="">Use my driver's colour</button>`
+      : shopTab(tab)}
     </main>`;
   }, {
-    mount(el) {
+    async mount(el) {
+      const { garage: g } = await api.kartGarage();
+      const driverCol = DRIVERS[myDriver()].colour;
+      const baseLook = { ...(g.equipped || {}) }; let look = { ...baseLook }; let paint = g.paint && PAINTS[g.paint] ? PAINTS[g.paint] : driverCol;
+      // the 3D preview is a bonus: if a phone cannot draw it, the shop still works
+      let tt = { set() {}, stop() {} }; try { tt = turntable(el.querySelector('#tt'), paint, look); } catch (e) { console.warn('turntable', e); el.querySelector('.kart-turntable').style.height = '64px'; }
       el.querySelectorAll('[data-up]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { await api.kartUpgrade(b.dataset.up); toast('Upgraded'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } }));
-      el.querySelectorAll('[data-paint]').forEach((b) => b.addEventListener('click', async () => { if (!b.dataset.paint) { try { localStorage.removeItem('buja_kart_paint'); } catch {} toast('Using your driver\'s colour'); location.reload(); return; } busy(b, true); try { await api.kartPaint(b.dataset.paint); try { localStorage.setItem('buja_kart_paint', b.dataset.paint); } catch {} toast('Painted'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } }));
+      el.querySelectorAll('[data-paint]').forEach((b) => b.addEventListener('click', async () => {
+        if (!b.dataset.paint) { tt.set(driverCol, look); try { localStorage.removeItem('buja_kart_paint'); } catch {} try { await api.kartPaint(''); } catch {} toast('Using your driver\'s colour'); location.reload(); return; }
+        tt.set(PAINTS[b.dataset.paint], look); busy(b, true);
+        try { await api.kartPaint(b.dataset.paint); toast('Paint on'); location.reload(); } catch (err) { busy(b, false); failed(el, err); }
+      }));
+      // shop items: the first tap previews (and plays a sound), the second buys or uses it
+      let armed = null;
+      el.querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', async () => {
+        const cat = b.dataset.cat, id = b.dataset.id, owned = b.dataset.owned === '1', price = +b.dataset.price;
+        if (cat === 'design' || cat === 'helmet') { look = { ...baseLook, [cat]: id }; tt.set(paint, look); }
+        if (cat === 'sound') previewSound(id);
+        if (b.classList.contains('on')) return;
+        if (armed !== b) { armed = b; el.querySelectorAll('[data-cat]').forEach((x) => x.classList.toggle('armed', x === b)); b.querySelector('em').textContent = owned || g.unlimited ? 'Tap again to use' : `Tap again to buy for 🪙 ${price.toLocaleString('en-NG')}`; return; }
+        busy(b, true);
+        try { await api.kartItem(cat, id); toast(owned || g.unlimited ? 'Now in use' : 'Bought, and now in use'); location.reload(); } catch (err) { busy(b, false); failed(el, err); }
+      }));
+      const obs = new MutationObserver(() => { if (!document.body.contains(el)) { obs.disconnect(); tt.stop(); } }); obs.observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
     }
   });
 
-  /* ============================== LEADERBOARD ============================== */
   route('/kart/board', { auth: true, tabs: '' }, async () => {
     const span = new URLSearchParams(location.hash.split('?')[1] || '').get('span') || 'week';
     const tr = new URLSearchParams(location.hash.split('?')[1] || '').get('track') || myTrack(); const b = await api.kartBoard({ span, track: tr });
@@ -223,16 +284,20 @@ class Race {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(62, 1, 0.5, 6000);
     // A physically based sky with the Abuja afternoon sun; it also lights and reflects on everything (image-based lighting).
+    try { this.garage = (await this.api.kartGarage()).garage; } catch { this.garage = null; }
+    const E = ENVS[(this.garage && this.garage.equipped && this.garage.equipped.env) || 'day'] || ENVS.day; this.env = E;
     const sky = new Sky(); sky.scale.setScalar(9000); const su = sky.material.uniforms;
-    su.turbidity.value = 7; su.rayleigh.value = 1.6; su.mieCoefficient.value = 0.006; su.mieDirectionalG.value = 0.82; // a touch of harmattan haze
-    this.sunDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 38), THREE.MathUtils.degToRad(205));
+    su.turbidity.value = E.turb; su.rayleigh.value = E.ray; su.mieCoefficient.value = E.mie; su.mieDirectionalG.value = 0.82;
+    this.sunDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - E.elev), THREE.MathUtils.degToRad(E.azim));
+    this.renderer.toneMappingExposure = E.exp;
     su.sunPosition.value.copy(this.sunDir);
     const pm = new THREE.PMREMGenerator(this.renderer); const envScene = new THREE.Scene(); const s2 = sky.clone(); envScene.add(s2);
     this.scene.environment = pm.fromScene(envScene, 0, 0.1, 10000).texture; pm.dispose();
     this.scene.add(sky);
-    this.scene.fog = new THREE.Fog('#C9DCE6', 500, T === 'low' ? 1500 : 2600);
-    this.scene.add(new THREE.HemisphereLight('#E4F1FF', '#8A7A55', 0.35));
-    this.sun = new THREE.DirectionalLight('#FFF0D8', 2.4); this.sun.position.copy(this.sunDir).multiplyScalar(300);
+    this.scene.fog = new THREE.Fog(E.fog, E.near, Math.min(E.far, T === 'low' ? 1500 : E.far));
+    this.scene.add(new THREE.HemisphereLight(E.night ? '#5B6E9A' : '#E4F1FF', E.night ? '#1A1F2B' : '#8A7A55', E.hemi));
+    if (E.night) this.scene.background = new THREE.Color('#070B16');
+    this.sun = new THREE.DirectionalLight(E.sun, E.sunI); this.sun.position.copy(this.sunDir).multiplyScalar(300);
     if (T !== 'low') { const sh = this.sun.shadow; sh.mapSize.set(T === 'high' ? 2048 : 1024, T === 'high' ? 2048 : 1024); sh.camera.left = sh.camera.bottom = -70; sh.camera.right = sh.camera.top = 70; sh.camera.near = 50; sh.camera.far = 700; sh.bias = -0.0004; sh.normalBias = 0.6; this.sun.castShadow = true; }
     this.scene.add(this.sun, this.sun.target);
     this.tex = await loadTextures(this.renderer, T);
@@ -247,9 +312,11 @@ class Race {
     if (((() => { try { return localStorage.getItem('buja_kart_orient'); } catch { return null; } })()) === 'landscape') this.setLandscape(true, true);
     if (this.steerMode === 'tilt') this.enableTilt(true);
     this.driver = myDriver();
-    let garage = null; try { garage = (await this.api.kartGarage()).garage; } catch {}
+    const garage = this.garage; this.look = garage && garage.equipped ? garage.equipped : null;
     const paint = garage && garage.paint && PAINTS[garage.paint] ? PAINTS[garage.paint] : DRIVERS[this.driver].colour;
-    this.player = this.makeKart(paint, true);
+    this.player = this.makeKart(paint, true, false, this.look);
+    if (this.env && this.env.night) { const hl = new THREE.SpotLight('#FFF4D6', 60, 70, 0.55, 0.5, 1.4); hl.position.set(0, 1.2, 1.6); hl.target.position.set(0, 0, 14); this.player.add(hl, hl.target); }
+    this.audio.setPack((this.look && this.look.sound) || 'kart');
     if (garage) { let lv = 0; garage.stats.forEach((s) => { Object.assign(this.player, UPGRADE[s.id](s.level)); lv += s.level; }); this.avgLevel = lv / garage.stats.length; if (garage.paint === 'chrome' || garage.paint === 'gold') { this.player.paint.metalness = 0.9; this.player.paint.roughness = 0.18; } }
     this.resize(); this._onResize = () => this.resize(); window.addEventListener('resize', this._onResize);
     this.bindControls();
@@ -401,6 +468,11 @@ class Race {
     const lampG = mergeGeos([pole, arm, lamp]); const LN = Math.floor(SAMPLES / 8) + 2;
     const lm = new THREE.InstancedMesh(lampG, new THREE.MeshStandardMaterial({ color: '#5A5F66', roughness: 0.45, metalness: 0.7 }), LN); let nl = 0;
     for (let s = 0; s < SAMPLES && nl < LN; s += 8) { const side = (s / 8) % 2 ? 1 : -1; const p = this.samples[s], t = this.tangents[s], off = side * (ROAD_W / 2 + 3); const x = p.x - t.z * off, z = p.z + t.x * off; if (!clearOfTrack(x, z, ROAD_W / 2 + 2)) continue; m4.compose(new THREE.Vector3(x, 0, z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(t.x, t.z) + (side > 0 ? Math.PI / 2 : -Math.PI / 2)), new THREE.Vector3(1, 1, 1)); lm.setMatrixAt(nl++, m4); }
+    if (this.env && this.env.night && nl) { // glowing lamp heads, one draw call
+      const glow = new THREE.InstancedMesh(new THREE.SphereGeometry(0.42, 8, 6), new THREE.MeshBasicMaterial({ color: '#FFE2A0' }), nl), mm = new THREE.Matrix4(), v = new THREE.Vector3();
+      for (let i = 0; i < nl; i++) { lm.getMatrixAt(i, mm); v.set(0, 8.75, 2.4).applyMatrix4(mm); glow.setMatrixAt(i, new THREE.Matrix4().makeTranslation(v.x, v.y, v.z)); }
+      this.scene.add(glow);
+    }
     lm.count = nl; lm.castShadow = T === 'high'; this.scene.add(lm);
     // Zuma Rock on the western horizon
     const zg = rockGeometry(3, 1.25, 11); const zuma = new THREE.Mesh(zg, new THREE.MeshStandardMaterial({ map: this.tex.rock, roughness: 0.95, color: '#B8A690' })); zuma.scale.set(260, 230, 210); zuma.position.set(-2400, -8, -700); this.scene.add(zuma);
@@ -475,8 +547,10 @@ class Race {
   }
 
   /* ------------------------------ karts ------------------------------ */
-  makeKart(colour, isPlayer = false, ghost = false) {
+  makeKart(colour, isPlayer = false, ghost = false, look = null) {
     const g = new THREE.Group(); const T = this.tier;
+    const design = (!ghost && look && look.design) || 'classic', helm = (!ghost && look && look.helmet) || 'classic';
+    if (design === 'naija') colour = '#008751'; if (design === 'carbon') colour = '#1C1E23';
     const paint = ghost ? new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.32, depthWrite: false })
       : T === 'high' ? new THREE.MeshPhysicalMaterial({ color: colour, metalness: 0.1, roughness: 0.42, clearcoat: 0.6, clearcoatRoughness: 0.2, envMapIntensity: 0.6 }) : new THREE.MeshStandardMaterial({ color: colour, metalness: 0.1, roughness: 0.45, envMapIntensity: 0.6 });
     const dark = ghost ? paint : new THREE.MeshStandardMaterial({ color: '#17181C', roughness: 0.55, metalness: 0.3 });
@@ -488,10 +562,13 @@ class Race {
     const pods = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.28, 1.2), paint); pods.position.set(0, 0.42, -0.1); g.add(pods);
     const wing = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.08, 0.45), dark); wing.position.set(0, 1.18, -1.5); g.add(wing); [-0.8, 0.8].forEach((x) => { const s = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 0.3), dark); s.position.set(x, 1.0, -1.5); g.add(s); });
     const seat = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.55, 0.6), dark); seat.position.set(0, 0.95, -0.55); g.add(seat);
-    const stripe = ghost ? null : new THREE.Mesh(new THREE.TorusGeometry(0.335, 0.045, 6, 24, Math.PI), new THREE.MeshStandardMaterial({ color: '#F1E6CC', roughness: 0.3 }));
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.33, 20, 14), ghost ? paint : new THREE.MeshStandardMaterial({ color: colour, metalness: 0.2, roughness: 0.15 })); head.position.set(0, 1.5, -0.4); g.add(head);
+    const HELM = { classic: [colour, 0.2, 0.15, null], chevron: [colour, 0.2, 0.15, '#F1E6CC'], naija: ['#008751', 0.2, 0.2, '#FFFFFF'], gold: ['#D4A93A', 0.95, 0.2, null], carbon: ['#1C1E23', 0.2, 0.6, '#FF7A1A'], chrome: ['#E3E7EC', 1, 0.05, null] }[helm] || [colour, 0.2, 0.15, null];
+    const stripe = ghost || !HELM[3] ? null : new THREE.Mesh(new THREE.TorusGeometry(0.335, 0.045, 6, 24, Math.PI), new THREE.MeshStandardMaterial({ color: HELM[3], roughness: 0.3 }));
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.33, 20, 14), ghost ? paint : new THREE.MeshStandardMaterial({ color: HELM[0], metalness: HELM[1], roughness: HELM[2] })); head.position.set(0, 1.5, -0.4); g.add(head);
     if (stripe) { stripe.position.set(0, 1.5, -0.4); stripe.rotation.y = Math.PI / 2; g.add(stripe); }
     const visor = new THREE.Mesh(new THREE.SphereGeometry(0.335, 20, 10, -0.9, 1.8, 1.1, 0.8), ghost ? paint : new THREE.MeshStandardMaterial({ color: '#0E1116', metalness: 0.9, roughness: 0.05 })); visor.position.copy(head.position); g.add(visor);
+    if (!ghost && design !== 'classic') this.decorate(g, design);
+    if (!ghost && design === 'carbon') { paint.roughness = 0.75; paint.metalness = 0.25; }
     const wg = new THREE.CylinderGeometry(0.4, 0.4, 0.36, 18); wg.rotateZ(Math.PI / 2); const rg = new THREE.CylinderGeometry(0.22, 0.22, 0.38, 10); rg.rotateZ(Math.PI / 2);
     g.wheels = [[-0.95, 1.1], [0.95, 1.1], [-0.98, -1.1], [0.98, -1.1]].map(([x, z]) => { const w = new THREE.Group(); w.add(new THREE.Mesh(wg, tyre), new THREE.Mesh(rg, rim)); w.position.set(x, 0.4, z); g.add(w); return w; });
     g.traverse((o) => { if (o.isMesh && !ghost) o.castShadow = true; });
@@ -503,6 +580,25 @@ class Race {
     g.rotation.order = 'YXZ'; g.wheels.forEach((w) => { w.rotation.order = 'YXZ'; });
     g.v = 0; g.h = 0; g.lap = 1; g.s = 0; g.boost = 0; g.drift = 0; g.idx = 0; g.lean = 0; g.pitch = 0;
     this.scene.add(g); return g;
+  }
+  /** Kart designs from the shop: decals built into the kart, so they merge with the rest and cost almost nothing to draw. */
+  decorate(g, design) {
+    const M = (c, e) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.35, metalness: 0.1, ...(e ? { emissive: c, emissiveIntensity: 2.2 } : {}) });
+    const strip = (w, mat, x = 0) => { [[1.0, 0.9, 1.7, -0.07], [-0.65, 1.02, 1.7, -0.1]].forEach(([z, y, len, tilt]) => { const s = new THREE.Mesh(new THREE.BoxGeometry(w, 0.03, len), mat); s.position.set(x, y, z); s.rotation.x = tilt; g.add(s); }); };
+    if (design === 'stripes') { const m = M('#F5F5F2'); strip(0.16, m, -0.2); strip(0.16, m, 0.2); }
+    if (design === 'naija') strip(0.55, M('#FFFFFF'));
+    if (design === 'carbon') strip(0.12, M('#FF7A1A'));
+    if (design === 'flames') {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 64; const x = c.getContext('2d'); const gr = x.createLinearGradient(0, 0, 256, 0); gr.addColorStop(0, '#FFD23F'); gr.addColorStop(0.5, '#FF7A1A'); gr.addColorStop(1, '#D92D20'); x.fillStyle = gr;
+      x.beginPath(); x.moveTo(0, 32); for (let i = 0; i <= 8; i++) { const px = 20 + i * 28; x.quadraticCurveTo(px - 10, i % 2 ? 4 : 60, px, 32 + (i % 2 ? -14 : 14)); } x.lineTo(256, 32); x.lineTo(0, 44); x.closePath(); x.fill();
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; const fm = new THREE.MeshStandardMaterial({ map: t, transparent: true, roughness: 0.4, side: THREE.DoubleSide });
+      [-0.97, 0.97].forEach((sx) => { const f = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.34), fm); f.position.set(sx, 0.42, 0.1); f.rotation.y = sx > 0 ? Math.PI / 2 : -Math.PI / 2; g.add(f); });
+    }
+    if (design === 'neon') {
+      const n = M('#22E0FF', true); [-0.96, 0.96].forEach((sx) => { const b = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 1.3), n); b.position.set(sx, 0.57, -0.1); g.add(b); });
+      const wingGlow = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.03, 0.06), n); wingGlow.position.set(0, 1.23, -1.28); g.add(wingGlow);
+      const under = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 3.6), new THREE.MeshBasicMaterial({ color: '#22E0FF', transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending })); under.rotation.x = -Math.PI / 2; under.position.y = 0.05; g.add(under);
+    }
   }
   placeOnGrid(k, slot) {
     const row = Math.floor(slot / 2), col = slot % 2 ? 1 : -1;
@@ -690,6 +786,7 @@ class Race {
       <div class="kart-row"><span>Race</span><b>${this.fmt(raceMs)}</b></div><div class="kart-row"><span>Best lap</span><b>${this.fmt(this.bestLap)}</b></div>
       ${saved ? `<div class="kart-row"><span>Abuja ranking, all time</span><b>${this.ord(saved.rank)}</b></div>${saved.personalBest ? '<div class="kart-pb">New personal best!</div>' : `<div class="kart-sub">Your best: ${this.fmt(saved.previousBest)}</div>`}` : ''}
       ${saved && saved.coinsEarned ? `<div class="kart-coins">+${saved.coinsEarned} 🪙 <span>${saved.coins} in the garage</span></div>` : ''}
+      ${saved && saved.daily ? `<div class="kart-sub">Includes today's first-race bonus: +${saved.daily.bonus} (${saved.daily.streak}-day streak${saved.daily.streak < 7 ? ', come back tomorrow for more' : ', the maximum'})</div>` : ''}
       ${gpHtml}
       <div class="kart-actions"><button class="btn btn-primary" id="again">${this.mode === 'room' ? 'Back to the room' : this.mode === 'gp' ? (this._gpNext ? 'Next race: ' + TRACKS[this._gpNext].name : 'Back to Buja Kart') : 'Race again'}</button><a class="btn btn-outline" href="#/kart/board?track=${this.trackId}">Leaderboard</a><a class="btn btn-ghost" href="#/kart">Menu</a></div></div>`;
     r.classList.add('on');
@@ -970,7 +1067,7 @@ class Race {
       d.players.forEach((p) => {
         if (p.me) { const i = d.players.indexOf(p); if (first) this.placeOnGrid(this.player, i); this.player.paint.color.set(p.colour); return; }
         seen.add(p.id); let r = this.remotes[p.id];
-        if (!r) { r = this.remotes[p.id] = { kart: this.makeKart(p.colour), colour: p.colour, name: p.name }; this.placeOnGrid(r.kart, d.players.indexOf(p)); this.addTag(r); }
+        if (!r) { r = this.remotes[p.id] = { kart: this.makeKart((p.look && p.look.paint && PAINTS[p.look.paint]) || p.colour, false, false, p.look || null), colour: p.colour, name: p.name }; this.placeOnGrid(r.kart, d.players.indexOf(p)); this.addTag(r); }
         r.finish = p.finishMs;
         if (p.state) { r.prev = r.next || { x: p.state[0], z: p.state[1], h: p.state[2], t: performance.now() - 200 }; r.next = { x: p.state[0], z: p.state[1], h: p.state[2], t: performance.now() }; r.s = (p.state[4] - 1) + p.state[5]; }
       });
@@ -1081,6 +1178,7 @@ class KartAudio {
       this.engS = c.createGain(); this.engS.gain.value = 0; this.engS.connect(this.sfx);
       this.engSrc = c.createBufferSource(); this.engSrc.buffer = engine; this.engSrc.loop = true; this.engSrc.connect(this.engS); this.engSrc.start();
       this.eng.gain.setTargetAtTime(0, c.currentTime, 0.2); this.sampled = true;          // the recording takes over from the generated note
+      this.setPack(this.pack || 'kart');
     }
   }
   play(buf, { vol = 0.6, rate = 1, pan = 0 } = {}) {
@@ -1091,6 +1189,18 @@ class KartAudio {
   /** A kart going past: pan follows the side it passes on, pitch follows how fast it is closing. */
   passBy(pan, closing) { if (this._passAt && performance.now() - this._passAt < 1400) return; this._passAt = performance.now(); if (!this.play(this.bufPass, { vol: 0.55, rate: Math.max(0.8, Math.min(1.35, 1 + closing / 40)), pan })) this.tone(300, 0.5, 'sawtooth', 0.06, 0, -180); }
   rev() { if (!this.play(this.bufRev, { vol: 0.5, rate: 1.05 })) this.tone(120, 0.6, 'sawtooth', 0.08, 0, 260); }
+  /** Engine sound from the shop: kart (the recording), okada (the motorcycle rev, looped), electric or v8 (generated). */
+  setPack(id) {
+    this.pack = ['kart', 'okada', 'electric', 'v8'].includes(id) ? id : 'kart';
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (this.pack === 'electric') { this.o1.type = 'sine'; this.o2.type = 'triangle'; }
+    else if (this.pack === 'v8') { this.o1.type = 'sawtooth'; this.o2.type = 'square'; }
+    else { this.o1.type = 'sawtooth'; this.o2.type = 'square'; }
+    if (this.engS) this.engS.gain.setTargetAtTime(0, t, 0.05);
+    if (this.okS) this.okS.gain.setTargetAtTime(0, t, 0.05);
+    if (this.pack === 'okada' && this.bufRev && !this.okSrc) { this.okS = this.ctx.createGain(); this.okS.gain.value = 0; this.okS.connect(this.sfx); this.okSrc = this.ctx.createBufferSource(); this.okSrc.buffer = this.bufRev; this.okSrc.loop = true; this.okSrc.loopStart = 0.85; this.okSrc.loopEnd = 1.75; this.okSrc.connect(this.okS); this.okSrc.start(0, 0.85); }
+  }
   setSfx(on) { this.sfxOn = on; try { localStorage.setItem('buja_kart_sfx', on ? '1' : '0'); } catch {} if (this.sfx) this.sfx.gain.setTargetAtTime(on ? 1 : 0, this.ctx.currentTime, 0.05); }
   setMusic(on) { this.musicOn = on; try { localStorage.setItem('buja_kart_music', on ? '1' : '0'); } catch {} if (!this.ctx) return; this.mus.gain.setTargetAtTime(on ? 0.22 : 0, this.ctx.currentTime, 0.1); if (on) this.startMusic(); }
   /** Called every frame: engine pitch follows speed, squeal follows drift, rumble follows grass. */
@@ -1098,8 +1208,16 @@ class KartAudio {
     if (!this.ctx) return; const t = this.ctx.currentTime, r = Math.min(1, v / 40);
     const f = 48 + r * 150 + (throttle ? 8 : 0); this.o1.frequency.setTargetAtTime(f, t, 0.06); this.o2.frequency.setTargetAtTime(f * 2.005, t, 0.06);
     this.engF.frequency.setTargetAtTime(380 + r * 1700 + (throttle ? 250 : 0), t, 0.08);
-    if (this.sampled) { this.engSrc.playbackRate.setTargetAtTime(0.6 + r * 0.9 + (throttle ? 0.05 : 0), t, 0.08); this.engS.gain.setTargetAtTime(paused ? 0 : 0.32 + r * 0.3, t, 0.1); }
-    else this.eng.gain.setTargetAtTime(paused ? 0 : 0.07 + r * 0.09, t, 0.1);
+    const pack = this.pack || 'kart';
+    if (pack === 'kart' && this.sampled) { this.engSrc.playbackRate.setTargetAtTime(0.6 + r * 0.9 + (throttle ? 0.05 : 0), t, 0.08); this.engS.gain.setTargetAtTime(paused ? 0 : 0.32 + r * 0.3, t, 0.1); this.eng.gain.setTargetAtTime(0, t, 0.1); }
+    else if (pack === 'okada' && this.okSrc) { this.okSrc.playbackRate.setTargetAtTime(0.7 + r * 0.75, t, 0.08); this.okS.gain.setTargetAtTime(paused ? 0 : 0.28 + r * 0.25, t, 0.1); this.eng.gain.setTargetAtTime(0, t, 0.1); }
+    else {
+      // generated engines: electric is a clean rising whine, V8 a low rough roar
+      const mul = pack === 'electric' ? 4.2 : pack === 'v8' ? 0.62 : 1; const fq = f * mul;
+      this.o1.frequency.setTargetAtTime(fq, t, 0.06); this.o2.frequency.setTargetAtTime(fq * (pack === 'electric' ? 1.5 : 2.005), t, 0.06);
+      this.engF.frequency.setTargetAtTime(pack === 'electric' ? 1800 + r * 3000 : pack === 'v8' ? 260 + r * 900 : 380 + r * 1700, t, 0.08);
+      this.eng.gain.setTargetAtTime(paused ? 0 : (pack === 'v8' ? 0.14 + r * 0.12 : pack === 'electric' ? 0.05 + r * 0.06 : 0.07 + r * 0.09), t, 0.1);
+    }
     this.sk.gain.setTargetAtTime(!paused && drifting && v > 12 ? 0.07 : 0, t, 0.05);
     this.rum.gain.setTargetAtTime(!paused && offroad && v > 3 ? 0.35 * r + 0.08 : 0, t, 0.08);
   }

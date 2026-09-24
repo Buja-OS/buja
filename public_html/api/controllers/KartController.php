@@ -12,12 +12,38 @@ final class KartController
     public const TRACKS = ['gp' => 'Abuja Grand Prix Circuit', 'abuja' => 'Abuja city streets', 'gp-r' => 'Grand Prix, reversed', 'abuja-r' => 'City streets, reversed'];
     public const MIN_LAP_MS = 20000;          // anything faster is not a real lap on this track
     public const COLOURS = ['#FF7A1A', '#1F5FBF', '#2E7D1E', '#C2185B', '#7A3E96', '#0E7C86'];
-    public const STATS = ['engine' => 'Engine', 'accel' => 'Acceleration', 'handling' => 'Handling', 'boost' => 'Boost'];
+    public const STATS = ['engine' => 'Speed', 'accel' => 'Acceleration', 'handling' => 'Wheels', 'boost' => 'Nitro'];
     public const MAX_LEVEL = 5;
     public const COST = [150, 300, 500, 800, 1200];           // price of level 1..5
     public const PAINTS = ['green' => 0, 'red' => 0, 'yellow' => 0, 'blue' => 0, 'gold' => 600, 'chrome' => 900, 'naija' => 750, 'pink' => 400, 'black' => 500];
+    /** The shop. Prices in coins; the first item of each kind is free and owned by everyone. */
+    public const SHOP = [
+        'design' => ['classic' => 0, 'stripes' => 300, 'naija' => 500, 'flames' => 700, 'carbon' => 900, 'neon' => 1200],
+        'helmet' => ['classic' => 0, 'chevron' => 200, 'naija' => 400, 'gold' => 600, 'carbon' => 700, 'chrome' => 800],
+        'env'    => ['day' => 0, 'sunset' => 400, 'harmattan' => 600, 'night' => 800],
+        'sound'  => ['kart' => 0, 'okada' => 300, 'electric' => 400, 'v8' => 500],
+    ];
     public const QUICK = ['Let\'s go!', 'Nice one', 'Wait for me', 'GG', 'Rematch?', 'Na so!'];
 
+    /** Unlimited coins and every upgrade, for the people named in KART_UNLIMITED (by default femiayor@gmail.com). Checked here, on the server. */
+    private static function unlimited(int $uid): bool
+    {
+        $list = array_filter(array_map(fn($e) => strtolower(trim($e)), explode(',', (string) Http::config('kart_unlimited', getenv('KART_UNLIMITED') ?: 'femiayor@gmail.com'))));
+        $u = Db::one('SELECT email FROM users WHERE id = ?', [$uid]);
+        return $u && in_array(strtolower((string) $u['email']), $list, true);
+    }
+    private static function equippedOf(array $p): array
+    {
+        $e = json_decode((string) ($p['equipped'] ?? ''), true); $e = is_array($e) ? $e : [];
+        $out = []; foreach (self::SHOP as $cat => $items) $out[$cat] = isset($e[$cat], $items[$e[$cat]]) ? $e[$cat] : array_key_first($items);
+        return $out;
+    }
+    /** How a kart looks, for other players in a race room. */
+    public static function lookOf(int $uid): array
+    {
+        try { $p = Db::one('SELECT * FROM kart_profiles WHERE user_id = ?', [$uid]); } catch (Throwable $e) { $p = null; }
+        return $p ? self::equippedOf($p) + ['paint' => $p['paint'] ?? null] : self::equippedOf([]) + ['paint' => null];
+    }
     private static function track(string $t): string { return isset(self::TRACKS[$t]) ? $t : 'gp'; }
     private static function first(string $n): string { return explode(' ', trim($n))[0]; }
 
@@ -29,10 +55,15 @@ final class KartController
     }
     private static function shapeProfile(array $p): array
     {
+        $uid = (int) $p['user_id']; $vip = self::unlimited($uid);
         $owned = array_values(array_filter(explode(',', (string) $p['paints'])));
-        return ['coins' => (int) $p['coins'], 'races' => (int) $p['races'], 'wins' => (int) $p['wins'], 'maxLevel' => self::MAX_LEVEL,
-            'stats' => array_map(fn($k, $label) => ['id' => $k, 'label' => $label, 'level' => (int) $p[$k], 'next' => (int) $p[$k] < self::MAX_LEVEL ? self::COST[(int) $p[$k]] : null], array_keys(self::STATS), self::STATS),
-            'paints' => array_map(fn($id, $price) => ['id' => $id, 'price' => $price, 'owned' => $price === 0 || in_array($id, $owned, true)], array_keys(self::PAINTS), self::PAINTS), 'paint' => $p['paint']];
+        $have = array_values(array_filter(explode(',', (string) ($p['owned'] ?? ''))));
+        $eq = self::equippedOf($p); $shopReady = array_key_exists('owned', $p);
+        $shop = []; foreach (self::SHOP as $cat => $items) foreach ($items as $id => $price) $shop[$cat][] = ['id' => $id, 'price' => $price, 'owned' => $vip || $price === 0 || in_array("$cat:$id", $have, true), 'equipped' => $eq[$cat] === $id];
+        return ['coins' => $vip ? 999999 : (int) $p['coins'], 'unlimited' => $vip, 'races' => (int) $p['races'], 'wins' => (int) $p['wins'], 'maxLevel' => self::MAX_LEVEL,
+            'stats' => array_map(fn($k, $label) => ['id' => $k, 'label' => $label, 'level' => (int) $p[$k], 'next' => (int) $p[$k] < self::MAX_LEVEL ? ($vip ? 0 : self::COST[(int) $p[$k]]) : null], array_keys(self::STATS), self::STATS),
+            'paints' => array_map(fn($id, $price) => ['id' => $id, 'price' => $price, 'owned' => $vip || $price === 0 || in_array($id, $owned, true)], array_keys(self::PAINTS), self::PAINTS), 'paint' => $p['paint'],
+            'shop' => $shop, 'equipped' => $eq, 'shopReady' => $shopReady, 'streak' => (int) ($p['streak'] ?? 0)];
     }
     /** GET /kart/garage */
     public function garage(): void { $u = Auth::require(); Http::json(['garage' => self::shapeProfile(self::profile((int) $u['id']))]); }
@@ -43,7 +74,7 @@ final class KartController
         if (!isset(self::STATS[$stat])) Http::json(['error' => 'validation', 'message' => 'Which part?'], 422);
         $p = self::profile((int) $u['id']); $lvl = (int) $p[$stat];
         if ($lvl >= self::MAX_LEVEL) Http::json(['error' => 'validation', 'message' => 'That is already fully upgraded.'], 422);
-        $cost = self::COST[$lvl];
+        $cost = self::unlimited((int) $u['id']) ? 0 : self::COST[$lvl];
         // pay and level up in one statement, so two taps cannot spend the same coins twice
         $st = Db::pdo()->prepare("UPDATE kart_profiles SET coins = coins - ?, $stat = $stat + 1, updated_at = ? WHERE user_id = ? AND coins >= ? AND $stat = ?");
         $st->execute([$cost, Db::now(), $u['id'], $cost, $lvl]);
@@ -54,14 +85,38 @@ final class KartController
     public function paint(): void
     {
         $u = Auth::require(); $id = (string) (Http::body()['paint'] ?? '');
+        if ($id === '') { self::profile((int) $u['id']); Db::run('UPDATE kart_profiles SET paint = NULL WHERE user_id = ?', [$u['id']]); Http::json(['garage' => self::shapeProfile(self::profile((int) $u['id']))]); } // back to the driver's own colour
         if (!array_key_exists($id, self::PAINTS)) Http::json(['error' => 'validation'], 422);
         $p = self::profile((int) $u['id']); $owned = array_filter(explode(',', (string) $p['paints'])); $price = self::PAINTS[$id];
-        if ($price > 0 && !in_array($id, $owned, true)) {
+        if (self::unlimited((int) $u['id'])) { if (!in_array($id, $owned, true)) Db::run('UPDATE kart_profiles SET paints = ? WHERE user_id = ?', [implode(',', array_merge($owned, [$id])), $u['id']]); }
+        elseif ($price > 0 && !in_array($id, $owned, true)) {
             $st = Db::pdo()->prepare('UPDATE kart_profiles SET coins = coins - ?, paints = ?, updated_at = ? WHERE user_id = ? AND coins >= ?');
             $st->execute([$price, implode(',', array_merge($owned, [$id])), Db::now(), $u['id'], $price]);
             if ($st->rowCount() === 0) Http::json(['error' => 'validation', 'message' => 'Not enough coins for that paint yet.'], 422);
         }
         Db::run('UPDATE kart_profiles SET paint = ? WHERE user_id = ?', [$id, $u['id']]);
+        Http::json(['garage' => self::shapeProfile(self::profile((int) $u['id']))]);
+    }
+
+    /** POST /kart/garage/item { cat, id } : buy it if needed (once), then use it */
+    public function item(): void
+    {
+        $u = Auth::require(); $b = Http::body(); $cat = (string) ($b['cat'] ?? ''); $id = (string) ($b['id'] ?? '');
+        if (!isset(self::SHOP[$cat][$id])) Http::json(['error' => 'validation', 'message' => 'That is not in the shop.'], 422);
+        $p = self::profile((int) $u['id']);
+        if (!array_key_exists('owned', $p)) Http::json(['error' => 'unavailable', 'message' => 'The kart shop opens once the latest update is installed (migration 038).'], 503);
+        $have = array_values(array_filter(explode(',', (string) $p['owned']))); $token = "$cat:$id"; $price = self::SHOP[$cat][$id];
+        if (!in_array($token, $have, true) && $price > 0) {
+            if (self::unlimited((int) $u['id'])) Db::run('UPDATE kart_profiles SET owned = ? WHERE user_id = ?', [implode(',', array_merge($have, [$token])), $u['id']]);
+            else {
+                // pay and own in one statement, so two taps cannot spend the same coins twice
+                $st = Db::pdo()->prepare('UPDATE kart_profiles SET coins = coins - ?, owned = ?, updated_at = ? WHERE user_id = ? AND coins >= ? AND owned = ?');
+                $st->execute([$price, implode(',', array_merge($have, [$token])), Db::now(), $u['id'], $price, (string) $p['owned']]);
+                if ($st->rowCount() === 0) Http::json(['error' => 'validation', 'message' => 'Not enough coins yet. Race to earn more.'], 422);
+            }
+        }
+        $eq = self::equippedOf($p); $eq[$cat] = $id;
+        Db::run('UPDATE kart_profiles SET equipped = ?, updated_at = ? WHERE user_id = ?', [json_encode($eq), Db::now(), $u['id']]);
         Http::json(['garage' => self::shapeProfile(self::profile((int) $u['id']))]);
     }
 
@@ -98,7 +153,19 @@ final class KartController
         $earned = ($mode === 'solo' ? 40 : [1 => 120, 2 => 80, 3 => 60][$place] ?? 40) + ($mode === 'room' ? 30 : 0) + ($pb ? 50 : 0);
         self::profile((int) $u['id']);
         Db::run('UPDATE kart_profiles SET coins = coins + ?, races = races + 1, wins = wins + ?, updated_at = ? WHERE user_id = ?', [$earned, $place === 1 && $mode !== 'solo' ? 1 : 0, Db::now(), $u['id']]);
-        Http::json(['personalBest' => $pb, 'previousBest' => $prev && $prev['b'] ? (int) $prev['b'] : null, 'rank' => $rank, 'coinsEarned' => $earned, 'coins' => (int) (Db::one('SELECT coins FROM kart_profiles WHERE user_id = ?', [$u['id']])['coins'] ?? 0)], 201);
+        // First race of the day: 100 coins, 25 more for each day in a row (up to a week). Abuja's calendar day.
+        $daily = null;
+        try {
+            $today = (new DateTime('now', new DateTimeZone('Africa/Lagos')))->format('Y-m-d'); $yest = (new DateTime('yesterday', new DateTimeZone('Africa/Lagos')))->format('Y-m-d');
+            $p = Db::one('SELECT daily_on, streak FROM kart_profiles WHERE user_id = ?', [$u['id']]);
+            if ($p && (string) $p['daily_on'] !== $today) {
+                $streak = (string) $p['daily_on'] === $yest ? min(7, (int) $p['streak'] + 1) : 1; $bonus = 100 + 25 * ($streak - 1);
+                $st = Db::pdo()->prepare('UPDATE kart_profiles SET coins = coins + ?, daily_on = ?, streak = ? WHERE user_id = ? AND (daily_on IS NULL OR daily_on <> ?)');
+                $st->execute([$bonus, $today, $streak, $u['id'], $today]);
+                if ($st->rowCount() === 1) { $daily = ['bonus' => $bonus, 'streak' => $streak]; $earned += $bonus; }
+            }
+        } catch (Throwable $e) {} // before migration 038 there is simply no daily bonus
+        Http::json(['personalBest' => $pb, 'previousBest' => $prev && $prev['b'] ? (int) $prev['b'] : null, 'rank' => $rank, 'coinsEarned' => $earned, 'daily' => $daily, 'coins' => (int) (Db::one('SELECT coins FROM kart_profiles WHERE user_id = ?', [$u['id']])['coins'] ?? 0)], 201);
     }
 
     /** POST /kart/gp { place } : a bonus for finishing all four Grand Prix races (a real Grand Prix takes 6 minutes or more) */
@@ -185,7 +252,7 @@ final class KartController
         Http::json(['room' => ['code' => $r['code'], 'track' => $r['track'], 'laps' => (int) $r['laps'], 'status' => $r['status'], 'host' => (int) $r['host_id'] === (int) $u['id'], 'startAt' => $startMs, 'now' => (int) round(microtime(true) * 1000)],
             'players' => array_map(fn($p) => ['id' => (int) $p['user_id'], 'name' => self::first($p['name']), 'tag' => $p['tag'], 'colour' => $p['colour'], 'ready' => (bool) $p['ready'], 'me' => (int) $p['user_id'] === (int) $u['id'],
                 'state' => $p['state'] ? array_map('floatval', explode(',', $p['state'])) : null, 'finishMs' => $p['finish_ms'] !== null ? (int) $p['finish_ms'] : null,
-                'avatar' => Auth::picture((int) $p['user_id'])], $ps->fetchAll()),
+                'avatar' => Auth::picture((int) $p['user_id']), 'look' => self::lookOf((int) $p['user_id'])], $ps->fetchAll()),
             'chat' => array_map(fn($c) => ['id' => (int) $c['id'], 'body' => $c['body'], 'name' => self::first($c['name']), 'me' => (int) $c['user_id'] === (int) $u['id']], $cs->fetchAll()),
             'quick' => self::QUICK]);
     }
