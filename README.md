@@ -1,4 +1,4 @@
-# Buja, Phase 30: Buja Kart and Buja Tag
+# Buja, Phase 31: Buja Kart on real Abuja streets, with modern graphics
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -672,8 +672,37 @@ compressed into a raceable lap; real map data could not be downloaded in the bui
 Fixed in testing: the road was invisible (its triangles faced downward and were culled); the centre line smeared into
 a wedge (dashes shared corners with the gaps); the camera sat too low to see the road ahead.
 
+## Phase 31: real streets and modern graphics for Buja Kart; 3D buildings in Waka
+
+**Real Abuja.** The circuit is built from 25,904 real OpenStreetMap road ways of central Abuja (found in the public
+repository abduldattijo/abuja-dijkstra-astar, an Overpass extract; ODbL). A routing pass found the most compact real
+loop through the core landmarks: Independence Avenue, Olusegun Obasanjo Way, Herbert Macaulay Way, Sani Abacha Way,
+Tafawa Balewa Way, the Goodluck Ebele Jonathan Expressway and Yakubu Gowon Crescent (12 km). Out-and-back stretches on
+divided avenues were removed, the loop smoothed to drivable corners (tightest 12 m radius, no part of the track within
+59 m of another), and the whole shape scaled to 40% for a 2.4 km lap. Landmarks sit at their real relative positions
+and on their true side of the road; the 276 real streets around the circuit are drawn too, so the city grid reads
+correctly. Everything is in `assets/kart/abuja-circuit.json` (38 KB). Credit: © OpenStreetMap contributors, shown in
+the game menu.
+
+**Modern graphics.** A physical sky with the afternoon sun and harmattan haze that also lights and reflects on every
+surface; ACES tone mapping; shadows that follow the kart; textured asphalt with a surface map, painted lane lines and
+dashed centre line, red-and-white kerbs, paving slabs; instanced city blocks with real facades (glass curtain walls,
+plaster offices, concrete bands, apartments with balconies) sized floor by floor; royal palms, neem trees and street
+lamps. Landmarks rebuilt: the National Mosque's golden dome and four gold-capped minarets; the National Assembly's
+green dome on its colonnade; NNPC's four reflective glass towers; the Central Bank; the Millennium Tower with its pod;
+the National Christian Centre's spires; Eagle Square's stands and waving flags; Millennium Park's fountains; Aso Rock
+and Zuma Rock as textured rock masses. The kart has a moulded body, side pods, a rear wing, alloy rims and a glossy
+helmet. All textures were generated for Buja (about 200 KB), so there is nothing to license.
+
+**Built for budget phones.** Graphics Auto/Low/Medium/High in the menu; Auto reads the phone's memory, cores and GPU.
+Low: no shadows, fewer buildings and trees, 1x resolution (about 110 draw calls, 43k triangles). Medium adds shadows.
+High adds sharper shadows, glossy kart paint and anti-aliasing.
+
+**Waka.** The live Waka map has a 3D button: it tilts the map and raises real building heights from OpenStreetMap
+(OpenFreeMap's building layer), the same data source Google-free and cacheable.
+
 ## What is next
 
-Phase 31: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 32: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

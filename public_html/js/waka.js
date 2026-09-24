@@ -108,7 +108,8 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
   /* ---------- Live Waka map: stops near you, road alerts, plan from a stop ---------- */
   route('/waka/map', { auth: true, tabs: '' }, async () => `<div class="bm-screen"><div class="bm-mapbox" id="map"></div>
     <div class="bm-top"><a class="bm-fab" href="#/waka" aria-label="Back">${icon('arrow-left')}</a><div class="bm-pill">Live Waka map</div></div>
-    <button class="bm-fab bm-locate" id="locate" aria-label="Where am I" style="top:calc(70px + var(--safe-t,0px))">${icon('location-crosshairs')}</button></div>`, {
+    <button class="bm-fab bm-locate" id="locate" aria-label="Where am I" style="top:calc(70px + var(--safe-t,0px))">${icon('location-crosshairs')}</button>
+    <button class="bm-fab bm-locate" id="tilt" aria-label="3D buildings" style="top:calc(122px + var(--safe-t,0px));font:900 13px Inter,system-ui">3D</button></div>`, {
     async mount(el) {
       const screen = el.querySelector('.bm-screen');
       const sheet = bottomSheet(screen, { peek: 160, half: 0.44, start: 'half' });
@@ -151,6 +152,7 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
         sheet.set('half'); sheet.body.querySelector('#back').addEventListener('click', listView);
       };
       el.querySelector('#locate').addEventListener('click', () => { if (pos && map) map.center(pos.lng, pos.lat, 15); else toast('Turn on location to see stops near you'); });
+      let three = false; el.querySelector('#tilt').addEventListener('click', async (e) => { if (!map) return; three = !three; e.currentTarget.style.background = three ? '#101014' : ''; e.currentTarget.style.color = three ? '#fff' : ''; await map.set3d(three); });
       listView();
     }
   });

@@ -82,7 +82,7 @@ export async function createMap(el, { center = ABUJA, zoom = 12, interactive = t
   el.classList.add('bm-host');
   let map;
   try {
-    map = new ml.Map({ container: el, style: STYLE, center, zoom, attributionControl: false, interactive, pitchWithRotate: false, dragRotate: false, maxBounds: [[5.5, 7.8], [9.5, 10.4]] });
+    map = new ml.Map({ container: el, style: STYLE, center, zoom, attributionControl: false, interactive, pitchWithRotate: true, dragRotate: true, maxPitch: 65, maxBounds: [[5.5, 7.8], [9.5, 10.4]] });
   } catch { return null; }
   map.addControl(new ml.AttributionControl({ compact: true, customAttribution: 'OpenFreeMap · © OpenStreetMap' }));
   // No street style (offline, or the tile server unreachable): switch to a plain background so pins, the moving
@@ -151,6 +151,21 @@ export async function createMap(el, { center = ABUJA, zoom = 12, interactive = t
       if (pts.length === 1) { map.easeTo({ center: pts[0], zoom: Math.min(maxZoom, 15), duration: ms, padding: { top, bottom, left: side, right: side } }); return; }
       const b = new ml.LngLatBounds(pts[0], pts[0]); pts.forEach((p) => b.extend(p));
       map.fitBounds(b, { padding: { top, bottom, left: side, right: side }, maxZoom, duration: ms });
+    },
+    /** Real 3D buildings from OpenStreetMap heights (OpenFreeMap's building layer), with the map tilted to see them. */
+    async set3d(on) {
+      await loaded;
+      try {
+        if (on && !map.getLayer('bj-3d') && map.getSource('openmaptiles')) {
+          const before = (map.getStyle().layers || []).find((l) => l.type === 'symbol')?.id;
+          map.addLayer({ id: 'bj-3d', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14.5, filter: ['!=', ['get', 'hide_3d'], true],
+            paint: { 'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 8], 0, '#E6E0D4', 40, '#C9CFD6', 120, '#9DB3C8'],
+              'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14.5, 0, 15.2, ['coalesce', ['get', 'render_height'], 8]], 'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0], 'fill-extrusion-opacity': 0.88 } }, before);
+        }
+        if (map.getLayer('bj-3d')) map.setLayoutProperty('bj-3d', 'visibility', on ? 'visible' : 'none');
+      } catch {}
+      map.easeTo({ pitch: on ? 58 : 0, bearing: on ? -18 : 0, zoom: on ? Math.max(map.getZoom(), 15.6) : map.getZoom(), duration: 900 });
+      return on;
     },
     center(lng, lat, zoom) { map.easeTo({ center: [lng, lat], zoom: zoom ?? map.getZoom(), duration: 600 }); },
     on: (ev, fn) => map.on(ev, fn),
