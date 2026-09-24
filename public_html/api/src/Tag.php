@@ -52,7 +52,7 @@ final class Tag
         $art = Db::one('SELECT trade, business, base_district, verified_at, available FROM artisans WHERE user_id = ? AND hidden_at IS NULL', [$id]);
         $co = Db::one('SELECT id, name, district, verified_at FROM companies WHERE owner_id = ?', [$id]);
         $jobs = $co ? (int) (Db::one("SELECT COUNT(*) AS n FROM jobs WHERE company_id = ? AND status = 'open'", [$co['id']])['n'] ?? 0) : 0;
-        $best = Db::one("SELECT MIN(lap_ms) AS b FROM kart_times WHERE user_id = ? AND track = 'abuja'", [$id]);
+        $best = Db::one("SELECT MIN(lap_ms) AS b FROM kart_times WHERE user_id = ?", [$id]);
         $isArtisan = (bool) $art; $isCompany = (bool) $co;
         return [
             'id' => $id, 'tag' => $u['tag'], 'name' => $isCompany ? $co['name'] : ($isArtisan && $art['business'] ? $art['business'] : $u['name']),

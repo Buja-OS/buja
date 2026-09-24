@@ -434,3 +434,8 @@ body.kart-on .kart-stage{width:100vw;height:100vh;height:100dvh}
   .kart-speed{bottom:calc(76px + var(--safe-b,0px))}
   .kart-item{bottom:calc(140px + var(--safe-b,0px))}
 }
+/* Buja Kart circuit picker (Phase 36) */
+.kart-tracks{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kart-track{border:none;border-radius:16px;background:var(--card);box-shadow:inset 0 0 0 1px var(--line);padding:12px;text-align:left;display:flex;flex-direction:column;gap:3px;color:var(--ink);cursor:pointer}
+.kart-track b{font-size:14px} .kart-track span{font-size:11.5px;color:var(--muted);line-height:1.35}
+.kart-track.on{box-shadow:inset 0 0 0 3px #FF7A1A;background:var(--orange-tint)}

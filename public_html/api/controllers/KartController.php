@@ -9,12 +9,12 @@ declare(strict_types=1);
  */
 final class KartController
 {
-    public const TRACKS = ['abuja' => 'Abuja Central Circuit'];
+    public const TRACKS = ['gp' => 'Abuja Grand Prix Circuit', 'abuja' => 'Abuja city streets'];
     public const MIN_LAP_MS = 20000;          // anything faster is not a real lap on this track
     public const COLOURS = ['#FF7A1A', '#1F5FBF', '#2E7D1E', '#C2185B', '#7A3E96', '#0E7C86'];
     public const QUICK = ['Let\'s go!', 'Nice one', 'Wait for me', 'GG', 'Rematch?', 'Na so!'];
 
-    private static function track(string $t): string { return isset(self::TRACKS[$t]) ? $t : 'abuja'; }
+    private static function track(string $t): string { return isset(self::TRACKS[$t]) ? $t : 'gp'; }
     private static function first(string $n): string { return explode(' ', trim($n))[0]; }
 
     /** GET /kart/board?track=&span=week|all : best lap per driver, and where I stand */
