@@ -13,6 +13,8 @@ $router->post('/auth/reset',                 [AccountController::class, 'reset']
 $router->get('/auth/verify',                 [AccountController::class, 'verify']);
 $router->post('/auth/resend-verification',   [AccountController::class, 'resend']);
 
+$router->get('/me/tag',                      [TagController::class, 'mine']);
+$router->post('/me/tag',                     [TagController::class, 'change']);
 $router->get('/me',                          [MeController::class, 'show']);
 $router->patch('/me',                        [MeController::class, 'update']);
 $router->patch('/me/notifications',          [AccountController::class, 'notifications']);
@@ -361,3 +363,20 @@ $router->post('/admin/ads',                  [AdsController::class, 'save']);
 // Account deletion (Play Store and App Store requirement)
 $router->post('/me/delete',                  [AccountController::class, 'destroy']);
 $router->post('/account/delete-request',     [AccountController::class, 'deleteRequest']);
+
+// Buja Tag
+$router->get('/tags',                        [TagController::class, 'search']);
+$router->get('/tag/{tag}',                   [TagController::class, 'find']);
+
+// Buja Kart
+$router->get('/kart/board',                  [KartController::class, 'board']);
+$router->post('/kart/times',                 [KartController::class, 'saveTime']);
+$router->get('/kart/ghost',                  [KartController::class, 'ghost']);
+$router->post('/kart/rooms',                 [KartController::class, 'createRoom']);
+$router->post('/kart/rooms/{code}/join',     [KartController::class, 'joinRoom']);
+$router->post('/kart/rooms/{code}/invite',   [KartController::class, 'invite']);
+$router->post('/kart/rooms/{code}/sync',     [KartController::class, 'sync']);
+$router->post('/kart/rooms/{code}/start',    [KartController::class, 'start']);
+$router->post('/kart/rooms/{code}/finish',   [KartController::class, 'finish']);
+$router->post('/kart/rooms/{code}/again',    [KartController::class, 'again']);
+$router->post('/kart/rooms/{code}/chat',     [KartController::class, 'chat']);

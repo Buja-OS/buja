@@ -267,3 +267,69 @@ select.input { appearance: none; -webkit-appearance: none; background-image: lin
 .codekeys button{flex:0 0 auto;min-width:40px;height:40px;border-radius:10px;border:none;background:#2A2A33;color:#FFB27A;font:700 17px ui-monospace,Menlo,monospace;cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none}
 .codekeys button:active{background:#FF7A1A;color:#fff}
 .codekeys button.wide{min-width:84px;font-size:13px;color:#7ED957}
+
+/* ---------- Buja Kart (Phase 30) ---------- */
+body.kart-on .tabbar{display:none}
+.kart-stage{position:fixed;inset:0;background:#9FD1F5;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;z-index:20}
+.kart-stage canvas#kc{position:absolute;inset:0;width:100%;height:100%;display:block}
+.kart-hud{position:absolute;top:calc(10px + var(--safe-t,0px));left:12px;right:12px;display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;pointer-events:none;padding-left:52px}
+.kart-chip{background:rgba(16,16,20,.72);color:#fff;border-radius:12px;padding:7px 11px;font:800 14px Inter,system-ui,sans-serif;letter-spacing:.3px}
+.kart-time{font-family:ui-monospace,Menlo,monospace}
+.kart-hud #mini{margin-left:auto;width:96px;height:96px}
+.kart-quit,.kart-chatbtn{position:absolute;top:calc(10px + var(--safe-t,0px));left:12px;width:42px;height:42px;border-radius:21px;border:none;background:rgba(16,16,20,.72);color:#fff;display:flex;align-items:center;justify-content:center}
+.kart-chatbtn{top:auto;bottom:calc(150px + var(--safe-b,0px));left:auto;right:14px;width:50px;height:50px;border-radius:25px;background:#FF7A1A}
+.kart-quit svg,.kart-chatbtn svg{width:18px;height:18px;fill:currentColor}
+.kart-land{position:absolute;top:calc(64px + var(--safe-t,0px));left:50%;transform:translate(-50%,-8px);background:rgba(255,255,255,.92);color:#101014;border-radius:16px;padding:7px 14px;font:800 14px Inter,system-ui,sans-serif;opacity:0;transition:.3s;pointer-events:none;white-space:nowrap}
+.kart-land.on{opacity:1;transform:translate(-50%,0)}
+.kart-count{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;color:#fff;text-shadow:0 4px 18px rgba(0,0,0,.45);font-family:Inter,system-ui,sans-serif}
+.kart-count b{font-size:96px;font-weight:900}
+.kart-count b.go{color:#7ED957}
+.pop{animation:kpop .45s cubic-bezier(.2,1.6,.4,1)}
+@keyframes kpop{from{transform:scale(.3);opacity:0}to{transform:scale(1);opacity:1}}
+.kart-speed{position:absolute;left:50%;bottom:calc(112px + var(--safe-b,0px));transform:translateX(-50%);background:rgba(16,16,20,.72);color:#fff;border-radius:14px;padding:6px 14px;text-align:center;min-width:92px;pointer-events:none;overflow:hidden}
+.kart-speed b{display:block;font:900 26px/1 ui-monospace,Menlo,monospace}
+.kart-speed span{font:600 10px Inter,system-ui;opacity:.7;letter-spacing:1px}
+.kart-speed i{position:absolute;left:0;bottom:0;height:4px;background:linear-gradient(90deg,#40B4FF,#FFB020);width:0}
+.kart-pad{position:absolute;left:0;right:0;bottom:0;padding:10px 12px calc(14px + var(--safe-b,0px));display:flex;gap:10px;align-items:flex-end}
+.kart-pad button{width:84px;height:84px;border-radius:24px;border:none;background:rgba(255,255,255,.28);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);color:#fff;font-size:30px;font-weight:900;box-shadow:inset 0 0 0 2px rgba(255,255,255,.55);touch-action:none}
+.kart-pad button.on{background:rgba(255,122,26,.75)}
+.kart-pad #kb{width:64px;height:64px;font-size:22px}
+.kart-pad .kart-drift{background:rgba(255,122,26,.45)}
+.kart-bubbles{position:absolute;left:12px;top:calc(116px + var(--safe-t,0px));display:flex;flex-direction:column;gap:6px;max-width:70%;pointer-events:none}
+.kart-bubble{background:rgba(16,16,20,.78);color:#fff;border-radius:14px;padding:7px 11px;font:500 13px Inter,system-ui;animation:kpop .3s ease-out;transition:opacity .5s}
+.kart-bubble.me{background:rgba(255,122,26,.88)}
+.kart-bubble.out{opacity:0}
+.kart-chatbox{position:absolute;left:12px;right:12px;bottom:calc(210px + var(--safe-b,0px));background:rgba(16,16,20,.9);border-radius:18px;padding:10px;display:none;flex-direction:column;gap:8px}
+.kart-chatbox.on{display:flex}
+.kart-quick{display:flex;gap:6px;flex-wrap:wrap}
+.kart-quick button{border:none;background:#2A2A33;color:#fff;border-radius:14px;padding:8px 12px;font:600 13px Inter,system-ui}
+.kart-chatrow{display:flex;gap:6px}
+.kart-chatrow input{flex:1;border:none;border-radius:12px;padding:10px 12px;font-size:15px}
+.kart-chatrow button{border:none;border-radius:12px;background:#FF7A1A;color:#fff;font-weight:700;padding:0 14px}
+.kart-result{position:absolute;inset:0;background:rgba(16,16,20,.55);display:none;align-items:center;justify-content:center;padding:20px}
+.kart-result.on{display:flex}
+.kart-card{background:var(--card);border-radius:24px;padding:22px;width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px;animation:kpop .45s}
+.kart-place{font-size:54px;text-align:center}
+.kart-big{font:900 28px Inter,system-ui;text-align:center}
+.kart-row{display:flex;justify-content:space-between;font-size:15px}
+.kart-row b{font-family:ui-monospace,Menlo,monospace}
+.kart-pb{background:#E7F6EC;color:#2E7D1E;border-radius:12px;padding:8px;text-align:center;font-weight:800}
+.kart-sub{text-align:center;color:var(--muted);font-size:13px}
+.kart-actions{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+/* the menu's hero, drawn in CSS so the menu costs nothing to load */
+.kart-hero{position:relative;height:190px;border-radius:22px;overflow:hidden;background:#9FD1F5}
+.kart-hero-sky{position:absolute;inset:0;background:linear-gradient(#6DB7EC,#BFE0F7 70%)}
+.kart-hero-rock{position:absolute;right:-30px;bottom:48px;width:230px;height:120px;background:#7D6A58;border-radius:50% 50% 10% 10%/80% 80% 10% 10%}
+.kart-hero-dome{position:absolute;left:26px;bottom:52px;width:64px;height:40px;background:#D9A62E;border-radius:32px 32px 0 0;box-shadow:-30px 12px 0 -14px #F6F3EC,94px 12px 0 -14px #F6F3EC}
+.kart-hero-road{position:absolute;left:0;right:0;bottom:0;height:56px;background:#3B3D45;border-top:6px dashed #E74C3C}
+.kart-hero-text{position:absolute;left:16px;right:16px;bottom:10px;color:#fff;font:500 13px Inter,system-ui;text-shadow:0 1px 4px rgba(0,0,0,.4)}
+.kart-logo{font:900 30px Inter,system-ui;letter-spacing:1px;color:#fff}
+.kart-logo span{color:#FF7A1A}
+.kart-btn{border:none;border-radius:18px;background:var(--card);box-shadow:inset 0 0 0 1px var(--line);padding:16px;text-align:left;display:flex;flex-direction:column;gap:2px;cursor:pointer;color:var(--ink)}
+.kart-btn b{font-size:18px;font-weight:800}
+.kart-btn span{font-size:13px;color:var(--muted)}
+.kart-btn-go{background:#FF7A1A;color:#fff;box-shadow:none}
+.kart-btn-go span{color:rgba(255,255,255,.85)}
+/* Buja Tag */
+.tagbig{font:900 30px Inter,system-ui;letter-spacing:.5px;color:var(--ink)}
+.tagbig span{color:var(--orange)}

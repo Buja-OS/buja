@@ -1,4 +1,4 @@
-# Buja, Phase 28: the mechanic side, and ready for the app stores
+# Buja, Phase 30: Buja Kart and Buja Tag
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -647,8 +647,33 @@ Fixed on the way: the deletion first used column names and status values that do
 deleted person's flats and items online; the dashboard's switch had no style; the hours rows overflowed small phones.
 Checked all 290 server routes have their code. Swept 127 screens cold as an admin and as a resident: no errors.
 
+## Phase 30: Buja Kart and Buja Tag
+
+**Buja Tag.** Every account has a unique @handle (3 to 20 letters, numbers or _), created automatically from the
+person's name, their business name, or their workshop's name, and changeable up to 3 times a month. `#/@tag` links
+work anywhere and open that person's card: who they are and what they are on Buja, with the right actions (ask a
+mechanic to come, see a company's vacancies, race them, see them on Match when both use it, their profile). No
+contact details are ever shown. Me shows your tag with a QR code to show people; Home has Find on Buja.
+
+**Buja Kart.** A 3D go-kart race (three.js, vendored, loaded only when the game opens) round a circuit laid out in
+the real order of central Abuja's landmarks: Eagle Square at the start with its stands and flag, NNPC Towers, the
+National Christian Centre, the National Assembly and its green dome, Aso Rock over the far side, Millennium Park, the
+National Mosque with its golden dome and four minarets, the City Gate, and Zuma Rock on the horizon. The route is
+compressed into a raceable lap; real map data could not be downloaded in the build environment.
+- Race three computer drivers, a time trial against your own best lap's ghost, or chase the fastest lap in Abuja.
+- Race rooms with a five-letter code: invite friends by Buja Tag (they get a notification), chat in the lobby and
+  during the race, rematch. Phones sync about five times a second and glide friends' karts between updates.
+- Weekly and all-time leaderboards of best laps; impossible times are refused.
+- Controls: big left, right, brake and drift buttons; the kart drives itself forward; drift then release for a boost;
+  green boost pads on the track. Keyboard: arrows and space.
+- Built for cheap phones: roads, kerbs and dashes are single meshes, buildings and trees are instanced, no shadows,
+  resolution capped at 1.25 to 1.75x; about 70 draw calls and 17,000 triangles a frame.
+
+Fixed in testing: the road was invisible (its triangles faced downward and were culled); the centre line smeared into
+a wedge (dashes shared corners with the gaps); the camera sat too low to see the road ahead.
+
 ## What is next
 
-Phase 29: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
+Phase 31: Match on phone GPS (real distances, fuzzed for privacy) and a safety feature to share live location with a trusted contact while meeting someone. Waka directory expansion from researched routes and fares.
 
 Phase 8b: Declutter escrow with Paystack transfers once the business is approved for payouts (seller bank details, hold on payment, release on confirmation, admin payout queue). Then growth: Waka rider GPS and driver mode, Protomaps tiles, and moving off Render's free plan.

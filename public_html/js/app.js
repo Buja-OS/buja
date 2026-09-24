@@ -90,6 +90,7 @@ async function render() {
   catch { if (seq !== renderSeq) return; app.innerHTML = `<div class="screen no-tabs">${topbar('', '/home')}<div class="placeholder"><div class="mi card">${icon('triangle-exclamation')}</div><div class="h-md">Could not open this part of Buja</div><div class="small muted">Check your connection and try again.</div><button class="btn btn-ink" onclick="location.reload()" style="width:auto">Try again</button></div></div>`; return; }
   if (seq !== renderSeq) return;
   const { r, params } = match(path);
+  if (location.hash.startsWith('#/@')) { go('/t/' + decodeURIComponent(location.hash.slice(3)).replace(/[^A-Za-z0-9_]/g, '')); return; }
   if (r.auth && !state.user) { try { sessionStorage.setItem('buja_next', current() + (location.hash.includes('?') ? '?' + location.hash.split('?')[1] : '')); } catch {} go('/welcome'); return; }
   if (r.guest && state.user) { go(state.user.district ? '/home' : '/onboarding'); return; }
   const el = document.createElement('div');
@@ -263,6 +264,8 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/queues', 'building-columns', '#EAF1FB', '#1F5FBF', 'Office queues', 'NIN, passport, licence: how long now'],
     ['/rides', 'car', '#E7F0EA', '#2E7D1E', 'Commute share', 'Split a seat along your route'],
     ['/artisans/map?trade=mechanic', 'wrench', '#FDECEA', '#D92D20', 'Mechanic near me', 'Car broke down? The nearest one comes to you'],
+    ['/kart', 'flag-checkered', '#FFF1E6', '#E8660A', 'Buja Kart', 'Race round Eagle Square and Aso Rock'],
+    ['/find', 'magnifying-glass', '#EEF0FF', '#4B4FC4', 'Find on Buja', 'Anyone by their @tag'],
   ];
   return `
   <header class="topbar" style="padding-top:8px">
@@ -325,6 +328,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
       <a class="item" href="#/waka"><div class="mi">${icon('route')}</div><div class="grow"><div class="t">Saved routes</div><div class="s">Waka</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#${u.kind === 'company' ? '/work/company' : '/work/profile'}"><div class="mi">${icon('briefcase')}</div><div class="grow"><div class="t">${u.kind === 'company' ? 'Company and vacancies' : 'My CV and applications'}</div><div class="s">Work</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/tickets"><div class="mi">${icon('ticket')}</div><div class="grow"><div class="t">My tickets</div><div class="s">Events you have paid for</div></div>${icon('chevron-right')}</a>
+      <a class="item" href="#/tag"><div class="mi" style="background:#FFF1E6;color:#E8660A;font-weight:900;font-size:18px">@</div><div class="grow"><div class="t">@${h(state.user.tag || '')}</div><div class="s">Your Buja Tag: share it so people can find you</div></div>${icon('chevron-right')}</a>
       ${state.user.artisan ? `<a class="item" href="#/artisans/dashboard"><div class="mi" style="background:#FDECEA;color:#D92D20">${icon('gauge-high')}</div><div class="grow"><div class="t">Mechanic dashboard</div><div class="s">${state.user.artisan.available ? 'Taking jobs' : 'Switched off'} · your jobs, earnings and hours</div></div>${icon('chevron-right')}</a>` : ''}
       <a class="item" href="#/jobs"><div class="mi">${icon('wrench')}</div><div class="grow"><div class="t">My jobs</div><div class="s">Artisans you called, and jobs you are doing</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/alerts"><div class="mi">${icon('bell')}</div><div class="grow"><div class="t">Saved searches</div><div class="s">Be told when a job, home or item matches</div></div>${icon('chevron-right')}</a>
@@ -438,6 +442,8 @@ const MODULES = {
   learn:       () => import('./learn.js').then((m) => m.registerLearn(BASE)),
   citymore:    () => import('./citymore.js').then((m) => m.registerCityMore(BASE)),
   jobs:        () => import('./servicejobs.js').then((m) => m.registerJobs(BASE)),
+  kart:        () => import('./kart.js').then((m) => m.registerKart(BASE)),
+  tags:        () => import('./tags.js').then((m) => m.registerTags(BASE)),
 };
 /** First path segment → the modules that own screens under it. Several share /admin and /report. */
 const LAZY = {
@@ -448,6 +454,7 @@ const LAZY = {
   artisans: ['services', 'jobs'], jobs: ['jobs'], breakdown: ['jobs'], meetup: ['services'], tickets: ['services'],
   blood: ['citysignals'], fuel: ['citysignals'], light: ['citysignals'], lostfound: ['citysignals'], plates: ['citysignals'], prices: ['citysignals'],
   cert: ['learn'], learn: ['learn'], queues: ['citymore'], 'rent-index': ['citymore'], rides: ['citymore'],
+  kart: ['kart'], tag: ['tags'], t: ['tags'], find: ['tags'],
 };
 const loaded = {};
 function need(name) { if (!loaded[name]) loaded[name] = MODULES[name]().catch((e) => { delete loaded[name]; throw e; }); return loaded[name]; }

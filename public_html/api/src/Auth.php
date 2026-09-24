@@ -61,6 +61,7 @@ final class Auth
             'email'    => $u['email'],
             'phone'    => $u['phone'],
             'district' => $u['district'],
+            'tag' => !empty($u['tag']) ? $u['tag'] : Tag::ensure((int) $u['id']),
             'avatar'   => $u['avatar_url'],
             'verified' => $u['email_verified_at'] !== null,
             'google'   => $u['google_sub'] !== null,
