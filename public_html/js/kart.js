@@ -41,10 +41,10 @@ export function registerKart({ route, go, state, api, ui, failed }) {
         <div class="small muted">Invite friends by their Buja Tag. Chat while you race.</div></div>
       <div class="card row" style="padding:12px 14px;gap:10px"><div class="grow"><div style="font-weight:700">Graphics</div><div class="small muted">Auto picks what your phone can run smoothly</div></div><select class="input" id="gfx" style="width:auto;height:40px">${['auto', 'low', 'medium', 'high'].map((g) => `<option value="${g}" ${((() => { try { return localStorage.getItem('buja_kart_gfx'); } catch { return null; } })() || 'auto') === g ? 'selected' : ''}>${g[0].toUpperCase() + g.slice(1)}</option>`).join('')}</select></div>
       <div class="card stack" style="padding:12px 14px;gap:10px">
-        ${[['buja_kart_orient', 'Screen', [['portrait', 'Upright'], ['landscape', 'Sideways']], 'portrait'], ['buja_kart_steer', 'Steering', [['buttons', 'Buttons'], ['tilt', 'Tilt the phone']], 'buttons'], ['buja_kart_sfx', 'Sound effects', [['1', 'On'], ['0', 'Off']], '1'], ['buja_kart_music', 'Music', [['1', 'On'], ['0', 'Off']], '1']].map(([key, label, opts, def]) => { const cur = (() => { try { return localStorage.getItem(key) || def; } catch { return def; } })(); return `<div class="row" style="gap:10px"><div class="grow" style="font-weight:600">${label}</div><select class="input" data-set="${key}" style="width:auto;height:38px">${opts.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`; }).join('')}
+        ${[['buja_kart_orient', 'Screen', [['portrait', 'Upright'], ['landscape', 'Sideways']], 'portrait'], ['buja_kart_steer', 'Steering', [['buttons', 'Buttons'], ['tilt', 'Tilt the phone']], 'buttons'], ['buja_kart_gas', 'Accelerate', [['pedal', 'GAS button'], ['auto', 'Automatic']], 'pedal'], ['buja_kart_sfx', 'Sound effects', [['1', 'On'], ['0', 'Off']], '1'], ['buja_kart_music', 'Music', [['1', 'On'], ['0', 'Off']], '1']].map(([key, label, opts, def]) => { const cur = (() => { try { return localStorage.getItem(key) || def; } catch { return def; } })(); return `<div class="row" style="gap:10px"><div class="grow" style="font-weight:600">${label}</div><select class="input" data-set="${key}" style="width:auto;height:38px">${opts.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`; }).join('')}
       </div>
       <div class="small muted" style="line-height:1.5">The circuit follows real central Abuja streets (Independence Avenue, Herbert Macaulay Way, Sani Abacha Way, Tafawa Balewa Way), compressed for a raceable lap. Road data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, ODbL. Engine and drive-by sounds recorded by alex_jauk and kontraa.</div>
-      <div class="small muted" style="line-height:1.5">Controls: ◀ on the left edge and ▶ on the right edge steer, one thumb each. Hold a turn at speed and you drift automatically; let go for a boost (or hold 🔥). The kart drives itself forward; hold 🔥 while turning to drift, and let go for a boost. Drive through a ? box for an item, then tap it to use it (E on a keyboard). On a keyboard: arrow keys and space.</div>
+      <div class="small muted" style="line-height:1.5">Controls: right thumb on GAS and ▶, left thumb on BRAKE and ◀. Holding ◀ or ▶ keeps the gas on through corners; let go of everything to coast. Hold a turn at speed to drift, let go for a boost. Keyboard: arrows, space to drift. The kart drives itself forward; hold 🔥 while turning to drift, and let go for a boost. Drive through a ? box for an item, then tap it to use it (E on a keyboard). On a keyboard: arrow keys and space.</div>
     </main>`;
   }, {
     mount(el) {
@@ -128,8 +128,9 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       <div class="kart-pause" id="pausebox"></div>
       <button class="kart-chatbtn" id="chatbtn" aria-label="Chat" style="display:none">${icon('message')}</button>
       <div class="kart-speed"><b id="spd">0</b><span>km/h</span><i id="boostbar"></i></div>
-      <button class="kart-steer kart-steer-l" id="kl" aria-label="Steer left">◀</button><button class="kart-steer kart-steer-r" id="kr" aria-label="Steer right">▶</button>
-      <div class="kart-mid"><button id="kb" aria-label="Brake">■</button><button id="kd" class="kart-drift" aria-label="Drift and boost">🔥</button></div>
+      <div class="kart-col kart-col-l"><button class="kart-pedal kart-brake" id="kb" aria-label="Brake">BRAKE</button><button class="kart-steer" id="kl" aria-label="Steer left">◀</button></div>
+      <div class="kart-col kart-col-r"><button class="kart-pedal kart-gas" id="kg" aria-label="Accelerate">GAS</button><button class="kart-steer" id="kr" aria-label="Steer right">▶</button></div>
+      <div class="kart-mid"><button id="kd" class="kart-drift" aria-label="Drift and boost">🔥</button></div>
       <div class="kart-chatbox" id="chatbox"></div>
       <div class="kart-result" id="result"></div>
     </div>`, {
@@ -183,7 +184,7 @@ class Race {
     this.tex = await loadTextures(this.renderer, T);
     this.circuit = await (await fetch(CIRCUIT_URL)).json();
     SAMPLES = this.circuit.lap.length;
-    this.buildTrack(); this.buildWorld(); this.buildLandmarks(); this.buildBarriers();
+    this.buildTrack(); this.buildWorld(); this.buildLandmarks(); this.buildBarriers(); this.buildCityGate();
     this.fx = new KartFX(this.scene, this.tier);
     this.items = this.mode === 'bots'; if (this.items) this.buildItemBoxes();
     this.audio.wake();
@@ -205,7 +206,7 @@ class Race {
     this.phase = 'count'; this.countFrom = this.mode === 'room' && this.room && this.room.startAt ? null : performance.now() + 3200;
     this.loop = this.loop.bind(this); requestAnimationFrame(this.loop);
   }
-  stop() { this.audio.stop(); try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch {} try { if (document.fullscreenElement) document.exitFullscreen(); } catch {} window.removeEventListener('deviceorientation', this._tilt); document.removeEventListener('visibilitychange', this._vis); this.running = false; window.removeEventListener('resize', this._onResize); window.removeEventListener('keydown', this._kd); window.removeEventListener('keyup', this._ku); try { this.renderer.dispose(); } catch {} }
+  stop() { window.removeEventListener('orientationchange', this._rot); try { screen.orientation && screen.orientation.removeEventListener && screen.orientation.removeEventListener('change', this._rot); } catch {} this.audio.stop(); try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch {} try { if (document.fullscreenElement) document.exitFullscreen(); } catch {} window.removeEventListener('deviceorientation', this._tilt); document.removeEventListener('visibilitychange', this._vis); this.running = false; window.removeEventListener('resize', this._onResize); window.removeEventListener('keydown', this._kd); window.removeEventListener('keyup', this._ku); try { this.renderer.dispose(); } catch {} }
   resize() { const w = this.el.clientWidth || innerWidth, hgt = this.el.clientHeight || innerHeight; this.renderer.setSize(w, hgt, false); this.camera.aspect = w / hgt; this.camera.updateProjectionMatrix(); }
 
   /* ------------------------------ the circuit: real Abuja streets ------------------------------ */
@@ -443,13 +444,16 @@ class Race {
   bindControls() {
     const hold = (id, key) => { const b = this.el.querySelector('#' + id); const on = (e) => { e.preventDefault(); this.input[key] = 1; b.classList.add('on'); }; const off = (e) => { e && e.preventDefault(); this.input[key] = 0; b.classList.remove('on'); };
       b.addEventListener('touchstart', on, { passive: false }); b.addEventListener('touchend', off); b.addEventListener('touchcancel', off); b.addEventListener('mousedown', on); b.addEventListener('mouseup', off); b.addEventListener('mouseleave', off); };
-    hold('kl', 'l'); hold('kr', 'r'); hold('kb', 'brake'); hold('kd', 'drift');
+    hold('kl', 'l'); hold('kr', 'r'); hold('kb', 'brake'); hold('kd', 'drift'); hold('kg', 'gas');
+    this.autoGas = (() => { try { return localStorage.getItem('buja_kart_gas') === 'auto'; } catch { return false; } })(); if (this.autoGas) this.el.classList.add('kart-autogas');
+    // after a rotation, make sure the layout and the controls are redrawn
+    this._rot = () => setTimeout(() => { this.resize(); this.el.querySelectorAll('.kart-col,.kart-mid').forEach((c) => { c.style.display = 'none'; void c.offsetHeight; c.style.display = ''; }); }, 250); window.addEventListener('orientationchange', this._rot); screen.orientation && screen.orientation.addEventListener && screen.orientation.addEventListener('change', this._rot);
     const wake = () => this.audio.wake(); this.el.addEventListener('touchstart', wake, { passive: true }); this.el.addEventListener('mousedown', wake);
     this.el.querySelector('#pause').addEventListener('click', () => this.togglePause());
     const use = (e) => { e && e.preventDefault(); if (this.phase === 'race') this.useItem(this.player); }; const ki = this.el.querySelector('#ki'); ki.addEventListener('touchstart', use, { passive: false }); ki.addEventListener('mousedown', use);
     window.addEventListener('keydown', (e) => { if (e.key === 'e' || e.key === 'E' || e.key === 'Enter') use(e); });
     this._vis = () => { if (document.hidden && this.phase === 'race' && this.mode !== 'room' && !this.paused) this.togglePause(); }; document.addEventListener('visibilitychange', this._vis);
-    const map = { ArrowLeft: 'l', a: 'l', A: 'l', ArrowRight: 'r', d: 'r', D: 'r', ArrowDown: 'brake', s: 'brake', S: 'brake', ' ': 'drift', Shift: 'drift' };
+    const map = { ArrowLeft: 'l', a: 'l', A: 'l', ArrowRight: 'r', d: 'r', D: 'r', ArrowDown: 'brake', s: 'brake', S: 'brake', ArrowUp: 'gas', w: 'gas', W: 'gas', ' ': 'drift', Shift: 'drift' };
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') this.togglePause(); });
     this._kd = (e) => { if (map[e.key]) { this.input[map[e.key]] = 1; e.preventDefault(); } }; this._ku = (e) => { if (map[e.key]) this.input[map[e.key]] = 0; };
     window.addEventListener('keydown', this._kd); window.addEventListener('keyup', this._ku);
@@ -457,13 +461,13 @@ class Race {
   }
 
   /* ------------------------------ physics ------------------------------ */
-  drive(k, dt, steer, brake, drift, isAI = false) {
+  drive(k, dt, steer, brake, drift, isAI = false, gas = true) {
     const on = this.nearest(k.position.x, k.position.z, k.idx); k.idx = on.i;
     const off = Math.abs(on.lateral) > ROAD_W / 2 + 1.2;
     let top = off ? OFF_V : MAX_V * (isAI ? k.skill : 1); if (k.boost > 0) { top = BOOST_V; k.boost -= dt; }
     if (k.slow > 0) { k.slow -= dt; top *= 0.6; k.boost = 0; }
     if (k.spin > 0) { k.spin -= dt; steer = 0; drift = false; top = Math.min(top, 8); }
-    const accel = brake ? -28 : (k.v < top ? 13 : -9);
+    const accel = brake ? -28 : !gas ? (k.v > 0 ? -5 : 0) : (k.v < top ? 13 : -9);   // off the gas: the kart coasts down
     k.v = Math.max(0, Math.min(k.boost > 0 ? BOOST_V : top + 2, k.v + accel * dt));
     const grip = drift && Math.abs(steer) > 0 ? 1.55 : 1;
     const turn = steer * grip * (0.9 + 0.8 * Math.min(1, k.v / 18)) * dt * (k.v > 1 ? 1 : k.v);
@@ -521,9 +525,11 @@ class Race {
       // automatic drift: a turn held for half a second at speed, timed in real time so slow phones behave like fast ones
       if ((this.input.l || this.input.r) && this.player.v > 17) this._steerSince = this._steerSince || now; else this._steerSince = 0;
       const autoDrift = !!this._steerSince && now - this._steerSince > 450;
-      const steer = this.steerMode === 'tilt' ? Math.max(-1, Math.min(1, this.tilt)) : (this.input.l ? 1 : 0) - (this.input.r ? 1 : 0);
+      const btn = (this.input.l ? 1 : 0) - (this.input.r ? 1 : 0);
+      const steer = this.steerMode === 'tilt' && !btn ? Math.max(-1, Math.min(1, this.tilt)) : btn;
       if (this.phase === 'race') {
-        const on = this.drive(this.player, dt, steer, this.input.brake, this.input.drift || autoDrift);
+        const gasOn = this.autoGas || this.input.gas || this.input.l || this.input.r || (this.steerMode === 'tilt' && !this.input.brake && this.input.gas !== 0 && this._tiltGas);
+        const on = this.drive(this.player, dt, steer, this.input.brake, this.input.drift || autoDrift, false, !!gasOn);
         this.recording.push([Math.round(this.player.position.x * 10) / 10, Math.round(this.player.position.z * 10) / 10, Math.round(this.player.h * 100) / 100]);
         if (this.player.lapEvent) this.completeLap(now);
         this.nearLandmark(on.i);
@@ -535,7 +541,7 @@ class Race {
       this.hud(now);
       if (this.fx) this.fx.update(dt);
       if (this.items && this.phase === 'race') this.itemTick(now, dt);
-      const P = this.player; this.audio.update(P.v, !this.input.brake, P._drifting, P._off, false);
+      const P = this.player; this.audio.update(P.v, !this.input.brake && (this.autoGas || this.input.gas || this.input.l || this.input.r), P._drifting, P._off, false);
       // wrong way: facing against the circuit for more than a second
       const t = this.tangents[P.idx], dot = Math.sin(P.h) * t.x + Math.cos(P.h) * t.z;
       // counted in real time, so a slow phone shows it as quickly as a fast one
@@ -726,6 +732,29 @@ class Race {
     this._tilt = (e) => { const landscape = innerWidth > innerHeight; const a = landscape ? (e.beta || 0) * ((screen.orientation && screen.orientation.angle === 270) ? -1 : 1) : (e.gamma || 0); this.tilt = -Math.max(-1, Math.min(1, a / 22)); if (Math.abs(this.tilt) < 0.08) this.tilt = 0; };
     window.addEventListener('deviceorientation', this._tilt);
     this.steerMode = 'tilt'; try { localStorage.setItem('buja_kart_steer', 'tilt'); } catch {} this.el.classList.add('kart-tiltmode'); return true;
+  }
+  /** Abuja City Gate, spanning the road so you drive under it: white stone, green bands, the gold eagle on top.
+   *  Placed on the straightest stretch of the lap's second half. */
+  buildCityGate() {
+    let best = Math.floor(SAMPLES * 0.55), bend = Infinity;
+    for (let s = Math.floor(SAMPLES * 0.45); s < Math.floor(SAMPLES * 0.8); s += 2) { let b = 0; for (let d = -10; d <= 10; d++) b += 1 - this.tangents[(s + d + SAMPLES) % SAMPLES].dot(this.tangents[s]); if (b < bend && !this.circuit.landmarks.some((l) => Math.abs(l.s - s) < 25)) { bend = b; best = s; } }
+    const S = (o) => new THREE.MeshStandardMaterial(o); const stone = S({ color: '#F2EDE2', roughness: 0.7 }), green = S({ color: '#008751', roughness: 0.5 }), gold = S({ color: '#E0A93A', metalness: 1, roughness: 0.25 });
+    const g = new THREE.Group(); const span = ROAD_W / 2 + 4;
+    const box = (w, h, d, m, x, y, z = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = b.receiveShadow = true; g.add(b); return b; };
+    for (const side of [-1, 1]) {
+      box(4.5, 20, 6, stone, side * span, 10); box(4.8, 2.4, 6.3, green, side * span, 14.5);          // pillars with a green band
+      box(3, 8, 4, stone, side * (span + 5.5), 4); box(3.2, 1, 4.2, green, side * (span + 5.5), 8.3);   // the low side gates
+      const fin = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 2.3, 9, 4), stone); fin.position.set(side * span, 24.5, 0); fin.castShadow = true; g.add(fin); // the tapering tops
+    }
+    box(span * 2 + 5, 3.2, 6.6, stone, 0, 21); box(span * 2 + 6, 0.9, 7, green, 0, 19.2);             // the crossbar and its green line
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(span - 2.2, 0.9, 8, 28, Math.PI), stone); arch.position.set(0, 12.6, 0); arch.scale.y = 0.62; arch.castShadow = true; g.add(arch);
+    box(5, 2, 3.6, stone, 0, 23.6); const eagle = new THREE.Mesh(new THREE.ConeGeometry(1.6, 3.6, 5), gold); eagle.position.set(0, 26.4, 0); g.add(eagle); box(7, 0.8, 0.7, gold, 0, 26.2);
+    // a green-white-green panel on the crossbar, both faces
+    const c = document.createElement('canvas'); c.width = 256; c.height = 32; const x2 = c.getContext('2d'); x2.fillStyle = '#F2EDE2'; x2.fillRect(0, 0, 256, 32); x2.fillStyle = '#008751'; x2.font = '800 22px Inter, system-ui, sans-serif'; x2.textAlign = 'center'; x2.textBaseline = 'middle'; x2.fillText('WELCOME TO ABUJA', 128, 17);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    for (const z of [-3.31, 3.31]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(span * 1.6, 2.2), new THREE.MeshStandardMaterial({ map: t, roughness: 0.6 })); p.position.set(0, 21, z); if (z < 0) p.rotation.y = Math.PI; g.add(p); }
+    this.placeAlong(g, best, 0); this.scene.add(g);
+    this.landmarkAt.push({ s: best, name: 'City Gate' });
   }
   /** Guard rails where the track edge stops you: red and white Armco panels, one draw call. */
   buildBarriers() {

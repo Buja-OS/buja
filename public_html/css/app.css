@@ -349,7 +349,6 @@ body.kart-on .tabbar{display:none}
 .kart-callout.up{background:rgba(46,125,30,.9)} .kart-callout.down{background:rgba(217,45,32,.9)}
 .kart-lines{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .25s;background:repeating-conic-gradient(from 0deg at 50% 45%,rgba(255,255,255,.0) 0deg 5deg,rgba(255,255,255,.16) 5.5deg 6deg);-webkit-mask:radial-gradient(circle at 50% 45%,transparent 32%,#000 70%);mask:radial-gradient(circle at 50% 45%,transparent 32%,#000 70%)}
 .kart-lines.on{opacity:1}
-.kart-tiltmode #kl,.kart-tiltmode #kr{visibility:hidden}
 /* Sideways: controls in the corners under your thumbs, a slimmer top bar */
 @media (orientation: landscape) and (max-height: 520px){
   .kart-hud{padding-left:56px;top:calc(8px + var(--safe-t,0px))}
@@ -393,7 +392,6 @@ body.kart-on .kart-stage{width:100vw;height:100vh;height:100dvh}
 .kart-speed{bottom:calc(84px + var(--safe-b,0px))}
 .kart-item{right:50%;transform:translateX(50%);bottom:calc(158px + var(--safe-b,0px))}
 .kart-pad{display:none}
-.kart-tiltmode .kart-steer{visibility:hidden}
 @media (orientation: landscape) and (max-height: 520px){
   .kart-steer{height:min(46vh,190px);width:min(18vw,150px);bottom:calc(12px + var(--safe-b,0px))}
   .kart-mid{bottom:calc(10px + var(--safe-b,0px))} .kart-mid button{width:54px;height:54px}
@@ -410,3 +408,29 @@ body.kart-on .kart-stage{width:100vw;height:100vh;height:100dvh}
 .kart-driver.on{box-shadow:inset 0 0 0 3px var(--c);background:color-mix(in srgb,var(--c) 14%,var(--card))}
 .kart-place{display:flex;align-items:center;justify-content:center;gap:10px}
 .kart-face{width:84px;height:84px;border-radius:42px;object-fit:cover;box-shadow:0 0 0 4px var(--c)}
+
+/* Buja Kart controls v3 (Phase 35): solid buttons (no blur over the 3D canvas: some Android GPUs stop drawing blurred
+   layers after a rotation), each column on its own layer above the game. Right thumb: GAS and steer right.
+   Left thumb: BRAKE and steer left. */
+.kart-col{position:absolute;bottom:calc(10px + var(--safe-b,0px));display:flex;flex-direction:column;gap:8px;z-index:6;transform:translateZ(0);will-change:transform}
+.kart-col-l{left:calc(8px + var(--safe-l,0px))}
+.kart-col-r{right:calc(8px + var(--safe-r,0px));align-items:flex-end}
+.kart-col .kart-steer{position:static;width:min(30vw,128px);height:min(19vh,150px);background:rgba(16,16,20,.42);backdrop-filter:none;-webkit-backdrop-filter:none;border-radius:24px}
+.kart-pedal{width:min(30vw,128px);height:min(9vh,62px);border:none;border-radius:18px;color:#fff;font:900 15px Inter,system-ui;letter-spacing:1px;box-shadow:inset 0 0 0 2px rgba(255,255,255,.55);touch-action:none;-webkit-user-select:none;user-select:none}
+.kart-gas{background:rgba(46,125,30,.78)} .kart-gas.on{background:#3FB02A}
+.kart-brake{background:rgba(160,30,24,.7)} .kart-brake.on{background:#D92D20}
+.kart-autogas .kart-gas{display:none}
+.kart-mid{z-index:6;transform:translateX(-50%) translateZ(0)}
+.kart-mid button{background:rgba(16,16,20,.42);backdrop-filter:none;-webkit-backdrop-filter:none}
+.kart-mid .kart-drift{background:rgba(255,122,26,.7);width:70px;height:70px;font-size:28px}
+.kart-speed{bottom:calc(92px + var(--safe-b,0px));z-index:5}
+.kart-item{bottom:calc(172px + var(--safe-b,0px));z-index:6}
+.kart-tiltmode .kart-steer{opacity:.55}
+@media (orientation: landscape) and (max-height: 520px){
+  .kart-col{bottom:calc(8px + var(--safe-b,0px));gap:6px}
+  .kart-col .kart-steer{width:min(17vw,140px);height:min(40vh,150px)}
+  .kart-pedal{width:min(17vw,140px);height:min(17vh,60px);font-size:14px}
+  .kart-mid{bottom:calc(8px + var(--safe-b,0px))} .kart-mid .kart-drift{width:60px;height:60px}
+  .kart-speed{bottom:calc(76px + var(--safe-b,0px))}
+  .kart-item{bottom:calc(140px + var(--safe-b,0px))}
+}
