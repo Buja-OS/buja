@@ -96,7 +96,7 @@ async function render() {
   el.className = 'screen screen-enter' + (r.tabs ? '' : ' no-tabs');
   let html;
   try { html = await r.render(params); }
-  catch (err) { html = null; if (seq !== renderSeq) return; el.innerHTML = `${topbar('', '/home')}<div class="placeholder"><div class="mi card">${icon('triangle-exclamation')}</div><div class="h-md">${h((err && err.message) || 'Something went wrong')}</div><a class="btn btn-ink" href="#/home" style="width:auto">Go home</a></div>`; }
+  catch (err) { html = null; if (seq !== renderSeq) return; el.innerHTML = `${topbar('', '/home')}<div class="placeholder"><div class="mi card">${icon('triangle-exclamation')}</div><div class="h-md">${h(friendlyError(err))}</div><a class="btn btn-ink" href="#/home" style="width:auto">Go home</a></div>`; }
   if (seq !== renderSeq) return;
   if (html !== null) el.innerHTML = html;
   app.innerHTML = '';
@@ -515,7 +515,7 @@ async function offerPasskey() {
 
 function failed(el, err) {
   if (err && err.fields) { showErrors(el, err.fields); return; }
-  toast((err && err.message) || 'Something went wrong. Please try again.');
+  toast(friendlyError(err));
 }
 
 /* Google Identity Services. Needs google_client_id in api/config.php and a <meta name="google-client-id"> on the page.
@@ -622,6 +622,14 @@ function showOffer(o) {
   });
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pollOffers(); });
+
+/** A sentence for every refusal, used when the server gives only a code. "Something went wrong" is the last resort. */
+function friendlyError(err) {
+  if (err && err.message) return err.message;
+  const code = err && err.error;
+  return ({ forbidden: 'This page is only for the people it belongs to.', unauthenticated: 'Please sign in to see this.', not_found: 'That is not here any more.',
+    locked: 'Finish the step before this one first.', rate_limited: 'Too many tries. Wait a minute and try again.', offline: 'You are offline. Check your connection.' })[code] || 'Something went wrong. Please try again.';
+}
 
 /* ---------------- Boot ---------------- */
 (async function boot() {

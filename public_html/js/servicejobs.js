@@ -289,7 +289,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
   const STATUS = { requested: ['Waiting for a reply', '#B7791F'], accepted: ['Accepted', '#1F5FBF'], enroute: ['On the way', '#2E7D1E'], arrived: ['Arrived', '#2E7D1E'], done: ['Done', '#6B6B73'], declined: ['Declined', '#D92D20'], cancelled: ['Cancelled', '#6B6B73'], expired: ['No reply', '#6B6B73'] };
   route('/jobs', { auth: true, tabs: '' }, async () => {
     try { const r = await api.me(); state.user = r.user; } catch {}
-    const { jobs } = await api.jobs();
+    const { jobs } = await api.serviceJobs();
     const art = state.user.artisan;
     return `${topbar('My jobs', '/me', `<a class="iconbtn" href="#/artisans/map?trade=mechanic" aria-label="Find someone">${icon('map-location-dot')}</a>`)}<main class="pad stack" style="gap:10px">
       ${art ? `<div class="card row" style="padding:14px;gap:12px;border:2px solid ${art.available ? 'var(--green)' : 'var(--line)'}"><div class="grow"><div style="font-size:16px;font-weight:800">${art.available ? 'You are online' : 'You are offline'}</div><div class="small muted">${art.available ? 'Breakdowns near you will ring your phone.' : 'You will not get new jobs until you switch on.'}</div></div>
@@ -313,7 +313,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
     async mount(el, { id }) {
       const screen = el.querySelector('.bm-screen'); const box = el.querySelector('#map'); const pill = el.querySelector('#pill');
       const sheet = bottomSheet(screen, { peek: 190, half: 0.42, start: 'half' });
-      let job; try { job = (await api.job(id)).job; } catch (err) { sheet.body.innerHTML = `<div class="small" style="color:#D92D20;padding:10px 0">${h((err && err.message) || 'Could not load this job')}</div>`; return; }
+      let job; try { job = (await api.serviceJob(id)).job; } catch (err) { sheet.body.innerHTML = `<div class="small" style="color:#D92D20;padding:10px 0">${h((err && err.message) || 'Could not load this job')}</div>`; return; }
       const map = await createMap(box, { center: [job.place.lng, job.place.lat], zoom: 14 });
       if (!map) box.innerHTML = `<div class="placeholder" style="height:100%;padding-top:90px"><div class="small muted">Map unavailable on this phone. Status updates below still work.</div></div>`;
       else {
@@ -451,7 +451,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       /* Both sides poll every 4 s while this screen is open and visible. */
       const tick = async () => {
         if (!alive) return; if (gone()) { alive = false; stopSharing(); return; }
-        if (!document.hidden) { try { const r = await api.job(id); draw(r.job); if (JSON.stringify(r.job) !== JSON.stringify(job) || sheet.body.querySelector('#rs') == null) { if (!sheet.body.querySelector('#rs') && !(document.activeElement && ['qamt', 'qnote'].includes(document.activeElement.id))) render(r.job); else job = r.job; } } catch {} }
+        if (!document.hidden) { try { const r = await api.serviceJob(id); draw(r.job); if (JSON.stringify(r.job) !== JSON.stringify(job) || sheet.body.querySelector('#rs') == null) { if (!sheet.body.querySelector('#rs') && !(document.activeElement && ['qamt', 'qnote'].includes(document.activeElement.id))) render(r.job); else job = r.job; } } catch {} }
         timer = setTimeout(tick, job && job.status === 'enroute' ? 3000 : 4000); // quicker while someone is on the way
       };
       draw(job); render(job);
