@@ -8,6 +8,13 @@ const ROAD_W = 16;                     // metres
 const MAX_V = 36, OFF_V = 15, BOOST_V = 46; // m/s
 let SAMPLES = 600;                    // set from the real circuit when it loads (one point every 4 m)
 const CIRCUIT_URL = '/assets/kart/abuja-circuit.json';
+const DRIVERS = {
+  green:  { name: 'Amaka', colour: '#1E9E55', skill: 1.0 },
+  red:    { name: 'Tunde', colour: '#E0342B', skill: 0.99 },
+  yellow: { name: 'Ngozi', colour: '#F2B51C', skill: 0.97 },
+  blue:   { name: 'Musa',  colour: '#2459D6', skill: 0.95 },
+};
+const myDriver = () => { try { const d = localStorage.getItem('buja_kart_driver'); return DRIVERS[d] ? d : 'green'; } catch { return 'green'; } };
 const TEX = '/assets/kart/';
 const BOOSTS = [0.1, 0.33, 0.52, 0.8];
 
@@ -21,8 +28,9 @@ export function registerKart({ route, go, state, api, ui, failed }) {
     const b = await api.kartBoard({ span: 'week' }).catch(() => ({ rows: [], me: null }));
     return `${topbar('Buja Kart', '/home', `<a class="iconbtn" href="#/kart/board" aria-label="Leaderboard">${icon('star')}</a>`)}
     <main class="pad stack" style="gap:14px">
-      <div class="kart-hero"><div class="kart-hero-sky"></div><div class="kart-hero-rock"></div><div class="kart-hero-dome"></div><div class="kart-hero-road"></div>
-        <div class="kart-hero-text"><div class="kart-logo">BUJA <span>KART</span></div><div>Race round Eagle Square, the National Mosque, NNPC Towers and Aso Rock.</div></div></div>
+      <div class="kart-hero kart-hero-art"><img src="/assets/kart/hero.jpg" alt="Buja Kart: racing past the City Gate, the National Mosque and Aso Rock"><div class="kart-hero-text"><div class="kart-logo">BUJA <span>KART</span></div><div>Race round Eagle Square, the National Mosque, NNPC Towers and Aso Rock.</div></div></div>
+      <div class="card stack" style="padding:12px 14px;gap:10px"><div class="h-sm">Choose your driver</div>
+        <div class="kart-drivers">${Object.entries(DRIVERS).map(([id, d]) => `<button class="kart-driver ${myDriver() === id ? 'on' : ''}" data-driver="${id}" style="--c:${d.colour}"><img src="/assets/kart/driver-${id}.jpg" alt=""><b>${d.name}</b></button>`).join('')}</div></div>
       ${b.me ? `<div class="card row" style="padding:12px 14px;gap:10px"><span style="font-size:22px">🏁</span><div class="grow"><div style="font-weight:700">Your best lap this week: ${fmt(b.me.best)}</div><div class="small muted">${b.me.rank ? ord(b.me.rank) + ' in Abuja this week' : 'Set a time to get on the board'}</div></div><a class="btn btn-sm btn-outline" href="#/kart/board" style="width:auto">Board</a></div>` : ''}
       <button class="kart-btn kart-btn-go" data-go="/kart/play?mode=bots"><b>Race</b><span>Three Abuja drivers, item boxes: 🌶️ pepper, 🍌 banana, 🥤 zobo, ⚡ NEPA</span></button>
       <button class="kart-btn" data-go="/kart/play?mode=solo"><b>Time trial</b><span>Beat your own ghost, lap after lap</span></button>
@@ -36,11 +44,12 @@ export function registerKart({ route, go, state, api, ui, failed }) {
         ${[['buja_kart_orient', 'Screen', [['portrait', 'Upright'], ['landscape', 'Sideways']], 'portrait'], ['buja_kart_steer', 'Steering', [['buttons', 'Buttons'], ['tilt', 'Tilt the phone']], 'buttons'], ['buja_kart_sfx', 'Sound effects', [['1', 'On'], ['0', 'Off']], '1'], ['buja_kart_music', 'Music', [['1', 'On'], ['0', 'Off']], '1']].map(([key, label, opts, def]) => { const cur = (() => { try { return localStorage.getItem(key) || def; } catch { return def; } })(); return `<div class="row" style="gap:10px"><div class="grow" style="font-weight:600">${label}</div><select class="input" data-set="${key}" style="width:auto;height:38px">${opts.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`; }).join('')}
       </div>
       <div class="small muted" style="line-height:1.5">The circuit follows real central Abuja streets (Independence Avenue, Herbert Macaulay Way, Sani Abacha Way, Tafawa Balewa Way), compressed for a raceable lap. Road data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, ODbL. Engine and drive-by sounds recorded by alex_jauk and kontraa.</div>
-      <div class="small muted" style="line-height:1.5">Controls: tap the left and right halves of the bottom bar to steer. The kart drives itself forward; hold 🔥 while turning to drift, and let go for a boost. Drive through a ? box for an item, then tap it to use it (E on a keyboard). On a keyboard: arrow keys and space.</div>
+      <div class="small muted" style="line-height:1.5">Controls: ◀ on the left edge and ▶ on the right edge steer, one thumb each. Hold a turn at speed and you drift automatically; let go for a boost (or hold 🔥). The kart drives itself forward; hold 🔥 while turning to drift, and let go for a boost. Drive through a ? box for an item, then tap it to use it (E on a keyboard). On a keyboard: arrow keys and space.</div>
     </main>`;
   }, {
     mount(el) {
       el.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
+      el.querySelectorAll('[data-driver]').forEach((b) => b.addEventListener('click', () => { try { localStorage.setItem('buja_kart_driver', b.dataset.driver); } catch {} el.querySelectorAll('[data-driver]').forEach((x) => x.classList.toggle('on', x === b)); toast(DRIVERS[b.dataset.driver].name + ' is ready'); }));
       el.querySelector('#gfx')?.addEventListener('change', (e) => { try { localStorage.setItem('buja_kart_gfx', e.target.value); } catch {} toast('Graphics: ' + e.target.value); });
       el.querySelectorAll('[data-set]').forEach((s) => s.addEventListener('change', (e) => { try { localStorage.setItem(s.dataset.set, e.target.value); } catch {} }));
       el.querySelector('#newroom').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.kartNewRoom({ track: 'abuja' }); go('/kart/room/' + r.code); } catch (err) { busy(b, false); failed(el, err); } });
@@ -119,7 +128,8 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       <div class="kart-pause" id="pausebox"></div>
       <button class="kart-chatbtn" id="chatbtn" aria-label="Chat" style="display:none">${icon('message')}</button>
       <div class="kart-speed"><b id="spd">0</b><span>km/h</span><i id="boostbar"></i></div>
-      <div class="kart-pad"><button id="kl" aria-label="Steer left">◀</button><button id="kr" aria-label="Steer right">▶</button><div class="grow"></div><button id="kb" aria-label="Brake">■</button><button id="kd" class="kart-drift" aria-label="Drift and boost">🔥</button></div>
+      <button class="kart-steer kart-steer-l" id="kl" aria-label="Steer left">◀</button><button class="kart-steer kart-steer-r" id="kr" aria-label="Steer right">▶</button>
+      <div class="kart-mid"><button id="kb" aria-label="Brake">■</button><button id="kd" class="kart-drift" aria-label="Drift and boost">🔥</button></div>
       <div class="kart-chatbox" id="chatbox"></div>
       <div class="kart-result" id="result"></div>
     </div>`, {
@@ -179,13 +189,13 @@ class Race {
     this.audio.wake();
     if (((() => { try { return localStorage.getItem('buja_kart_orient'); } catch { return null; } })()) === 'landscape') this.setLandscape(true, true);
     if (this.steerMode === 'tilt') this.enableTilt(true);
-    this.player = this.makeKart('#FF5A00', true);
+    this.driver = myDriver(); this.player = this.makeKart(DRIVERS[this.driver].colour, true);
     this.resize(); this._onResize = () => this.resize(); window.addEventListener('resize', this._onResize);
     this.bindControls();
     this.placeOnGrid(this.player, 0);
     this.minimap();
 
-    if (this.mode === 'bots') this.bots = [['Musa', '#1F5FBF', 0.95], ['Ngozi', '#2E7D1E', 0.985], ['Tunde', '#7A3E96', 1.0]].map(([n, c, skill], i) => { const k = this.makeKart(c); k.name = n; k.skill = skill; k.lane = (i - 1) * 4; this.placeOnGrid(k, i + 1); k.v = 0; k.s = k.startS; k.lap = 1; return k; });
+    if (this.mode === 'bots') this.bots = Object.entries(DRIVERS).filter(([id]) => id !== this.driver).map(([id, d]) => [d.name, d.colour, d.skill]).map(([n, c, skill], i) => { const k = this.makeKart(c); k.name = n; k.skill = skill; k.lane = (i - 1) * 4; this.placeOnGrid(k, i + 1); k.v = 0; k.s = k.startS; k.lap = 1; return k; });
     else this.bots = [];
     if (this.mode === 'solo') { try { const g = (await this.api.kartGhost({ who: this.ghostWho })).ghost; if (g && g.path && g.path.length > 10) { this.ghost = { ...g, kart: this.makeKart('#FFFFFF', false, true) }; this.toast('Racing ' + g.name + ': ' + this.fmt(g.lapMs)); } } catch {} }
     if (this.mode === 'room') { this.el.querySelector('#chatbtn').style.display = ''; this.bindChat(); await this.syncRoom(true); }
@@ -410,7 +420,9 @@ class Race {
     const pods = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.28, 1.2), paint); pods.position.set(0, 0.42, -0.1); g.add(pods);
     const wing = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.08, 0.45), dark); wing.position.set(0, 1.18, -1.5); g.add(wing); [-0.8, 0.8].forEach((x) => { const s = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 0.3), dark); s.position.set(x, 1.0, -1.5); g.add(s); });
     const seat = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.55, 0.6), dark); seat.position.set(0, 0.95, -0.55); g.add(seat);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.33, 20, 14), ghost ? paint : new THREE.MeshStandardMaterial({ color: '#F2F2F2', metalness: 0.1, roughness: 0.15 })); head.position.set(0, 1.5, -0.4); g.add(head);
+    const stripe = ghost ? null : new THREE.Mesh(new THREE.TorusGeometry(0.335, 0.045, 6, 24, Math.PI), new THREE.MeshStandardMaterial({ color: '#F1E6CC', roughness: 0.3 }));
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.33, 20, 14), ghost ? paint : new THREE.MeshStandardMaterial({ color: colour, metalness: 0.2, roughness: 0.15 })); head.position.set(0, 1.5, -0.4); g.add(head);
+    if (stripe) { stripe.position.set(0, 1.5, -0.4); stripe.rotation.y = Math.PI / 2; g.add(stripe); }
     const visor = new THREE.Mesh(new THREE.SphereGeometry(0.335, 20, 10, -0.9, 1.8, 1.1, 0.8), ghost ? paint : new THREE.MeshStandardMaterial({ color: '#0E1116', metalness: 0.9, roughness: 0.05 })); visor.position.copy(head.position); g.add(visor);
     const wg = new THREE.CylinderGeometry(0.4, 0.4, 0.36, 18); wg.rotateZ(Math.PI / 2); const rg = new THREE.CylinderGeometry(0.22, 0.22, 0.38, 10); rg.rotateZ(Math.PI / 2);
     g.wheels = [[-0.95, 1.1], [0.95, 1.1], [-0.98, -1.1], [0.98, -1.1]].map(([x, z]) => { const w = new THREE.Group(); w.add(new THREE.Mesh(wg, tyre), new THREE.Mesh(rg, rim)); w.position.set(x, 0.4, z); g.add(w); return w; });
@@ -506,9 +518,12 @@ class Race {
     }
     if (this.paused) { this.audio.update(0, false, false, false, true); this.renderer.render(this.scene, this.camera); requestAnimationFrame(this.loop); return; }
     if (this.phase === 'race' || this.phase === 'done') {
+      // automatic drift: a turn held for half a second at speed, timed in real time so slow phones behave like fast ones
+      if ((this.input.l || this.input.r) && this.player.v > 17) this._steerSince = this._steerSince || now; else this._steerSince = 0;
+      const autoDrift = !!this._steerSince && now - this._steerSince > 450;
       const steer = this.steerMode === 'tilt' ? Math.max(-1, Math.min(1, this.tilt)) : (this.input.l ? 1 : 0) - (this.input.r ? 1 : 0);
       if (this.phase === 'race') {
-        const on = this.drive(this.player, dt, steer, this.input.brake, this.input.drift);
+        const on = this.drive(this.player, dt, steer, this.input.brake, this.input.drift || autoDrift);
         this.recording.push([Math.round(this.player.position.x * 10) / 10, Math.round(this.player.position.z * 10) / 10, Math.round(this.player.h * 100) / 100]);
         if (this.player.lapEvent) this.completeLap(now);
         this.nearLandmark(on.i);
@@ -577,7 +592,7 @@ class Race {
     try { saved = await this.api.kartSaveTime({ track: 'abuja', lapMs: this.bestLap, raceMs, mode: this.mode, ghost: this.bestPath }); } catch {}
     if (this.mode === 'room') { try { await this.api.kartFinish(this.code, raceMs); } catch {} }
     const r = this.el.querySelector('#result');
-    r.innerHTML = `<div class="kart-card"><div class="kart-place">${this.mode === 'solo' ? '🏁' : place === 1 ? '🏆' : '🏁'}</div>
+    r.innerHTML = `<div class="kart-card"><div class="kart-place"><img class="kart-face" src="/assets/kart/driver-${this.driver}.jpg" alt="" style="--c:${DRIVERS[this.driver].colour}"><span>${this.mode === 'solo' ? '🏁' : place === 1 ? '🏆' : '🏁'}</span></div>
       <div class="kart-big">${this.mode === 'solo' ? 'Race complete' : this.ord(place) + ' place'}</div>
       <div class="kart-row"><span>Race</span><b>${this.fmt(raceMs)}</b></div><div class="kart-row"><span>Best lap</span><b>${this.fmt(this.bestLap)}</b></div>
       ${saved ? `<div class="kart-row"><span>Abuja ranking, all time</span><b>${this.ord(saved.rank)}</b></div>${saved.personalBest ? '<div class="kart-pb">New personal best!</div>' : `<div class="kart-sub">Your best: ${this.fmt(saved.previousBest)}</div>`}` : ''}
