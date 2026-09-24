@@ -1,7 +1,11 @@
 // Buja API client. Talks to /api on your hosting.
 // If the API is unreachable (for example in the design preview), it falls back to a local mock
 // so the whole flow can still be tapped through. The mock never leaves this device.
-const HEADERS = { 'Content-Type': 'application/json', 'X-Buja-Client': 'pwa' };
+/** Inside the Play Store app, Android launches Buja with an android-app:// referrer. Remembered for this session only:
+ *  the app and the phone's Chrome share storage, and Plus must stay available in the browser. */
+export const inAndroidApp = (() => { try { if (document.referrer.startsWith('android-app://')) sessionStorage.setItem('buja_shell', 'android'); return sessionStorage.getItem('buja_shell') === 'android'; } catch { return false; } })();
+if (inAndroidApp) { try { document.documentElement.classList.add('in-android-app'); window.BUJA_ANDROID = true; } catch {} }
+const HEADERS = { 'Content-Type': 'application/json', 'X-Buja-Client': 'pwa', ...(inAndroidApp ? { 'X-Buja-Shell': 'android' } : {}) };
 let mock = (typeof window !== 'undefined' && window.BUJA_MOCK === true);
 
 async function request(method, path, body) {

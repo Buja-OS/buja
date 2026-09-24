@@ -10,6 +10,8 @@ export function registerTrust({ route, go, state, setState, api, ui, failed }) {
     const paid = new URLSearchParams(location.hash.split('?')[1] || '').get('paid');
     if (paid === '1') { try { const r = await api.me(); setState({ user: r.user }); } catch {} setTimeout(() => toast('Buja Plus is on. Thank you.'), 100); }
     if (paid === '0') setTimeout(() => toast('The payment did not go through.'), 100);
+    if (window.BUJA_ANDROID) return `${topbar('Buja Plus', '/me')}<main class="pad stack" style="gap:16px"><div class="card dark stack" style="padding:20px;gap:12px"><span style="font-size:12px;font-weight:700;letter-spacing:2px;color:#7ED957">BUJA PLUS</span>
+      ${s.plus.active ? `<div style="font-size:18px;font-weight:700">Active until ${new Date(s.plus.until.replace(' ', 'T') + 'Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div><div class="small" style="color:#B5B5BC">Everything in Buja Plus works here: who liked you, five super likes a day, invisible mode.</div>` : `<div style="font-size:15px;line-height:1.5">Buja Plus isn't available to buy in this app.</div>`}</div></main>`;
     return `${topbar('Buja Plus', '/me')}
     <main class="pad stack" style="gap:16px">
       <div class="card dark stack" style="padding:20px;gap:12px">

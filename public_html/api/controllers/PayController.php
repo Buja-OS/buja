@@ -18,6 +18,8 @@ final class PayController
     /** POST /pay/plus : start a Buja Plus payment, returns the Paystack page to open */
     public function plus(): void
     {
+        // Google Play requires its own billing for subscriptions sold inside Play apps, so the Android app never sells Plus.
+        if (($_SERVER['HTTP_X_BUJA_SHELL'] ?? '') === 'android') Http::json(['error' => 'forbidden', 'message' => "Buja Plus isn't available to buy in this app."], 403);
         $u = Auth::require(); RateLimit::hit('pay', 10, 3600);
         if ((string) Http::config('paystack_secret', '') === '') Http::json(['error' => 'unavailable', 'message' => 'Payments are not switched on yet.'], 409);
         if (empty($u['email'])) Http::json(['error' => 'validation', 'message' => 'Add an email to your account first.'], 422);
@@ -59,6 +61,7 @@ final class PayController
         $raw = file_get_contents('php://input') ?: '';
         if (!Paystack::webhookValid($raw, $_SERVER['HTTP_X_PAYSTACK_SIGNATURE'] ?? '')) { http_response_code(401); exit; }
         $j = json_decode($raw, true);
+        try { Db::run("DELETE FROM app_keys WHERE k = 'paystack_webhook_last'"); Db::run("INSERT INTO app_keys (k, v) VALUES ('paystack_webhook_last', ?)", [Db::now() . ' ' . (string) ($j['event'] ?? '')]); } catch (Throwable $e) {}
         if (($j['event'] ?? '') === 'charge.success' && !empty($j['data']['reference'])) { $r = (string) $j['data']['reference']; if (str_starts_with($r, 'BJT-')) TicketController::settle($r); elseif (str_starts_with($r, 'BJE-')) EscrowController::settle($r); else $this->settle($r); }
         if (str_starts_with((string) ($j['event'] ?? ''), 'transfer.') && is_array($j['data'] ?? null)) EscrowController::transferEvent((string) $j['event'], $j['data']);
         http_response_code(200); echo 'ok'; exit;

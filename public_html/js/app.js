@@ -338,7 +338,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
       <a class="item" href="#/install"><div class="mi">${icon('plus')}</div><div class="grow"><div class="t">Install Buja</div><div class="s">Put it on your home screen</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/safety"><div class="mi">${icon('location-dot')}</div><div class="grow"><div class="t">Trip Share</div><div class="s">Tell a friend where you are when you go out</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/verify"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">Verification</div><div class="s">${u.selfieVerified ? 'Selfie verified' : 'Get the verified badge'}</div></div>${icon('chevron-right')}</a>
-      ${u.kind === 'company' ? '' : `<a class="item" href="#/plus"><div class="mi">${icon('bolt')}</div><div class="grow"><div class="t">Buja Plus</div><div class="s">${u.plus ? 'Active' : 'See who liked you, five super likes a day'}</div></div>${icon('chevron-right')}</a>`}
+      ${u.kind === 'company' || (window.BUJA_ANDROID && !u.plus) ? '' : `<a class="item" href="#/plus"><div class="mi">${icon('bolt')}</div><div class="grow"><div class="t">Buja Plus</div><div class="s">${u.plus ? 'Active' : 'See who liked you, five super likes a day'}</div></div>${icon('chevron-right')}</a>`}
       <a class="item" href="#/settings"><div class="mi">${icon('gear')}</div><div class="grow"><div class="t">Settings</div><div class="s">Appearance, notifications, privacy</div></div>${icon('chevron-right')}</a>
       <button class="item" data-logout><div class="mi">${icon('right-from-bracket')}</div><div class="grow"><div class="t">Sign out</div><div class="s">On this device</div></div></button>
     </div>

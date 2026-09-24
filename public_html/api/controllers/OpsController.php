@@ -53,6 +53,35 @@ final class OpsController
             ['id' => 'origin', 'title' => 'App address', 'ok' => !str_contains((string) Http::config('app_origin'), 'onrender.com'), 'detail' => (string) Http::config('app_origin'), 'fix' => 'A .com.ng domain makes Buja look like a product and keeps email out of spam. Point it at Render, then change APP_ORIGIN and the Google origin.', 'weight' => 1],
             ['id' => 'content', 'title' => 'Enough to look alive', 'ok' => (int) ($one("SELECT COUNT(*) AS n FROM jobs WHERE status = 'open'")['n'] ?? 0) >= 10 && (int) ($one("SELECT COUNT(*) AS n FROM properties WHERE status = 'available'")['n'] ?? 0) >= 5, 'detail' => (int) ($one("SELECT COUNT(*) AS n FROM jobs WHERE status = 'open'")['n'] ?? 0) . ' open jobs, ' . (int) ($one("SELECT COUNT(*) AS n FROM properties WHERE status = 'available'")['n'] ?? 0) . ' homes, ' . (int) ($one("SELECT COUNT(*) AS n FROM listings WHERE status = 'active'")['n'] ?? 0) . ' items, ' . (int) ($one("SELECT COUNT(*) AS n FROM meetups WHERE status = 'live' AND starts_at > ?", [Db::now()])['n'] ?? 0) . ' events, ' . (int) ($one('SELECT COUNT(*) AS n FROM artisans')['n'] ?? 0) . ' artisans', 'fix' => 'An empty app tells a new user to leave. Ten real jobs and five real homes before the first invite.', 'weight' => 3],
         ];
+        // Tables from recent migrations: tried one by one, so the checklist says which migration still needs running.
+        $has = function (string $sql): bool { try { Db::one($sql); return true; } catch (Throwable $e) { return false; } };
+        $m036 = $has('SELECT 1 FROM friendships LIMIT 1') && $has('SELECT 1 FROM saved_artisans LIMIT 1') && $has('SELECT 1 FROM kart_profiles LIMIT 1') && $has('SELECT preferred_artisan_id FROM service_jobs LIMIT 1');
+        $m037 = $has('SELECT 1 FROM escrow_orders LIMIT 1') && $has('SELECT 1 FROM payout_accounts LIMIT 1') && $has('SELECT 1 FROM payouts LIMIT 1');
+        $checks[] = ['id' => 'migrations', 'title' => 'Database up to date', 'ok' => $m036 && $m037, 'weight' => 3,
+            'detail' => ($m036 && $m037) ? 'Migrations 036 (friends, saved mechanics, garage) and 037 (escrow) are in.' : 'Missing: ' . implode(' and ', array_filter([$m036 ? '' : '036 (friends, saved mechanics, garage)', $m037 ? '' : '037 (escrow)'])) . '.',
+            'fix' => 'In TiDB Cloud, SQL Editor: run the missing migration file from the migrations folder on GitHub.'];
+        $wh = $one('SELECT v FROM app_keys WHERE k = ?', ['paystack_webhook_last']);
+        $mock = (bool) Http::config('paystack_mock');
+        $checks[] = ['id' => 'webhook', 'title' => 'Paystack webhook arriving', 'ok' => (bool) $wh, 'weight' => 2,
+            'detail' => $wh ? 'Last received ' . $wh['v'] . ' UTC.' : ($mock ? 'Not yet: payments are in mock mode, so Paystack is not calling.' : 'Paystack has not called Buja yet. Without it, a payment made while someone loses signal may never be credited.'),
+            'fix' => 'Paystack dashboard, Settings, API Keys and Webhooks: set the webhook URL to ' . Http::config('app_origin') . '/api/pay/webhook'];
+        if ($m037) {
+            $owed = $one("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS s FROM payouts WHERE status IN ('queued','failed','sending')");
+            $disputes = (int) ($one("SELECT COUNT(*) AS n FROM escrow_orders WHERE status = 'disputed'")['n'] ?? 0);
+            $checks[] = ['id' => 'escrow', 'title' => 'Escrow up to date', 'ok' => (int) $owed['n'] === 0 && $disputes === 0, 'weight' => 2,
+                'detail' => ((int) $owed['n'] ? (int) $owed['n'] . ' seller payout' . ((int) $owed['n'] === 1 ? '' : 's') . ' waiting, ₦' . number_format((int) $owed['s']) . ' owed. ' : 'No payouts waiting. ') . ($disputes ? $disputes . ' problem' . ($disputes === 1 ? '' : 's') . ' to decide. ' : '') . (Http::config('paystack_transfers') ? 'Automatic transfers are on.' : 'Automatic transfers are off: pay sellers by hand, then tap Mark paid.'),
+                'fix' => 'Admin, Money, Escrow.'];
+        }
+        $fps = array_filter(array_map('trim', explode(',', (string) Http::config('android_sha256', getenv('ANDROID_SHA256') ?: ''))));
+        $pkg = (string) (Http::config('android_package', getenv('ANDROID_PACKAGE') ?: ''));
+        $checks[] = ['id' => 'android', 'title' => 'Android app opens full screen', 'ok' => $pkg !== '' && count($fps) >= 2, 'weight' => 1,
+            'detail' => $pkg === '' ? 'ANDROID_PACKAGE is not set.' : $pkg . ' with ' . count($fps) . ' signing fingerprint' . (count($fps) === 1 ? '' : 's') . '. ' . (count($fps) >= 2 ? 'Both your key and Google Play\'s are in.' : 'Add Google Play\'s app signing fingerprint once the app is uploaded, or the Play Store version shows an address bar.'),
+            'fix' => 'Play Console, Test and release, App integrity, App signing: copy the SHA-256, add it to ANDROID_SHA256 in Render after a comma.'];
+        $mech = (int) ($one("SELECT COUNT(*) AS n FROM artisans WHERE trade = 'mechanic' AND hidden_at IS NULL")['n'] ?? 0);
+        $checks[] = ['id' => 'mechanics', 'title' => 'Mechanics signed up', 'ok' => $mech >= 20, 'weight' => 2,
+            'detail' => $mech . ' mechanic' . ($mech === 1 ? '' : 's') . ' on Buja. Breakdown help needs at least 20 spread across Abuja.',
+            'fix' => 'Print the flyers (/p/mechanics/flyer?src=apo) and visit Apo, Kugbo and the Wuse mechanic villages.'];
+        $checks[] = ['id' => 'playbilling', 'title' => 'Play Store billing rules', 'ok' => true, 'weight' => 1, 'detail' => 'Buja Plus is not sold or advertised inside the Android app; members keep their benefits there.', 'fix' => ''];
         $score = 0; $max = 0; foreach ($checks as $c) { $max += $c['weight']; if ($c['ok']) $score += $c['weight']; }
         Http::json(['checks' => $checks, 'score' => $score, 'max' => $max, 'people' => ['users' => $users, 'active7' => $active7],
             'urls' => ['ping' => (string) Http::config('app_origin') . '/api/ping', 'tidy' => (string) Http::config('app_origin') . '/api/cron/tidy?key=' . ($cfg('admin_key') ? 'YOUR_ADMIN_KEY' : '…'), 'digest' => (string) Http::config('app_origin') . '/api/cron/digest?key=' . ($cfg('admin_key') ? 'YOUR_ADMIN_KEY' : '…')]]);

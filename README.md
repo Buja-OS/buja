@@ -1,4 +1,4 @@
-# Buja, Phase 35: Grand Prix, Match privacy, Declutter escrow
+# Buja, Phase 36: Play Store billing rules and live launch checks
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -726,6 +726,19 @@ seller can cancel before handover (refund). Accepted offers set the price. Selle
 bank; Buja keeps only the last four digits, Paystack holds the rest. Payouts go by Paystack transfer when
 PAYSTACK_TRANSFERS=1, otherwise they wait in Admin, Money, Escrow for you to pay and tick "Mark paid". Disputes are
 decided there too. Transfer webhooks keep payouts honest. The scheduler releases, refunds and retries every 10 minutes.
+
+## Phase 36: Play Store billing rules, live launch checks
+
+**Buja Plus stays out of the Android app.** Google Play requires its own billing for subscriptions sold inside Play
+apps, and forbids pointing people to buy elsewhere. Android launches Buja with an android-app:// referrer; the app
+remembers that for the session only (the app and the phone's Chrome share storage, and Plus must stay on sale in the
+browser) and sends X-Buja-Shell: android. In the app: no Plus entry in Me unless already a member, no Plus sales card in
+Match, a status-only Plus screen, no upsell in the super-like limit message; the server refuses Plus payments from the
+app. Members keep every benefit. The website is unchanged.
+
+**Launch checklist, live.** New checks: migrations 036 and 037 present (each table tried), the Paystack webhook actually
+arriving (recorded on every call), seller payouts and escrow problems waiting, the Android app's signing fingerprints
+(a reminder to add Google Play's), mechanics signed up (target 20), and the Play billing rule.
 
 ## What is next
 

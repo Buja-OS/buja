@@ -192,7 +192,7 @@ final class MatchController
         $b = Http::body(); $to = (int) ($b['to'] ?? 0); $action = (string) ($b['action'] ?? '');
         if (!in_array($action, ['like', 'pass', 'superlike'], true) || $to === (int) $u['id']) Http::json(['error' => 'validation', 'message' => 'Bad swipe.'], 422);
         if (!Db::one('SELECT 1 AS x FROM match_profiles WHERE user_id = ?', [$to])) Http::json(['error' => 'not_found'], 404);
-        if ($action === 'superlike' && $this->superlikesLeft((int) $u['id']) <= 0) Http::json(['error' => 'limit', 'message' => PayController::plusActive($u) ? 'You have used your five super likes for today.' : 'One super like a day on the free plan. Buja Plus gives five.'], 429);
+        if ($action === 'superlike' && $this->superlikesLeft((int) $u['id']) <= 0) Http::json(['error' => 'limit', 'message' => PayController::plusActive($u) ? 'You have used your five super likes for today.' : ((($_SERVER['HTTP_X_BUJA_SHELL'] ?? '') === 'android') ? 'One super like a day. Try again tomorrow.' : 'One super like a day on the free plan. Buja Plus gives five.')], 429);
         Db::run('DELETE FROM swipes WHERE from_user = ? AND to_user = ?', [$u['id'], $to]);
         Db::run('INSERT INTO swipes (from_user, to_user, action, created_at) VALUES (?,?,?,?)', [$u['id'], $to, $action, Db::now()]); Track::hit($u, 'match', 'swipe');
         $matched = null;
