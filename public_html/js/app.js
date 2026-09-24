@@ -125,14 +125,16 @@ route('/welcome', { guest: true }, async () => `
   </section>
   <div class="pad stack" style="padding-top:24px;padding-bottom:28px">
     <div id="gsi-welcome"></div>
+    <button class="btn btn-ink" id="pkwelcome" type="button" style="display:none;height:56px;font-size:16px"><span style="font-size:22px;display:inline-flex">${icon('fingerprint')}</span> Sign in with fingerprint</button>
     <button class="btn btn-outline" data-google>
       <span class="gmark">G</span>Continue with Google
     </button>
     <a class="btn btn-ink" href="#/signup">${icon('user')} Create an account</a>
     <a class="btn btn-ghost" href="#/signin">I already have an account</a>
+    <button class="btn btn-ghost" id="pkwelcome2" type="button" style="display:none">${icon('fingerprint')} Sign in with fingerprint</button>
     <a class="small center" href="/p/" style="display:block;color:var(--ink-2);text-decoration:underline">Look around first: jobs, homes, places and courses, no account needed</a>
     <p class="small muted center" style="margin:0;line-height:1.5">By continuing you agree to Buja's Terms and Privacy Policy. Buja is for residents of Abuja and the FCT.</p>
-  </div>`, { mount: mountGoogle });
+  </div>`, { mount(el) { mountGoogle(el); mountFingerprint(el); } });
 
 route('/signin', { guest: true }, async () => `
   ${topbar('', '/welcome')}
@@ -493,7 +495,20 @@ function kindLabel(k) { return k === 'company' ? 'Hiring' : k === 'landlord' ? '
 
 /** Where to go after signing in or finishing onboarding: back to what sent you here (a flyer, a shared link), else Home. */
 function takeNext() { let n = null; try { n = sessionStorage.getItem('buja_next'); sessionStorage.removeItem('buja_next'); } catch {} return n && n.startsWith('/') && !/^\/(welcome|signin|signup|onboarding)/.test(n) ? n : null; }
-async function signedIn(r) { setState({ user: r.user }); if (r.next === 'onboarding') { sessionStorage.setItem('buja_offer_pk', '1'); go('/onboarding'); return; } go(takeNext() || '/home'); }
+async function signedIn(r) { try { localStorage.setItem('buja_returning', '1'); } catch {} setState({ user: r.user }); if (r.next === 'onboarding') { sessionStorage.setItem('buja_offer_pk', '1'); go('/onboarding'); return; } go(takeNext() || '/home'); }
+
+/** The Welcome screen's fingerprint button: first and large for someone who has used Buja on this phone before. */
+function mountFingerprint(el) {
+  if (!passkeySupported()) return;
+  const returning = (() => { try { return localStorage.getItem('buja_returning') === '1'; } catch { return false; } })();
+  const b = el.querySelector(returning ? '#pkwelcome' : '#pkwelcome2'); if (!b) return;
+  b.style.display = '';
+  b.addEventListener('click', async () => {
+    busy(b, true);
+    try { const r = await loginWithPasskey(api, ''); await signedIn(r); }
+    catch (err) { busy(b, false); if (err && (err.name === 'NotAllowedError' || err.name === 'NotSupportedError' || err.name === 'SecurityError')) { toast('Fingerprint sign-in is not set up on this phone yet. Sign in with your password once, then turn it on in Settings.', 5000); go('/signin'); } else failed(el, err); }
+  });
+}
 
 /** Once a day, in the evening: one tap tells the city whether your area has light. */
 function lightPrompt() {

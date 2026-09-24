@@ -15,6 +15,7 @@ export async function registerPasskey(api, label) {
   const { token, options } = await api.passkeyRegisterOptions();
   const pub = { ...options, challenge: unb64u(options.challenge), user: { ...options.user, id: unb64u(options.user.id) }, excludeCredentials: (options.excludeCredentials || []).map((c) => ({ ...c, id: unb64u(c.id) })) };
   const cred = await navigator.credentials.create({ publicKey: pub });
+  try { localStorage.setItem('buja_returning', '1'); } catch {}
   return api.passkeyRegister({ token, id: cred.id, rawId: b64u(cred.rawId), label: label || defaultLabel(), response: { clientDataJSON: b64u(cred.response.clientDataJSON), attestationObject: b64u(cred.response.attestationObject) } });
 }
 
