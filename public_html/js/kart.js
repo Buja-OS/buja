@@ -35,7 +35,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       <div class="card stack" style="padding:12px 14px;gap:10px">
         ${[['buja_kart_orient', 'Screen', [['portrait', 'Upright'], ['landscape', 'Sideways']], 'portrait'], ['buja_kart_steer', 'Steering', [['buttons', 'Buttons'], ['tilt', 'Tilt the phone']], 'buttons'], ['buja_kart_sfx', 'Sound effects', [['1', 'On'], ['0', 'Off']], '1'], ['buja_kart_music', 'Music', [['1', 'On'], ['0', 'Off']], '1']].map(([key, label, opts, def]) => { const cur = (() => { try { return localStorage.getItem(key) || def; } catch { return def; } })(); return `<div class="row" style="gap:10px"><div class="grow" style="font-weight:600">${label}</div><select class="input" data-set="${key}" style="width:auto;height:38px">${opts.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`; }).join('')}
       </div>
-      <div class="small muted" style="line-height:1.5">The circuit follows real central Abuja streets (Independence Avenue, Herbert Macaulay Way, Sani Abacha Way, Tafawa Balewa Way), compressed for a raceable lap. Road data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, ODbL.</div>
+      <div class="small muted" style="line-height:1.5">The circuit follows real central Abuja streets (Independence Avenue, Herbert Macaulay Way, Sani Abacha Way, Tafawa Balewa Way), compressed for a raceable lap. Road data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, ODbL. Engine and drive-by sounds recorded by alex_jauk and kontraa.</div>
       <div class="small muted" style="line-height:1.5">Controls: tap the left and right halves of the bottom bar to steer. The kart drives itself forward; hold 🔥 while turning to drift, and let go for a boost. On a keyboard: arrow keys and space.</div>
     </main>`;
   }, {
@@ -521,6 +521,13 @@ class Race {
       // overtakes and being overtaken
       if (this.phase === 'race' && (this.bots.length || Object.keys(this.remotes).length)) { const place = this.placing(); if (this._place && place !== this._place && now - (this._placeAt || 0) > 900) { this.callout(place < this._place ? '▲ ' + this.ord(place) : '▼ ' + this.ord(place), place < this._place); this.audio.overtake(place < this._place); this._placeAt = now; } this._place = place; }
       this.el.querySelector('#lines').classList.toggle('on', P.boost > 0);
+      const others = [...this.bots, ...Object.values(this.remotes).map((r) => r.kart).filter(Boolean)];
+      for (const o of others) {
+        const dx = o.position.x - P.position.x, dz = o.position.z - P.position.z, dist = Math.hypot(dx, dz);
+        const ahead = dx * Math.sin(P.h) + dz * Math.cos(P.h), side = dx * Math.cos(P.h) - dz * Math.sin(P.h);
+        if (o._ahead != null && Math.sign(ahead) !== Math.sign(o._ahead) && dist < 9) this.audio.passBy(Math.max(-1, Math.min(1, -side / 4)), Math.abs((o.v || 0) - P.v));
+        o._ahead = ahead;
+      }
     }
     this.flagWave(now);
     this.chase(dt);
@@ -787,10 +794,30 @@ class KartAudio {
         // tyres on grass or laterite: low rumble
         this.rum = c.createGain(); this.rum.gain.value = 0; const rn = c.createBufferSource(); rn.buffer = nb; rn.loop = true; const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 180; rn.connect(lp); lp.connect(this.rum); this.rum.connect(this.sfx); rn.start();
         if (this.musicOn) this.startMusic();
+        this.loadSamples();
       }
       if (this.ctx.state === 'suspended') this.ctx.resume();
     } catch {}
   }
+  /** Real recordings: a go-kart engine loop, a drive-by and a rev. The generated engine stays as the fallback. */
+  async loadSamples() {
+    const c = this.ctx; const get = async (f) => { try { const r = await fetch(TEX + 'sfx/' + f); const data = await r.arrayBuffer(); return await new Promise((res, rej) => c.decodeAudioData(data, res, rej)); } catch { return null; } };
+    const [engine, pass, rev] = await Promise.all([get('engine.mp3'), get('pass.mp3'), get('rev.mp3')]);
+    this.bufPass = pass; this.bufRev = rev;
+    if (engine && this.ctx) {
+      this.engS = c.createGain(); this.engS.gain.value = 0; this.engS.connect(this.sfx);
+      this.engSrc = c.createBufferSource(); this.engSrc.buffer = engine; this.engSrc.loop = true; this.engSrc.connect(this.engS); this.engSrc.start();
+      this.eng.gain.setTargetAtTime(0, c.currentTime, 0.2); this.sampled = true;          // the recording takes over from the generated note
+    }
+  }
+  play(buf, { vol = 0.6, rate = 1, pan = 0 } = {}) {
+    if (!this.ctx || !buf) return false; const c = this.ctx, s = c.createBufferSource(), g = c.createGain(); s.buffer = buf; s.playbackRate.value = rate; g.gain.value = vol;
+    if (c.createStereoPanner) { const p = c.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan)); s.connect(g); g.connect(p); p.connect(this.sfx); } else { s.connect(g); g.connect(this.sfx); }
+    s.start(); return true;
+  }
+  /** A kart going past: pan follows the side it passes on, pitch follows how fast it is closing. */
+  passBy(pan, closing) { if (this._passAt && performance.now() - this._passAt < 1400) return; this._passAt = performance.now(); if (!this.play(this.bufPass, { vol: 0.55, rate: Math.max(0.8, Math.min(1.35, 1 + closing / 40)), pan })) this.tone(300, 0.5, 'sawtooth', 0.06, 0, -180); }
+  rev() { if (!this.play(this.bufRev, { vol: 0.5, rate: 1.05 })) this.tone(120, 0.6, 'sawtooth', 0.08, 0, 260); }
   setSfx(on) { this.sfxOn = on; try { localStorage.setItem('buja_kart_sfx', on ? '1' : '0'); } catch {} if (this.sfx) this.sfx.gain.setTargetAtTime(on ? 1 : 0, this.ctx.currentTime, 0.05); }
   setMusic(on) { this.musicOn = on; try { localStorage.setItem('buja_kart_music', on ? '1' : '0'); } catch {} if (!this.ctx) return; this.mus.gain.setTargetAtTime(on ? 0.22 : 0, this.ctx.currentTime, 0.1); if (on) this.startMusic(); }
   /** Called every frame: engine pitch follows speed, squeal follows drift, rumble follows grass. */
@@ -798,7 +825,8 @@ class KartAudio {
     if (!this.ctx) return; const t = this.ctx.currentTime, r = Math.min(1, v / 40);
     const f = 48 + r * 150 + (throttle ? 8 : 0); this.o1.frequency.setTargetAtTime(f, t, 0.06); this.o2.frequency.setTargetAtTime(f * 2.005, t, 0.06);
     this.engF.frequency.setTargetAtTime(380 + r * 1700 + (throttle ? 250 : 0), t, 0.08);
-    this.eng.gain.setTargetAtTime(paused ? 0 : 0.07 + r * 0.09, t, 0.1);
+    if (this.sampled) { this.engSrc.playbackRate.setTargetAtTime(0.6 + r * 0.9 + (throttle ? 0.05 : 0), t, 0.08); this.engS.gain.setTargetAtTime(paused ? 0 : 0.32 + r * 0.3, t, 0.1); }
+    else this.eng.gain.setTargetAtTime(paused ? 0 : 0.07 + r * 0.09, t, 0.1);
     this.sk.gain.setTargetAtTime(!paused && drifting && v > 12 ? 0.07 : 0, t, 0.05);
     this.rum.gain.setTargetAtTime(!paused && offroad && v > 3 ? 0.35 * r + 0.08 : 0, t, 0.08);
   }
@@ -813,8 +841,8 @@ class KartAudio {
     s.buffer = this.noiseBuf; f.type = type; f.frequency.value = freq; g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
     s.connect(f); f.connect(g); g.connect(out || this.sfx); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05);
   }
-  beep(go) { this.tone(go ? 880 : 440, go ? 0.55 : 0.22, 'square', 0.14); }
-  boost() { this.noise(0.7, 0.25, 900, 0, 'highpass'); this.tone(220, 0.6, 'sawtooth', 0.08, 0, 500); }
+  beep(go) { this.tone(go ? 880 : 440, go ? 0.55 : 0.22, 'square', 0.14); if (go) this.rev(); }
+  boost() { this.noise(0.5, 0.18, 900, 0, 'highpass'); this.rev(); }
   bump() { this.tone(90, 0.18, 'sine', 0.35, 0, -40); this.noise(0.12, 0.2, 300, 0, 'lowpass'); }
   lap() { [523, 659, 784].forEach((f, i) => this.tone(f, 0.28, 'triangle', 0.2, i * 0.11)); }
   overtake(up) { this.tone(up ? 660 : 330, 0.16, 'triangle', 0.15); this.tone(up ? 990 : 262, 0.2, 'triangle', 0.15, 0.1); }
