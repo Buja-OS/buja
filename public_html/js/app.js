@@ -9,7 +9,7 @@ import { registerTrustAlerts, ringer } from './trustalerts.js';
 import { registerEngage } from './engage.js';
 import { registerAdminShell } from './adminshell.js';
 import { afterScreen, appOpen, hideBanner } from './ads.js';
-import { passkeyAvailable, registerPasskey, loginWithPasskey } from './passkey.js';
+import { passkeyAvailable, passkeySupported, registerPasskey, loginWithPasskey } from './passkey.js';
 import { registerRtc, watchIncoming } from './rtc.js';
 
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__bujaInstall = e; });
@@ -138,8 +138,8 @@ route('/signin', { guest: true }, async () => `
   ${topbar('', '/welcome')}
   <main class="pad stack" style="gap:22px;padding-top:8px">
     <div>${markAuto(40)}<div class="h-xl" style="margin-top:16px">Welcome back</div><div class="muted" style="margin-top:4px">Sign in to pick up where you left off.</div></div>
+    <button class="btn btn-ink" id="pkbtn" type="button" style="display:none;height:56px;font-size:16px"><span style="font-size:22px;display:inline-flex">${icon('fingerprint')}</span> Sign in with fingerprint</button>
     <button class="btn btn-outline" data-google><span class="gmark">G</span>Continue with Google</button>
-    <button class="btn btn-outline" id="pkbtn" type="button" style="display:none">${icon('shield-halved')} Sign in with fingerprint</button>
     <div class="divider">OR</div>
     <form id="f" class="stack" style="gap:16px" novalidate>
       ${field({ id: 'identifier', label: 'Email or phone', placeholder: 'you@example.com or 0803 000 0000', autocomplete: 'username' })}
@@ -154,7 +154,8 @@ route('/signin', { guest: true }, async () => `
   </main>`, {
   mount(el) {
     mountGoogle(el); bindEyes(el); clearOnInput(el);
-    passkeyAvailable().then((ok) => { const b = el.querySelector('#pkbtn'); if (ok && b) { b.style.display = ''; b.addEventListener('click', async () => { busy(b, true); try { const r = await loginWithPasskey(api, el.querySelector('#identifier')?.value || ''); await signedIn(r); } catch (err) { busy(b, false); if (err && err.name === 'NotAllowedError') toast('No fingerprint sign-in on this phone yet, or it was cancelled. Use your password once, then turn it on in Settings.', 4000); else failed(el, err); } }); } });
+    // Shown whenever the browser supports passkeys: some Android phones say "no fingerprint" to the stricter check even when they have one
+    Promise.resolve(passkeySupported()).then((ok) => { const b = el.querySelector('#pkbtn'); if (ok && b) { b.style.display = ''; b.addEventListener('click', async () => { busy(b, true); try { const r = await loginWithPasskey(api, el.querySelector('#identifier')?.value || ''); await signedIn(r); } catch (err) { busy(b, false); if (err && (err.name === 'NotAllowedError' || err.name === 'NotSupportedError' || err.name === 'SecurityError')) toast('Fingerprint sign-in is not set up on this phone yet. Sign in with your password once, then go to Settings and turn on fingerprint sign-in.', 5000); else failed(el, err); } }); } });
     el.querySelector('#f').addEventListener('submit', async (e) => {
       e.preventDefault(); const f = e.target; const btn = f.querySelector('[type=submit]');
       showErrors(el, {}); busy(btn, true);
@@ -400,12 +401,12 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
       try { const t = await api.today(); prefs = t.notifications; pushed = t.pushEnabled; } catch {}
       (async () => {
         const box = el.querySelector('#pklist'); if (!box) return;
-        const avail = await passkeyAvailable();
+        const avail = passkeySupported() && ((await passkeyAvailable()) || /Android/i.test(navigator.userAgent));
         const paint = async () => {
           let keys = []; try { keys = (await api.passkeys()).passkeys; } catch {}
           box.innerHTML = keys.map((k) => `<div class="item"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">${h(k.label)}</div><div class="s">Added ${k.at.slice(0, 10)}${k.lastUsed ? ' · last used ' + k.lastUsed.slice(0, 10) : ''}</div></div><button class="iconbtn" data-pkdel="${k.id}" aria-label="Remove" style="width:34px;height:34px">${icon('xmark')}</button></div>`).join('')
             + (avail ? `<button class="item" id="pkadd" style="width:100%;text-align:left"><div class="mi" style="background:var(--green-tint);color:var(--green-dark)">${icon('plus')}</div><div class="grow"><div class="t">${keys.length ? 'Add this phone' : 'Turn on for this phone'}</div><div class="s">Sign in with a touch instead of a password</div></div></button>` : `<div class="item"><div class="mi">${icon('circle-info')}</div><div class="grow"><div class="t">Not available on this browser</div><div class="s">Fingerprint sign-in needs a phone with a screen lock and a recent browser.</div></div></div>`);
-          box.querySelector('#pkadd')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { await registerPasskey(api); toast('Done. Next time, just touch.'); } catch (err) { toast(err && err.name === 'NotAllowedError' ? 'Cancelled.' : (err && err.message) || 'Could not set that up.'); } paint(); });
+          box.querySelector('#pkadd')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { await registerPasskey(api); toast('Done. Next time, just touch.'); } catch (err) { toast(err && err.name === 'NotAllowedError' ? 'Cancelled, or the fingerprint was not recognised. Try again.' : err && err.name === 'InvalidStateError' ? 'Fingerprint sign-in is already set up on this phone.' : err && (err.name === 'NotSupportedError' || err.name === 'SecurityError') ? 'This phone could not set it up. Check a fingerprint or screen lock is set in your phone settings, and update Chrome from the Play Store.' : (err && err.message) || 'Could not set it up. Try again.', 5000); } paint(); });
           box.querySelectorAll('[data-pkdel]').forEach((b) => b.addEventListener('click', async () => { if (!confirm('Remove fingerprint sign-in for this device?')) return; try { await api.passkeyRemove(b.dataset.pkdel); } catch {} paint(); }));
         };
         paint();
