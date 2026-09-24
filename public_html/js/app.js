@@ -265,7 +265,7 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/rides', 'car', '#E7F0EA', '#2E7D1E', 'Commute share', 'Split a seat along your route'],
     ['/artisans/map?trade=mechanic', 'wrench', '#FDECEA', '#D92D20', 'Mechanic near me', 'Car broke down? The nearest one comes to you'],
     ['/kart', 'flag-checkered', '#FFF1E6', '#E8660A', 'Buja Kart', 'Race round Eagle Square and Aso Rock'],
-    ['/find', 'magnifying-glass', '#EEF0FF', '#4B4FC4', 'Find on Buja', 'Anyone by their @tag'],
+    ['/friends', 'users', '#EEF0FF', '#4B4FC4', 'Friends', 'People you know, and people to meet'],
   ];
   return `
   <header class="topbar" style="padding-top:8px">
@@ -328,6 +328,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
       <a class="item" href="#/waka"><div class="mi">${icon('route')}</div><div class="grow"><div class="t">Saved routes</div><div class="s">Waka</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#${u.kind === 'company' ? '/work/company' : '/work/profile'}"><div class="mi">${icon('briefcase')}</div><div class="grow"><div class="t">${u.kind === 'company' ? 'Company and vacancies' : 'My CV and applications'}</div><div class="s">Work</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/tickets"><div class="mi">${icon('ticket')}</div><div class="grow"><div class="t">My tickets</div><div class="s">Events you have paid for</div></div>${icon('chevron-right')}</a>
+      <a class="item" href="#/friends"><div class="mi" style="background:#EEF0FF;color:#4B4FC4">${icon('users')}</div><div class="grow"><div class="t">Friends</div><div class="s">Your friends, requests, and people you may know</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/tag"><div class="mi" style="background:#FFF1E6;color:#E8660A;font-weight:900;font-size:18px">@</div><div class="grow"><div class="t">@${h(state.user.tag || '')}</div><div class="s">Your Buja Tag: share it so people can find you</div></div>${icon('chevron-right')}</a>
       ${state.user.artisan ? `<a class="item" href="#/artisans/dashboard"><div class="mi" style="background:#FDECEA;color:#D92D20">${icon('gauge-high')}</div><div class="grow"><div class="t">Mechanic dashboard</div><div class="s">${state.user.artisan.available ? 'Taking jobs' : 'Switched off'} · your jobs, earnings and hours</div></div>${icon('chevron-right')}</a>` : ''}
       <a class="item" href="#/jobs"><div class="mi">${icon('wrench')}</div><div class="grow"><div class="t">My jobs</div><div class="s">Artisans you called, and jobs you are doing</div></div>${icon('chevron-right')}</a>
@@ -454,7 +455,7 @@ const LAZY = {
   artisans: ['services', 'jobs'], jobs: ['jobs'], breakdown: ['jobs'], meetup: ['services'], tickets: ['services'],
   blood: ['citysignals'], fuel: ['citysignals'], light: ['citysignals'], lostfound: ['citysignals'], plates: ['citysignals'], prices: ['citysignals'],
   cert: ['learn'], learn: ['learn'], queues: ['citymore'], 'rent-index': ['citymore'], rides: ['citymore'],
-  kart: ['kart'], tag: ['tags'], t: ['tags'], find: ['tags'],
+  kart: ['kart'], tag: ['tags'], t: ['tags'], find: ['tags'], friends: ['tags'],
 };
 const loaded = {};
 function need(name) { if (!loaded[name]) loaded[name] = MODULES[name]().catch((e) => { delete loaded[name]; throw e; }); return loaded[name]; }

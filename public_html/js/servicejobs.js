@@ -70,10 +70,13 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
         const sos = roadside ? `<a class="card row" href="#/breakdown${trade ? '?trade=' + trade : ''}" style="padding:14px;gap:12px;margin:2px 0 14px;background:#D92D20;border-color:#D92D20;color:#fff;text-decoration:none">
           <span style="width:44px;height:44px;border-radius:22px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon('car-side')}</span>
           <span class="grow"><span style="display:block;font-size:16px;font-weight:800">My car broke down</span><span class="small" style="opacity:.9">Pin where you are. The nearest ${trade === 'towing' ? 'tow truck' : trade === 'vulcanizer' ? 'tyre man' : 'mechanic'} who accepts comes to you.</span></span>${icon('chevron-right')}</a>` : '';
-        sheet.body.innerHTML = sos + `<div class="row" style="padding:2px 0 10px"><div class="grow"><div style="font-size:17px;font-weight:800">${list.length ? list.length + ' ' + noun(trade, list.length) + ' near you' : 'Nobody here yet'}</div><div class="small muted">${me ? 'Closest first. Tap one on the map or below.' : 'Turn on location to see who is closest.'}</div></div></div>
+        const mine = (window.__myArtisans || []).filter((m) => !trade || m.trade === trade);
+        const again = mine.length ? `<div style="font-size:15px;font-weight:800;margin:0 0 8px">Your ${trade === 'towing' ? 'tow trucks' : trade === 'vulcanizer' ? 'tyre men' : 'mechanics'}</div><div class="row" style="gap:10px;overflow-x:auto;padding-bottom:12px;margin-bottom:6px">${mine.map((m) => `<div class="card stack" style="padding:10px;gap:6px;min-width:128px;align-items:center;text-align:center;flex-shrink:0">${m.photo ? `<img src="${h(m.photo)}" alt="" style="width:52px;height:52px;border-radius:26px;object-fit:cover">` : `<span class="lst-face" style="--c:#FF7A1A"><b>${h(m.name.slice(0, 2).toUpperCase())}</b></span>`}<div style="font-weight:700;font-size:13px;line-height:1.2">${h(m.name)}</div><div class="small muted">${m.jobs ? m.jobs + ' job' + (m.jobs > 1 ? 's' : '') + ' for you' : 'Saved'}${m.available && m.onDuty ? ' · online' : ''}</div><a class="btn btn-sm btn-primary" href="#/breakdown?trade=${h(m.trade)}&again=${m.id}&name=${encodeURIComponent(m.name)}" style="width:100%">Call again</a></div>`).join('')}</div>` : '';
+        sheet.body.innerHTML = sos + again + `<div class="row" style="padding:2px 0 10px"><div class="grow"><div style="font-size:17px;font-weight:800">${list.length ? list.length + ' ' + noun(trade, list.length) + ' near you' : 'Nobody here yet'}</div><div class="small muted">${me ? 'Closest first. Tap one on the map or below.' : 'Turn on location to see who is closest.'}</div></div></div>
           ${list.length ? list.map((a) => `<button class="row card" data-a="${a.id}" style="width:100%;text-align:left;padding:10px 12px;gap:12px;margin-bottom:8px;background:var(--card)"><span class="lst-face" style="--c:${TRADE_COLOR[a.trade] || '#FF7A1A'}">${a.photo ? `<img src="${h(a.photo)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<b>${h((a.name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase())}</b><i>${icon(TRADE_ICON[a.trade] || 'wrench')}</i></span><span class="grow" style="min-width:0"><span style="display:block;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(a.name)}</span><span class="small muted">${h(a.tradeLabel)}${a.km != null ? ' · ' + a.km + ' km' : ''}</span></span><span class="small" style="font-weight:700;color:#B7791F">${starsShort(a.rating)}</span></button>`).join('') : `<div class="small muted" style="line-height:1.5">No ${trade ? 'one in this trade' : 'artisans'} listed near you yet. Know a good one? Ask them to list themselves under Artisans.</div><a class="btn btn-outline" href="#/artisans/me" style="margin-top:10px">List my own trade</a>`}`;
         sheet.body.querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', () => detail(list.find((x) => String(x.id) === b.dataset.a))));
       };
+      api.myArtisans().then((r) => { window.__myArtisans = r.artisans; }).catch(() => {});
       const load = async () => {
         el.querySelectorAll('#chips .chip').forEach((c) => c.classList.toggle('on', c.dataset.t === trade));
         try { const r = await api.artisans({ trade, lat: me?.lat || '', lng: me?.lng || '' }); list = (r.artisans || []).filter((a) => a.lat != null || !map); } catch (err) { failed(el, err); return; }
@@ -201,6 +204,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
     <button class="bm-fab bm-locate" id="locate" aria-label="Where am I" style="top:calc(70px + var(--safe-t,0px))">${icon('location-crosshairs')}</button></div>`, {
     async mount(el) {
       const screen = el.querySelector('.bm-screen'); const pill = el.querySelector('#pill');
+      { const qa = new URLSearchParams(location.hash.split('?')[1] || ''); if (qa.get('again')) setTimeout(() => { pill.textContent = 'Calling ' + qa.get('name') + ' first. If they are busy, the nearest will come.'; }, 50); }
       const sheet = bottomSheet(screen, { peek: 200, half: 0.56, start: 'half' });
       let trade = new URLSearchParams(location.hash.split('?')[1] || '').get('trade') || 'mechanic'; let pos = null, acc = null; const chosen = new Set();
       sheet.body.innerHTML = `<div class="small muted" style="padding:8px 0">Finding your exact location…</div>`;
@@ -235,7 +239,8 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           const problem = [...chosen].concat(sheet.body.querySelector('#prob').value.trim() ? [sheet.body.querySelector('#prob').value.trim()] : []).join('. ');
           if (problem.length < 5) { toast('Tap what is wrong, or describe it'); return; }
           busy(b, true);
-          try { const r = await api.jobNearest({ trade, problem, lat: pos.lat, lng: pos.lng, accuracy: acc, landmark: sheet.body.querySelector('#lm').value }); go('/jobs/' + r.id); }
+          const againId = +(new URLSearchParams(location.hash.split('?')[1] || '').get('again') || 0);
+          try { const r = await api.jobNearest({ trade, problem, lat: pos.lat, lng: pos.lng, accuracy: acc, landmark: sheet.body.querySelector('#lm').value, ...(againId ? { preferredId: againId } : {}) }); go('/jobs/' + r.id); }
           catch (err) { busy(b, false); if (err && err.id) { go('/jobs/' + err.id); return; } failed(el, err); }
         });
       };
@@ -400,6 +405,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           else if (j.status === 'arrived') body = `<div class="small muted">When the work is finished, mark it done and rate them.</div><button class="btn btn-primary" data-rate>${icon('star')} Fixed. Rate ${h(j.other.name)}</button>`;
           else if (j.status === 'done' && !j.rated) body = `<button class="btn btn-primary" data-rate>${icon('star')} Rate ${h(j.other.name)}</button>`;
           else if (j.status === 'done') body = `<div class="small muted">Thank you for rating. It helps the next person choose.</div>`;
+          if (j.status === 'done' && j.other && j.other.id && j.role === 'customer') body += `<button class="btn btn-outline" data-save="${j.other.id}">${icon('bookmark')} Save to My mechanics</button><div class="small muted">They will be first to hear from you next time.</div>`;
           else body = `<a class="btn btn-primary" href="#/artisans/map?trade=${h(j.trade)}">Find someone else nearby</a>`;
         } else {
           if (j.status === 'requested' && j.mode === 'nearest') body = `<div class="card" style="padding:12px;background:var(--orange-tint);border-color:var(--orange)"><div class="small" style="font-weight:700;color:var(--orange-dark)">Breakdown near you. First to accept gets it.</div><div style="font-size:15px;font-weight:600;margin-top:4px">${h(j.problem)}</div><div class="small muted" style="margin-top:6px">${j.km != null ? 'About ' + (j.km < 1 ? 'under 1' : j.km) + ' km from your workshop. ' : ''}You see the exact spot once you accept.</div></div><div class="row" style="gap:8px"><button class="btn btn-primary grow" data-act="accept" style="height:52px">Accept and go</button><button class="btn btn-outline" data-act="decline" style="width:auto">Not now</button></div>`;
@@ -419,6 +425,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
         sheet.body.querySelector('[data-start]')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); const p = await here(10000); try { const r = await api.jobAct(id, 'start', p || {}); startSharing(); draw(r.job); render(r.job); } catch (err) { busy(b, false); failed(el, err); } });
         bindPrice();
         sheet.body.querySelector('[data-rate]')?.addEventListener('click', () => rateForm());
+        sheet.body.querySelector('[data-save]')?.addEventListener('click', async (e) => { const b = e.currentTarget; try { const r = await api.saveArtisan(+b.dataset.save); b.innerHTML = r.saved ? icon('circle-check') + ' Saved to My mechanics' : icon('bookmark') + ' Save to My mechanics'; toast(r.saved ? 'Saved. Find them on the mechanic map next time.' : 'Removed'); } catch (err) { failed(el, err); } });
       };
 
       const rateForm = () => {

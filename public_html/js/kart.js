@@ -19,6 +19,10 @@ const DRIVERS = {
   yellow: { name: 'Ngozi', colour: '#F2B51C', skill: 0.97 },
   blue:   { name: 'Musa',  colour: '#2459D6', skill: 0.95 },
 };
+const PAINTS = { green: '#1E9E55', red: '#E0342B', yellow: '#F2B51C', blue: '#2459D6', gold: '#D4A93A', chrome: '#C9CED6', naija: '#008751', pink: '#E85D9E', black: '#17171C' };
+const PAINT_NAMES = { green: 'Amaka green', red: 'Tunde red', yellow: 'Ngozi yellow', blue: 'Musa blue', gold: 'Gold', chrome: 'Chrome', naija: 'Naija green', pink: 'Hot pink', black: 'Midnight' };
+/** What each upgrade level does: small, steady gains so racing skill still matters most. */
+const UPGRADE = { engine: (l) => ({ topMul: 1 + 0.03 * l }), accel: (l) => ({ accMul: 1 + 0.08 * l }), handling: (l) => ({ turnMul: 1 + 0.05 * l, offBonus: l }), boost: (l) => ({ boostMul: 1 + 0.12 * l }) };
 const myDriver = () => { try { const d = localStorage.getItem('buja_kart_driver'); return DRIVERS[d] ? d : 'green'; } catch { return 'green'; } };
 const TEX = '/assets/kart/';
 const BOOSTS = [0.1, 0.33, 0.52, 0.8];
@@ -37,6 +41,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       <div class="card stack" style="padding:12px 14px;gap:10px"><div class="h-sm">Choose your driver</div>
         <div class="kart-drivers">${Object.entries(DRIVERS).map(([id, d]) => `<button class="kart-driver ${myDriver() === id ? 'on' : ''}" data-driver="${id}" style="--c:${d.colour}"><img src="/assets/kart/driver-${id}.jpg" alt=""><b>${d.name}</b></button>`).join('')}</div></div>
       ${b.me ? `<div class="card row" style="padding:12px 14px;gap:10px"><span style="font-size:22px">🏁</span><div class="grow"><div style="font-weight:700">Your best lap this week: ${fmt(b.me.best)}</div><div class="small muted">${b.me.rank ? ord(b.me.rank) + ' in Abuja this week' : 'Set a time to get on the board'}</div></div><a class="btn btn-sm btn-outline" href="#/kart/board" style="width:auto">Board</a></div>` : ''}
+      <a class="card row" href="#/kart/garage" style="padding:12px 14px;gap:12px"><span style="font-size:26px">🔧</span><span class="grow"><b>Garage</b><br><span class="small muted">Upgrade your engine, acceleration, handling and boost; buy paint</span></span><span class="tag" id="coins">🪙 …</span></a>
       <div class="kart-tracks">${Object.entries(TRACKS).map(([id, t]) => `<button class="kart-track ${myTrack() === id ? 'on' : ''}" data-track="${id}"><b>${t.name}</b><span>${t.blurb}</span></button>`).join('')}</div>
       <button class="kart-btn kart-btn-go" data-go="/kart/play?mode=bots"><b>Race</b><span>Three Abuja drivers, item boxes: 🌶️ pepper, 🍌 banana, 🥤 zobo, ⚡ NEPA</span></button>
       <button class="kart-btn" data-go="/kart/play?mode=solo"><b>Time trial</b><span>Beat your own ghost, lap after lap</span></button>
@@ -55,12 +60,35 @@ export function registerKart({ route, go, state, api, ui, failed }) {
   }, {
     mount(el) {
       el.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
+      api.kartGarage().then((r) => { const c = el.querySelector('#coins'); if (c) c.textContent = '🪙 ' + r.garage.coins; }).catch(() => {});
       el.querySelectorAll('[data-track]').forEach((b) => b.addEventListener('click', () => { try { localStorage.setItem('buja_kart_track', b.dataset.track); } catch {} go('/kart'); location.reload(); }));
       el.querySelectorAll('[data-driver]').forEach((b) => b.addEventListener('click', () => { try { localStorage.setItem('buja_kart_driver', b.dataset.driver); } catch {} el.querySelectorAll('[data-driver]').forEach((x) => x.classList.toggle('on', x === b)); toast(DRIVERS[b.dataset.driver].name + ' is ready'); }));
       el.querySelector('#gfx')?.addEventListener('change', (e) => { try { localStorage.setItem('buja_kart_gfx', e.target.value); } catch {} toast('Graphics: ' + e.target.value); });
       el.querySelectorAll('[data-set]').forEach((s) => s.addEventListener('change', (e) => { try { localStorage.setItem(s.dataset.set, e.target.value); } catch {} }));
       el.querySelector('#newroom').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.kartNewRoom({ track: myTrack() }); go('/kart/room/' + r.code); } catch (err) { busy(b, false); failed(el, err); } });
       el.querySelector('#joinroom').addEventListener('click', () => { const c = el.querySelector('#code').value.trim().toUpperCase(); if (c.length === 5) go('/kart/room/' + c); else toast('Room codes have 5 letters'); });
+    }
+  });
+
+  /* ============================== GARAGE ============================== */
+  route('/kart/garage', { auth: true, tabs: '' }, async () => {
+    const { garage: g } = await api.kartGarage();
+    const desc = { engine: 'Higher top speed', accel: 'Faster off the line and out of corners', handling: 'Tighter turns, less slowdown on grass', boost: 'Longer boosts from pads, drifts and pepper' };
+    return `${topbar('Garage', '/kart')}<main class="pad stack" style="gap:14px">
+      <div class="card row" style="padding:16px;gap:12px"><span style="font-size:34px">🪙</span><div class="grow"><div style="font:900 26px Inter,system-ui">${g.coins}</div><div class="small muted">coins · ${g.races} races, ${g.wins} wins</div></div></div>
+      <div class="small muted" style="line-height:1.5">Earn coins every race: 120 for a win, 80 for 2nd, 60 for 3rd, 40 otherwise, 50 more for a personal best, and a bonus for racing friends. Your rivals get a little quicker as you upgrade, so races stay close.</div>
+      <div class="section">UPGRADES</div>
+      ${g.stats.map((s) => `<div class="card stack" style="padding:12px 14px;gap:8px"><div class="row" style="gap:10px"><div class="grow"><div style="font-weight:800">${s.label}</div><div class="small muted">${desc[s.id]}</div></div>
+        ${s.next ? `<button class="btn btn-sm ${g.coins >= s.next ? 'btn-primary' : 'btn-ghost'}" data-up="${s.id}" style="width:auto" ${g.coins >= s.next ? '' : 'disabled'}>🪙 ${s.next}</button>` : '<span class="tag green">Maxed</span>'}</div>
+        <div class="kart-pips">${Array.from({ length: g.maxLevel }, (_, i) => `<i class="${i < s.level ? 'on' : ''}"></i>`).join('')}</div></div>`).join('')}
+      <div class="section">PAINT</div>
+      <div class="kart-paints">${g.paints.map((p) => `<button class="kart-paint ${g.paint === p.id ? 'on' : ''}" data-paint="${p.id}" style="--c:${PAINTS[p.id]}"><i></i><b>${PAINT_NAMES[p.id]}</b><span>${p.owned ? (g.paint === p.id ? 'In use' : 'Owned') : '🪙 ' + p.price}</span></button>`).join('')}</div>
+      <button class="btn btn-ghost" data-paint="">Use my driver's colour</button>
+    </main>`;
+  }, {
+    mount(el) {
+      el.querySelectorAll('[data-up]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { await api.kartUpgrade(b.dataset.up); toast('Upgraded'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } }));
+      el.querySelectorAll('[data-paint]').forEach((b) => b.addEventListener('click', async () => { if (!b.dataset.paint) { try { localStorage.removeItem('buja_kart_paint'); } catch {} toast('Using your driver\'s colour'); location.reload(); return; } busy(b, true); try { await api.kartPaint(b.dataset.paint); try { localStorage.setItem('buja_kart_paint', b.dataset.paint); } catch {} toast('Painted'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } }));
     }
   });
 
@@ -200,13 +228,17 @@ class Race {
     this.audio.wake();
     if (((() => { try { return localStorage.getItem('buja_kart_orient'); } catch { return null; } })()) === 'landscape') this.setLandscape(true, true);
     if (this.steerMode === 'tilt') this.enableTilt(true);
-    this.driver = myDriver(); this.player = this.makeKart(DRIVERS[this.driver].colour, true);
+    this.driver = myDriver();
+    let garage = null; try { garage = (await this.api.kartGarage()).garage; } catch {}
+    const paint = garage && garage.paint && PAINTS[garage.paint] ? PAINTS[garage.paint] : DRIVERS[this.driver].colour;
+    this.player = this.makeKart(paint, true);
+    if (garage) { let lv = 0; garage.stats.forEach((s) => { Object.assign(this.player, UPGRADE[s.id](s.level)); lv += s.level; }); this.avgLevel = lv / garage.stats.length; if (garage.paint === 'chrome' || garage.paint === 'gold') { this.player.paint.metalness = 0.9; this.player.paint.roughness = 0.18; } }
     this.resize(); this._onResize = () => this.resize(); window.addEventListener('resize', this._onResize);
     this.bindControls();
     this.placeOnGrid(this.player, 0);
     this.minimap();
 
-    if (this.mode === 'bots') this.bots = Object.entries(DRIVERS).filter(([id]) => id !== this.driver).map(([id, d]) => [d.name, d.colour, d.skill]).map(([n, c, skill], i) => { const k = this.makeKart(c); k.name = n; k.skill = skill; k.lane = (i - 1) * 4; this.placeOnGrid(k, i + 1); k.v = 0; k.s = k.startS; k.lap = 1; return k; });
+    if (this.mode === 'bots') this.bots = Object.entries(DRIVERS).filter(([id]) => id !== this.driver).map(([id, d]) => [d.name, d.colour, d.skill * (1 + 0.022 * (this.avgLevel || 0))]).map(([n, c, skill], i) => { const k = this.makeKart(c); k.name = n; k.skill = skill; k.lane = (i - 1) * 4; this.placeOnGrid(k, i + 1); k.v = 0; k.s = k.startS; k.lap = 1; return k; });
     else this.bots = [];
     if (this.mode === 'solo') { try { const g = (await this.api.kartGhost({ who: this.ghostWho, track: this.trackId })).ghost; if (g && g.path && g.path.length > 10) { this.ghost = { ...g, kart: this.makeKart('#FFFFFF', false, true) }; this.toast('Racing ' + g.name + ': ' + this.fmt(g.lapMs)); } } catch {} }
     if (this.mode === 'room') { this.el.querySelector('#chatbtn').style.display = ''; this.bindChat(); await this.syncRoom(true); }
@@ -484,19 +516,19 @@ class Race {
   drive(k, dt, steer, brake, drift, isAI = false, gas = true) {
     const on = this.nearest(k.position.x, k.position.z, k.idx); k.idx = on.i;
     const off = Math.abs(on.lateral) > ROAD_W / 2 + 1.2;
-    let top = off ? OFF_V : MAX_V * (isAI ? k.skill : 1); if (k.boost > 0) { top = BOOST_V; k.boost -= dt; }
+    let top = off ? OFF_V + (k.offBonus || 0) : MAX_V * (isAI ? k.skill : 1) * (k.topMul || 1); if (k.boost > 0) { top = BOOST_V * (k.topMul || 1); k.boost -= dt; }
     if (k.slow > 0) { k.slow -= dt; top *= 0.6; k.boost = 0; }
     if (k.spin > 0) { k.spin -= dt; steer = 0; drift = false; top = Math.min(top, 8); }
-    const accel = brake ? -28 : !gas ? (k.v > 0 ? -5 : 0) : (k.v < top ? 13 : -9);   // off the gas: the kart coasts down
+    const accel = brake ? -28 : !gas ? (k.v > 0 ? -5 : 0) : (k.v < top ? 13 * (k.accMul || 1) : -9);   // off the gas: the kart coasts down
     k.v = Math.max(0, Math.min(k.boost > 0 ? BOOST_V : top + 2, k.v + accel * dt));
     const grip = drift && Math.abs(steer) > 0 ? 1.55 : 1;
     const turn = steer * grip * (0.9 + 0.8 * Math.min(1, k.v / 18)) * dt * (k.v > 1 ? 1 : k.v);
-    k.h += turn * 1.05;
-    if (!isAI) { if (drift && Math.abs(steer) > 0 && k.v > 14) k.drift = Math.min(2.2, k.drift + dt); else if (k.drift > 0.55) { k.boost = Math.min(1.6, k.drift * 0.7); k.drift = 0; this.buzz(20); } else k.drift = 0; }
+    k.h += turn * 1.05 * (k.turnMul || 1);
+    if (!isAI) { if (drift && Math.abs(steer) > 0 && k.v > 14) k.drift = Math.min(2.2, k.drift + dt); else if (k.drift > 0.55) { k.boost = Math.min(1.6, k.drift * 0.7) * (k.boostMul || 1); k.drift = 0; this.buzz(20); } else k.drift = 0; }
     k.position.x += Math.sin(k.h) * k.v * dt; k.position.z += Math.cos(k.h) * k.v * dt;
     // walls: slide along instead of stopping dead
     if (Math.abs(on.lateral) > ROAD_W / 2 + 9) { const t = this.tangents[on.i], back = Math.sign(on.lateral) * (Math.abs(on.lateral) - (ROAD_W / 2 + 9)); k.position.x += t.z * back; k.position.z -= t.x * back; if (!isAI && k.v > 8 && !k._hit) { this.audio.bump(); this.shake = 0.35; this.buzz(30); } k._hit = true; k.v *= 0.9; } else k._hit = false;
-    if (this.pads.some((p) => Math.abs(p - on.i) < 4) && Math.abs(on.lateral) < 3) { if (!isAI && k.boost <= 0) this.audio.boost(); k.boost = Math.max(k.boost, 1.1); }
+    if (this.pads.some((p) => Math.abs(p - on.i) < 4) && Math.abs(on.lateral) < 3) { if (!isAI && k.boost <= 0) this.audio.boost(); k.boost = Math.max(k.boost, 1.1 * (k.boostMul || 1)); }
     // lean into turns, dip under braking, front wheels steer
     const lean = -steer * Math.min(1, k.v / 22) * (drift ? 0.11 : 0.07); k.lean += (lean - k.lean) * 0.15;
     const pitch = brake ? 0.035 : (k.boost > 0 ? -0.03 : -0.01 * Math.min(1, k.v / 30)); k.pitch += (pitch - k.pitch) * 0.12;
@@ -616,13 +648,14 @@ class Race {
     this.phase = 'done'; const raceMs = Math.round(now - this.t0);
     const place = this.placing(); this.buzz(80); this.audio.finish(this.mode === 'solo' || place === 1);
     let saved = null;
-    try { saved = await this.api.kartSaveTime({ track: this.trackId, lapMs: this.bestLap, raceMs, mode: this.mode, ghost: this.bestPath }); } catch {}
+    try { saved = await this.api.kartSaveTime({ place: this.mode === 'solo' ? 1 : place, track: this.trackId, lapMs: this.bestLap, raceMs, mode: this.mode, ghost: this.bestPath }); } catch {}
     if (this.mode === 'room') { try { await this.api.kartFinish(this.code, raceMs); } catch {} }
     const r = this.el.querySelector('#result');
     r.innerHTML = `<div class="kart-card"><div class="kart-place"><img class="kart-face" src="/assets/kart/driver-${this.driver}.jpg" alt="" style="--c:${DRIVERS[this.driver].colour}"><span>${this.mode === 'solo' ? '🏁' : place === 1 ? '🏆' : '🏁'}</span></div>
       <div class="kart-big">${this.mode === 'solo' ? 'Race complete' : this.ord(place) + ' place'}</div>
       <div class="kart-row"><span>Race</span><b>${this.fmt(raceMs)}</b></div><div class="kart-row"><span>Best lap</span><b>${this.fmt(this.bestLap)}</b></div>
       ${saved ? `<div class="kart-row"><span>Abuja ranking, all time</span><b>${this.ord(saved.rank)}</b></div>${saved.personalBest ? '<div class="kart-pb">New personal best!</div>' : `<div class="kart-sub">Your best: ${this.fmt(saved.previousBest)}</div>`}` : ''}
+      ${saved && saved.coinsEarned ? `<div class="kart-coins">+${saved.coinsEarned} 🪙 <span>${saved.coins} in the garage</span></div>` : ''}
       <div class="kart-actions"><button class="btn btn-primary" id="again">${this.mode === 'room' ? 'Back to the room' : 'Race again'}</button><a class="btn btn-outline" href="#/kart/board?track=${this.trackId}">Leaderboard</a><a class="btn btn-ghost" href="#/kart">Menu</a></div></div>`;
     r.classList.add('on');
     r.querySelector('#again').addEventListener('click', () => { if (this.mode === 'room') this.go('/kart/room/' + this.code); else location.reload(); });
@@ -678,7 +711,7 @@ class Race {
   useItem(k) {
     if (!k.item) return; const id = k.item; const me = k === this.player;
     const ahead = [this.player, ...this.bots].filter((o) => o !== k && o.s > k.s);
-    if (id === 'pepper') { k.boost = Math.max(k.boost, 1.25); if (me) this.audio.boost(); }
+    if (id === 'pepper') { k.boost = Math.max(k.boost, 1.25 * (k.boostMul || 1)); if (me) this.audio.boost(); }
     if (id === 'banana') { const g = new THREE.Group(); const peel = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.18, 6, 12, Math.PI * 1.4), new THREE.MeshStandardMaterial({ color: '#F4D03F', roughness: 0.5 })); peel.rotation.x = Math.PI / 2; peel.position.y = 0.2; g.add(peel);
       g.position.set(k.position.x - Math.sin(k.h) * 3.2, 0, k.position.z - Math.cos(k.h) * 3.2); this.scene.add(g); this.bananas.push({ g, owner: k, born: performance.now() }); if (me) this.audio.tone(300, 0.15, 'triangle', 0.15, 0, -120); }
     if (id === 'zobo') { ahead.forEach((o) => { if (o === this.player) this.splat(); else { o.slow = Math.max(o.slow || 0, 1.2); o.wobble = 3; } }); this.audio.noise(0.4, 0.3, 700, 0, 'bandpass'); }

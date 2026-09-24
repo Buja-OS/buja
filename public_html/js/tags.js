@@ -34,6 +34,39 @@ export function registerTags({ route, go, state, api, ui, failed }) {
     }
   });
 
+  /* ---------- Friends ---------- */
+  route('/friends', { auth: true, tabs: '' }, async () => {
+    const d = await api.friends();
+    const face = (p, size = 44) => p.avatar ? `<img src="${h(p.avatar)}" alt="" style="width:${size}px;height:${size}px;border-radius:${size / 2}px;object-fit:cover;flex-shrink:0">` : avatar(p.name, size);
+    const row = (p, actions, sub) => `<div class="item">${face(p)}<a class="grow" href="#/t/${h(p.tag)}" style="min-width:0;color:inherit;text-decoration:none"><div class="t">${h(p.fullName || p.name)}${p.online ? ' <span style="color:var(--green-dark)">●</span>' : ''}</div><div class="s">@${h(p.tag)}${sub ? ' · ' + h(sub) : p.district ? ' · ' + h(p.district) : ''}</div></a><div class="row" style="gap:6px;flex-shrink:0">${actions}</div></div>`;
+    return `${topbar('Friends', '/home')}<main class="pad stack" style="gap:14px">
+      <div class="card row" style="height:50px;padding:0 14px;gap:8px">${icon('magnifying-glass')}<input id="q" type="search" autocapitalize="off" autocomplete="off" placeholder="Find people by name or @tag" style="flex:1;border:none;background:transparent;outline:none;font-size:16px;color:var(--ink)"></div>
+      <div id="found" class="stack" style="gap:8px"></div>
+      ${d.requests.length ? `<div class="section">FRIEND REQUESTS (${d.requests.length})</div><div class="card list">${d.requests.map((p) => row(p, `<button class="btn btn-sm btn-primary" data-acc="${p.id}" style="width:auto">Accept</button><button class="btn btn-sm btn-ghost" data-dec="${p.id}" style="width:auto">Not now</button>`)).join('')}</div>` : ''}
+      <div class="section">YOUR FRIENDS (${d.friends.length})</div>
+      ${d.friends.length ? `<div class="card list">${d.friends.map((p) => row(p, `<button class="btn btn-sm btn-outline" data-race="${h(p.tag)}" style="width:auto">🏁 Race</button>`)).join('')}</div>` : '<div class="card small muted" style="padding:14px;line-height:1.5">No friends yet. Add people you know from the list below, or search by name or @tag. Friends can race you in Buja Kart and find you faster.</div>'}
+      ${d.suggestions.length ? `<div class="section">PEOPLE YOU MAY KNOW</div><div class="card list">${d.suggestions.map((p) => row(p, `<button class="btn btn-sm btn-primary" data-add="${p.id}" style="width:auto">Add</button>`, p.why)).join('')}</div>` : ''}
+      ${d.sent.length ? `<div class="section">WAITING FOR THEM</div><div class="card list">${d.sent.map((p) => row(p, `<button class="btn btn-sm btn-ghost" data-cancel="${p.id}" style="width:auto">Cancel</button>`, 'Request sent')).join('')}</div>` : ''}
+      <a class="card row" href="#/tag" style="padding:12px 14px;gap:12px"><span style="font-size:20px;font-weight:900;color:var(--orange)">@</span><span class="grow small">Share your Buja Tag so friends can add you</span>${icon('chevron-right')}</a>
+    </main>`;
+  }, {
+    mount(el) {
+      const act = async (b, fn, done) => { busy(b, true); try { await fn(); toast(done); location.reload(); } catch (err) { busy(b, false); failed(el, err); } };
+      el.querySelectorAll('[data-acc]').forEach((b) => b.addEventListener('click', () => act(b, () => api.friendAct(b.dataset.acc, 'accept'), 'You are now friends')));
+      el.querySelectorAll('[data-dec]').forEach((b) => b.addEventListener('click', () => act(b, () => api.friendAct(b.dataset.dec, 'decline'), 'Request removed')));
+      el.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', () => act(b, () => api.friendAct(b.dataset.cancel, 'cancel'), 'Request cancelled')));
+      el.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.friendAdd({ userId: +b.dataset.add }); b.textContent = r.state === 'friends' ? 'Friends' : 'Sent'; b.disabled = true; b.classList.replace('btn-primary', 'btn-ghost'); } catch (err) { busy(b, false); failed(el, err); } }));
+      el.querySelectorAll('[data-race]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.kartNewRoom({}); await api.kartInvite(r.code, b.dataset.race); toast('Challenge sent'); go('/kart/room/' + r.code); } catch (err) { busy(b, false); failed(el, err); } }));
+      let timer; const found = el.querySelector('#found');
+      el.querySelector('#q').addEventListener('input', (e) => { clearTimeout(timer); const q = e.target.value.trim(); timer = setTimeout(async () => {
+        if (q.replace('@', '').length < 2) { found.innerHTML = ''; return; }
+        const { cards } = await api.tagSearch(q).catch(() => ({ cards: [] }));
+        found.innerHTML = cards.filter((c) => !c.self).length ? `<div class="card list">${cards.filter((c) => !c.self).map((c) => `<div class="item">${c.avatar ? `<img src="${h(c.avatar)}" alt="" style="width:44px;height:44px;border-radius:22px;object-fit:cover">` : avatar(c.name, 44)}<a class="grow" href="#/t/${h(c.tag)}" style="min-width:0;color:inherit;text-decoration:none"><div class="t">${h(c.name)}</div><div class="s">@${h(c.tag)} · ${h(c.artisan ? c.artisan.tradeLabel : KIND[c.kind][1])}</div></a>${c.friend === 'friends' ? '<span class="tag green">Friends</span>' : c.friend === 'sent' ? '<span class="tag">Sent</span>' : `<button class="btn btn-sm btn-primary" data-add2="${c.id}" style="width:auto">${c.friend === 'received' ? 'Accept' : 'Add'}</button>`}</div>`).join('')}</div>` : `<div class="small muted">Nobody called "${h(q)}" yet.</div>`;
+        found.querySelectorAll('[data-add2]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.friendAdd({ userId: +b.dataset.add2 }); b.outerHTML = `<span class="tag ${r.state === 'friends' ? 'green' : ''}">${r.state === 'friends' ? 'Friends' : 'Sent'}</span>`; } catch (err) { busy(b, false); failed(el, err); } }));
+      }, 280); });
+    }
+  });
+
   /* ---------- Find by tag ---------- */
   route('/find', { auth: true, tabs: '' }, async () => `${topbar('Find on Buja', '/home')}<main class="pad stack" style="gap:12px">
       <div class="card row" style="height:52px;padding:0 14px;gap:8px"><span style="font-size:22px;font-weight:900;color:var(--orange)">@</span><input id="q" type="search" autocapitalize="off" autocomplete="off" placeholder="Their Buja Tag" style="flex:1;border:none;background:transparent;outline:none;font-size:17px;color:var(--ink)" autofocus></div>
@@ -60,6 +93,7 @@ export function registerTags({ route, go, state, api, ui, failed }) {
     const actions = [];
     if (c.artisan) actions.push(`<a class="btn btn-primary" href="#/artisans/${c.id}">${icon('wrench')} ${c.artisan.available ? 'Ask them to come' : 'See their profile'}</a>`);
     if (c.company) actions.push(`<a class="btn btn-primary" href="#/work?q=${encodeURIComponent(c.companyName || c.name)}">${icon('briefcase')} See their ${c.company.openJobs} open job${c.company.openJobs === 1 ? '' : 's'}</a>`);
+    if (!c.self) actions.push(c.friend === 'friends' ? `<div class="tag green" style="align-self:center">You are friends</div>` : c.friend === 'sent' ? `<button class="btn btn-ghost" disabled>Friend request sent</button>` : `<button class="btn btn-primary" id="addfriend">${c.friend === 'received' ? 'Accept friend request' : 'Add friend'}</button>`);
     if (!c.self) actions.push(`<button class="btn btn-outline" id="race">🏁 Race them in Buja Kart</button>`);
     if (c.match) actions.push(`<a class="btn btn-outline" href="#/match/profile/${c.id}">${icon('heart')} See them on Match</a>`);
     if (c.kind === 'person' && !c.self) actions.push(`<a class="btn btn-ghost" href="#/people/${c.id}">Profile and ratings</a>`);
@@ -74,6 +108,7 @@ export function registerTags({ route, go, state, api, ui, failed }) {
   }, {
     mount(el, { tag }) {
       el.querySelector('#share')?.addEventListener('click', async () => { const t = `@${tag} on Buja: ${location.origin}/#/@${tag}`; if (navigator.share) navigator.share({ text: t }).catch(() => {}); else { try { await navigator.clipboard.writeText(t); toast('Copied'); } catch {} } });
+      el.querySelector('#addfriend')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.friendAdd({ tag }); toast(r.state === 'friends' ? 'You are now friends' : 'Friend request sent'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } });
       el.querySelector('#race')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.kartNewRoom({ track: 'abuja' }); await api.kartInvite(r.code, tag); toast('Challenge sent'); go('/kart/room/' + r.code); } catch (err) { busy(b, false); failed(el, err); } });
     }
   });

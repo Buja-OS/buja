@@ -65,6 +65,7 @@ final class Tag
             // Match is shown only when both people use it; the Match profile page applies its own rules.
             'match' => $viewer && (int) $viewer['id'] !== $id && Db::one('SELECT user_id FROM match_profiles WHERE user_id = ?', [$id]) !== null && Db::one('SELECT user_id FROM match_profiles WHERE user_id = ?', [$viewer['id']]) !== null,
             'companyName' => $co ? $co['name'] : null,
+            'friend' => $viewer && (int) $viewer['id'] !== $id ? FriendsController::state((int) $viewer['id'], $id) : null,
             'self' => $viewer && (int) $viewer['id'] === $id,
         ];
     }

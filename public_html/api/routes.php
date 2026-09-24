@@ -234,6 +234,7 @@ $router->get('/artisans/dashboard',          [ArtisanController::class, 'dashboa
 $router->post('/artisans/schedule',          [ArtisanController::class, 'schedule']);
 $router->get('/artisans/me',                 [ArtisanController::class, 'me']);
 $router->post('/artisans/me',                [ArtisanController::class, 'save']);
+$router->get('/artisans/mine',               [ServiceJobController::class, 'mine']);   // before {id}, which would match 'mine'
 $router->get('/artisans/{id}',               [ArtisanController::class, 'show']);
 $router->post('/artisans/{id}/chat',         [ArtisanController::class, 'chat']);
 $router->get('/citizen/agencies',            [CitizenController::class, 'agencies']);
@@ -380,3 +381,14 @@ $router->post('/kart/rooms/{code}/start',    [KartController::class, 'start']);
 $router->post('/kart/rooms/{code}/finish',   [KartController::class, 'finish']);
 $router->post('/kart/rooms/{code}/again',    [KartController::class, 'again']);
 $router->post('/kart/rooms/{code}/chat',     [KartController::class, 'chat']);
+
+// Friends
+$router->get('/friends',                     [FriendsController::class, 'index']);
+$router->post('/friends',                    [FriendsController::class, 'add']);
+$router->post('/friends/{id}/{action}',      [FriendsController::class, 'act']);
+// My mechanics
+$router->post('/artisans/{id}/save',         [ServiceJobController::class, 'save']);
+// Buja Kart garage
+$router->get('/kart/garage',                 [KartController::class, 'garage']);
+$router->post('/kart/garage/upgrade',        [KartController::class, 'upgrade']);
+$router->post('/kart/garage/paint',          [KartController::class, 'paint']);

@@ -233,11 +233,14 @@ final class ServiceJobController
         if (!self::inFct($lat, $lng)) Http::json(['error' => 'validation', 'message' => 'Turn on location and place the pin where you are. Buja works inside the FCT.'], 422);
         $problem = mb_substr(trim((string) ($b['problem'] ?? '')), 0, 400); if (mb_strlen($problem) < 5) Http::json(['error' => 'validation', 'fields' => ['problem' => 'Say what is wrong in a few words.']], 422);
         if ($open = Db::one("SELECT id FROM service_jobs WHERE customer_id = ? AND mode = 'nearest' AND status IN ('requested','accepted','enroute','arrived')", [$u['id']])) Http::json(['error' => 'open', 'message' => 'You already have a request running.', 'id' => (int) $open['id']], 409);
+        $pref = isset($b['preferredId']) ? (int) $b['preferredId'] : 0;
+        if ($pref && !Db::one('SELECT user_id FROM artisans WHERE user_id = ? AND hidden_at IS NULL AND user_id <> ?', [$pref, $u['id']])) $pref = 0;
         Db::run('INSERT INTO service_jobs (customer_id, artisan_id, trade, problem, lat, lng, landmark, created_at, mode, accuracy_m, trades) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
             [$u['id'], 0, $trade, $problem, round($lat, 6), round($lng, 6), mb_substr(trim((string) ($b['landmark'] ?? '')), 0, 160) ?: null, Db::now(), 'nearest', isset($b['accuracy']) ? max(1, min(9999, (int) $b['accuracy'])) : null, $trade]);
         $id = (int) Db::lastId();
+        if ($pref) Db::run('UPDATE service_jobs SET preferred_artisan_id = ? WHERE id = ?', [$pref, $id]);
         $n = self::ring($id);
-        Track::hit($u, 'artisan', 'job_nearest');
+        Track::hit($u, 'artisan', $pref ? 'job_again' : 'job_nearest');
         Http::json(['id' => $id, 'alerted' => $n], 201);
     }
 
@@ -247,14 +250,28 @@ final class ServiceJobController
         $j = Db::one('SELECT * FROM service_jobs WHERE id = ?', [$id]);
         if (!$j || $j['status'] !== 'requested') return 0;
         $ring = (int) $j['ring'] + 1;
-        if ($ring > self::MAX_RINGS) {
+        if ($ring > self::MAX_RINGS + ((int) ($j['preferred_artisan_id'] ?? 0) ? 1 : 0)) {
             Db::run("UPDATE service_jobs SET status = 'expired' WHERE id = ? AND status = 'requested'", [$id]);
             Db::run("UPDATE job_offers SET status = 'expired' WHERE job_id = ? AND status = 'offered'", [$id]);
             Notify::user((int) $j['customer_id'], 'work', 'No one could take it just now', 'Open the map to call a mechanic directly, or try again in a few minutes.', '/#/artisans/map?trade=' . $j['trade'], true);
             return 0;
         }
+        // Calling a known mechanic again: round one goes to them alone. If they do not take it, the normal rounds follow.
+        $pref = (int) ($j['preferred_artisan_id'] ?? 0);
+        if ($pref && $ring === 1) {
+            $a = Db::one('SELECT user_id, lat, lng FROM artisans WHERE user_id = ? AND hidden_at IS NULL', [$pref]);
+            if ($a) {
+                $km = ($a['lat'] !== null) ? WakaRules::km((float) $j['lat'], (float) $j['lng'], (float) $a['lat'], (float) $a['lng']) : 0;
+                Db::run('INSERT INTO job_offers (job_id, artisan_id, km, ring, status, offered_at) VALUES (?,?,?,?,?,?)', [$id, $pref, round($km, 2), 1, 'offered', Db::now()]);
+                $cust = Db::one('SELECT name FROM users WHERE id = ?', [$j['customer_id']]);
+                Notify::user($pref, 'work', explode(' ', trim((string) ($cust['name'] ?? 'A customer')))[0] . ' wants you again', mb_substr((string) $j['problem'], 0, 90) . ' You get the first chance, for one minute.', '/#/jobs/' . $id, true);
+                Db::run('UPDATE service_jobs SET ring = 1, ring_at = ? WHERE id = ?', [Db::now(), $id]);
+                return 1;
+            }
+        }
+        $rr = $pref ? $ring - 1 : $ring;                                     // the widening circles start after the favourite's turn
         $lat = (float) $j['lat']; $lng = (float) $j['lng'];
-        $radius = min(60, 6 * $ring + 2);                                   // 8, 14, 20, 26, 32 km
+        $radius = min(60, 6 * $rr + 2);                                     // 8, 14, 20, 26, 32 km
         $dLat = $radius / 111; $dLng = $radius / (111 * max(0.2, cos(deg2rad($lat))));
         // Bounding box first, so this stays fast with thousands of artisans (index: trade, available, lat, lng)
         $st = Db::pdo()->prepare("SELECT a.user_id, a.lat, a.lng, a.radius_km, a.last_online_at, a.schedule FROM artisans a WHERE a.trade = ? AND a.available = 1 AND a.hidden_at IS NULL
@@ -263,7 +280,7 @@ final class ServiceJobController
         $c = [];
         foreach ($st->fetchAll() as $a) {
             $km = WakaRules::km($lat, $lng, (float) $a['lat'], (float) $a['lng']);
-            if ($km > $radius || ($ring < 3 && $km > max(3, (float) $a['radius_km'] * 1.2))) continue; // early rounds respect how far they said they travel
+            if ($km > $radius || ($rr < 3 && $km > max(3, (float) $a['radius_km'] * 1.2))) continue; // early rounds respect how far they said they travel
             if (!self::onDuty($a['schedule'] ?? null)) continue;              // outside the hours they set
             $recent = $a['last_online_at'] && strtotime($a['last_online_at'] . ' UTC') > time() - 900;
             // Fair dispatch: nearest first, but quick and reliable mechanics rise and no-shows sink.
@@ -277,8 +294,35 @@ final class ServiceJobController
             Notify::user($p['id'], 'work', 'Breakdown ' . ($p['km'] < 1 ? 'under 1' : round($p['km'], 1)) . ' km from you', mb_substr((string) $j['problem'], 0, 90) . ' First to accept gets the job.', '/#/jobs/' . $id, true);
         }
         Db::run('UPDATE service_jobs SET ring = ?, ring_at = ? WHERE id = ?', [$ring, Db::now(), $id]);
-        if (!$pick && $ring < self::MAX_RINGS) return self::ring($id); // nobody in this circle: widen straight away
+        if (!$pick && $rr < self::MAX_RINGS) return self::ring($id); // nobody in this circle: widen straight away
         return count($pick);
+    }
+
+    /** GET /artisans/mine : mechanics and other artisans who have worked for me, and the ones I saved */
+    public function mine(): void
+    {
+        $u = Auth::require(); $me = (int) $u['id']; $rows = [];
+        $st = Db::pdo()->prepare("SELECT artisan_id, COUNT(*) AS n, MAX(created_at) AS last FROM service_jobs WHERE customer_id = ? AND artisan_id > 0 AND status = 'done' GROUP BY artisan_id"); $st->execute([$me]);
+        foreach ($st->fetchAll() as $r) $rows[(int) $r['artisan_id']] = ['jobs' => (int) $r['n'], 'last' => $r['last'], 'saved' => false];
+        $st = Db::pdo()->prepare('SELECT artisan_id FROM saved_artisans WHERE user_id = ?'); $st->execute([$me]);
+        foreach ($st->fetchAll() as $r) { $id = (int) $r['artisan_id']; $rows[$id] = ($rows[$id] ?? ['jobs' => 0, 'last' => null]); $rows[$id]['saved'] = true; }
+        $out = [];
+        foreach ($rows as $id => $meta) {
+            $a = Db::one('SELECT a.*, u.name AS person FROM artisans a JOIN users u ON u.id = a.user_id WHERE a.user_id = ? AND a.hidden_at IS NULL AND u.deleted_at IS NULL', [$id]); if (!$a) continue;
+            $out[] = ['id' => $id, 'name' => $a['business'] ?: $a['person'], 'trade' => $a['trade'], 'tradeLabel' => ArtisanController::TRADES[$a['trade']] ?? $a['trade'], 'photo' => $a['photo_upload'] ? '/api/uploads/' . (int) $a['photo_upload'] : Auth::picture($id),
+                'available' => (bool) $a['available'], 'onDuty' => self::onDuty($a['schedule'] ?? null), 'rating' => RatingController::summary($id, 'artisan'), 'jobs' => $meta['jobs'], 'last' => $meta['last'], 'saved' => $meta['saved']];
+        }
+        usort($out, fn($x, $y) => [$y['saved'], $y['jobs'], (string) $y['last']] <=> [$x['saved'], $x['jobs'], (string) $x['last']]);
+        Http::json(['artisans' => $out]);
+    }
+    /** POST /artisans/{id}/save : keep an artisan in My mechanics (again to remove) */
+    public function save(int $id): void
+    {
+        $u = Auth::require();
+        if (Db::one('SELECT 1 AS x FROM saved_artisans WHERE user_id = ? AND artisan_id = ?', [$u['id'], $id])) { Db::run('DELETE FROM saved_artisans WHERE user_id = ? AND artisan_id = ?', [$u['id'], $id]); Http::json(['saved' => false]); }
+        if (!Db::one('SELECT user_id FROM artisans WHERE user_id = ? AND hidden_at IS NULL', [$id])) Http::json(['error' => 'not_found'], 404);
+        Db::run('INSERT INTO saved_artisans (user_id, artisan_id, created_at) VALUES (?,?,?)', [$u['id'], $id, Db::now()]);
+        Http::json(['saved' => true]);
     }
 
     /** Called whenever the customer's screen polls, and by Cron: next round when the current one has gone quiet. */

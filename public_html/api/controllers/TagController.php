@@ -22,7 +22,9 @@ final class TagController
     {
         $viewer = Auth::require();
         $q = Tag::clean((string) ($_GET['q'] ?? '')); if (strlen($q) < 2) Http::json(['cards' => []]);
-        $st = Db::pdo()->prepare('SELECT * FROM users WHERE tag LIKE ? AND deleted_at IS NULL ORDER BY (tag = ?) DESC, LENGTH(tag) LIMIT 8'); $st->execute([$q . '%', $q]);
+        $name = trim((string) ($_GET['q'] ?? '')); $name = ltrim($name, '@');
+        $st = Db::pdo()->prepare('SELECT * FROM users WHERE (tag LIKE ? OR name LIKE ?) AND deleted_at IS NULL AND id NOT IN (SELECT blocker FROM blocks WHERE blocked = ?) ORDER BY (tag = ?) DESC, (tag LIKE ?) DESC, LENGTH(tag) LIMIT 12');
+        $st->execute([$q . '%', '%' . $name . '%', $viewer['id'], $q, $q . '%']);
         Http::json(['cards' => array_map(fn($x) => Tag::card($x, $viewer), $st->fetchAll())]);
     }
 
