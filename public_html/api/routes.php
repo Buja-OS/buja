@@ -392,6 +392,11 @@ $router->post('/artisans/{id}/save',         [ServiceJobController::class, 'save
 $router->post('/kart/gp',                    [KartController::class, 'gpFinish']);
 $router->get('/kart/garage',                 [KartController::class, 'garage']);
 $router->post('/kart/garage/upgrade',        [KartController::class, 'upgrade']);
+$router->get('/kart/achievements',           [KartController::class, 'achievements']);
+$router->get('/kart/friend-ghosts',          [KartController::class, 'friendGhosts']);
+$router->post('/kart/perf',                  [KartController::class, 'perf']);
+$router->get('/kart/tier-hint',             [KartController::class, 'tierHint']);
+$router->get('/admin/kart-perf',            [KartController::class, 'adminPerf']);
 $router->post('/kart/garage/item',         [KartController::class, 'item']);
 $router->post('/kart/garage/paint',          [KartController::class, 'paint']);
 

@@ -23,6 +23,22 @@ final class KartController
         'env'    => ['day' => 0, 'sunset' => 400, 'harmattan' => 600, 'night' => 800],
         'sound'  => ['kart' => 0, 'okada' => 300, 'electric' => 400, 'v8' => 500],
     ];
+    /** Achievements: [title, how to earn it, coins]. */
+    public const ACH = [
+        'first_race'    => ['First race', 'Finish any race', 50],
+        'first_win'     => ['Winner', 'Win a race against rivals', 100],
+        'wins_10'       => ['Ten wins', 'Win 10 races', 300],
+        'gp_champion'   => ['Grand Prix champion', 'Win a Grand Prix', 300],
+        'streak_7'      => ['Every day for a week', 'Race 7 days in a row', 300],
+        'drifter'       => ['Drift king', '10 drift boosts in one race', 150],
+        'banana'        => ['Slippery', 'Spin a rival out with a banana', 100],
+        'ghost_beaten'  => ['Ghostbuster', "Beat a friend's ghost lap", 150],
+        'friend_race'   => ['Race day', 'Finish a race against friends', 100],
+        'collector'     => ['Collector', 'Own 5 things from the shop', 200],
+        'maxed'         => ['Fully tuned', 'Max out any upgrade', 200],
+        'weekly_podium' => ['On the podium', "Finish top 3 in a week's tournament", 500],
+    ];
+    public const WEEK_PRIZES = [1 => 1000, 2 => 600, 3 => 300];
     public const QUICK = ['Let\'s go!', 'Nice one', 'Wait for me', 'GG', 'Rematch?', 'Na so!'];
 
     /** Unlimited coins and every upgrade, for the people named in KART_UNLIMITED (by default femiayor@gmail.com). Checked here, on the server. */
@@ -43,6 +59,54 @@ final class KartController
     {
         try { $p = Db::one('SELECT * FROM kart_profiles WHERE user_id = ?', [$uid]); } catch (Throwable $e) { $p = null; }
         return $p ? self::equippedOf($p) + ['paint' => $p['paint'] ?? null] : self::equippedOf([]) + ['paint' => null];
+    }
+    /** Monday 00:00 in Abuja, as UTC, $offset weeks from this one. The tournament week. */
+    public static function weekStart(int $offset = 0): string
+    {
+        $d = new DateTime('monday this week', new DateTimeZone('Africa/Lagos'));
+        if ($offset) $d->modify(($offset > 0 ? '+' : '') . $offset . ' week');
+        return $d->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+    }
+    private static function weekKey(int $offset = 0): string { $d = new DateTime('monday this week', new DateTimeZone('Africa/Lagos')); if ($offset) $d->modify(($offset > 0 ? '+' : '') . $offset . ' week'); return $d->format('Y-m-d'); }
+
+    /** Give an achievement once, with its coins. Returns it if new. Quietly does nothing before migration 039. */
+    public static function achieve(int $uid, string $code): ?array
+    {
+        if (!isset(self::ACH[$code])) return null;
+        try { Db::run('INSERT INTO kart_achievements (user_id, code, earned_at) VALUES (?,?,?)', [$uid, $code, Db::now()]); } catch (Throwable $e) { return null; } // already earned, or no table yet
+        [$title, $how, $coins] = self::ACH[$code];
+        self::profile($uid); Db::run('UPDATE kart_profiles SET coins = coins + ? WHERE user_id = ?', [$coins, $uid]);
+        return ['code' => $code, 'title' => $title, 'coins' => $coins];
+    }
+    /** Achievements that depend on what someone owns: 5 shop items, or a maxed upgrade. */
+    private static function ownershipAchievements(int $uid): array
+    {
+        $p = self::profile($uid); $out = [];
+        $owned = count(array_filter(explode(',', (string) ($p['owned'] ?? '')))) + count(array_filter(explode(',', (string) $p['paints'])));
+        if ($owned >= 5 && ($a = self::achieve($uid, 'collector'))) $out[] = $a;
+        foreach (array_keys(self::STATS) as $s) if ((int) $p[$s] >= self::MAX_LEVEL) { if ($a = self::achieve($uid, 'maxed')) $out[] = $a; break; }
+        return $out;
+    }
+    /** Pay last week's tournament: the top 3 on each circuit. Runs once per week, from the scheduler or the leaderboard. */
+    public static function awardWeekly(): void
+    {
+        try {
+            $wk = self::weekKey(-1); $done = Db::one('SELECT v FROM app_keys WHERE k = ?', ['kart_week_paid']);
+            if ($done && $done['v'] === $wk) return;
+            Db::run("DELETE FROM app_keys WHERE k = 'kart_week_paid'"); Db::run("INSERT INTO app_keys (k, v) VALUES ('kart_week_paid', ?)", [$wk]);
+            $from = self::weekStart(-1); $to = self::weekStart(0);
+            foreach (array_keys(self::TRACKS) as $track) {
+                $st = Db::pdo()->prepare('SELECT k.user_id, MIN(k.lap_ms) AS best FROM kart_times k JOIN users u ON u.id = k.user_id WHERE k.track = ? AND k.created_at >= ? AND k.created_at < ? AND u.deleted_at IS NULL GROUP BY k.user_id ORDER BY best LIMIT 3');
+                $st->execute([$track, $from, $to]);
+                foreach ($st->fetchAll() as $i => $r) {
+                    $place = $i + 1; $coins = self::WEEK_PRIZES[$place];
+                    try { Db::run('INSERT INTO kart_prizes (week, track, place, user_id, lap_ms, coins, created_at) VALUES (?,?,?,?,?,?,?)', [$wk, $track, $place, $r['user_id'], $r['best'], $coins, Db::now()]); } catch (Throwable $e) { continue; }
+                    self::profile((int) $r['user_id']); Db::run('UPDATE kart_profiles SET coins = coins + ? WHERE user_id = ?', [$coins, $r['user_id']]);
+                    self::achieve((int) $r['user_id'], 'weekly_podium');
+                    Notify::user((int) $r['user_id'], 'social', ['', '🥇 You won', '🥈 2nd place', '🥉 3rd place'][$place] . ' in last week\'s Buja Kart tournament', self::TRACKS[$track] . ': +' . number_format($coins) . ' coins are in your garage.', '/#/kart/board?track=' . $track, true);
+                }
+            }
+        } catch (Throwable $e) { error_log('[buja kart weekly] ' . $e->getMessage()); }
     }
     private static function track(string $t): string { return isset(self::TRACKS[$t]) ? $t : 'gp'; }
     private static function first(string $n): string { return explode(' ', trim($n))[0]; }
@@ -79,7 +143,7 @@ final class KartController
         $st = Db::pdo()->prepare("UPDATE kart_profiles SET coins = coins - ?, $stat = $stat + 1, updated_at = ? WHERE user_id = ? AND coins >= ? AND $stat = ?");
         $st->execute([$cost, Db::now(), $u['id'], $cost, $lvl]);
         if ($st->rowCount() === 0) Http::json(['error' => 'validation', 'message' => 'Not enough coins yet. Race to earn more.'], 422);
-        Http::json(['garage' => self::shapeProfile(self::profile((int) $u['id']))]);
+        Http::json(['garage' => self::shapeProfile(self::profile((int) $u['id'])), 'achievements' => self::ownershipAchievements((int) $u['id'])]);
     }
     /** POST /kart/garage/paint { paint } : buy (if needed) and use a paint */
     public function paint(): void
@@ -117,7 +181,71 @@ final class KartController
         }
         $eq = self::equippedOf($p); $eq[$cat] = $id;
         Db::run('UPDATE kart_profiles SET equipped = ?, updated_at = ? WHERE user_id = ?', [json_encode($eq), Db::now(), $u['id']]);
-        Http::json(['garage' => self::shapeProfile(self::profile((int) $u['id']))]);
+        Http::json(['garage' => self::shapeProfile(self::profile((int) $u['id'])), 'achievements' => self::ownershipAchievements((int) $u['id'])]);
+    }
+
+    /** GET /kart/achievements : what I have and what is left */
+    public function achievements(): void
+    {
+        $u = Auth::require(); $have = [];
+        try { $st = Db::pdo()->prepare('SELECT code, earned_at FROM kart_achievements WHERE user_id = ?'); $st->execute([$u['id']]); foreach ($st->fetchAll() as $r) $have[$r['code']] = $r['earned_at']; } catch (Throwable $e) {}
+        Http::json(['achievements' => array_map(fn($code, $a) => ['code' => $code, 'title' => $a[0], 'how' => $a[1], 'coins' => $a[2], 'earnedAt' => $have[$code] ?? null], array_keys(self::ACH), self::ACH)]);
+    }
+
+    /** GET /kart/friend-ghosts?track= : friends who have a best lap here to race against */
+    public function friendGhosts(): void
+    {
+        $u = Auth::require(); $track = self::track((string) ($_GET['track'] ?? 'gp')); $out = [];
+        $ids = class_exists('FriendsController') ? FriendsController::friendIds((int) $u['id']) : [];
+        foreach (array_slice($ids, 0, 60) as $fid) {
+            $r = Db::one('SELECT k.lap_ms, u.name, u.tag FROM kart_times k JOIN users u ON u.id = k.user_id WHERE k.user_id = ? AND k.track = ? AND k.ghost IS NOT NULL ORDER BY k.lap_ms LIMIT 1', [$fid, $track]);
+            if ($r) $out[] = ['id' => (int) $fid, 'name' => self::first($r['name']), 'tag' => $r['tag'], 'lapMs' => (int) $r['lap_ms'], 'avatar' => Auth::picture((int) $fid)];
+        }
+        usort($out, fn($a, $b) => $a['lapMs'] <=> $b['lapMs']);
+        Http::json(['track' => $track, 'friends' => $out]);
+    }
+
+    /** POST /kart/perf : how a race ran on this phone (frame rate, graphics level, chip). Up to 30 a day per person. */
+    public function perf(): void
+    {
+        $u = Auth::require(); RateLimit::hit('kartperf', 30, 86400); $b = Http::body();
+        $tier = in_array($b['tier'] ?? '', ['low', 'medium', 'high'], true) ? $b['tier'] : null;
+        $avg = (float) ($b['fpsAvg'] ?? 0); $low = (float) ($b['fpsLow'] ?? 0); $sec = (int) ($b['seconds'] ?? 0);
+        if (!$tier || $avg <= 0 || $avg > 240 || $low < 0 || $low > $avg + 1 || $sec < 15) Http::json(['error' => 'validation'], 422);
+        try {
+            Db::run('INSERT INTO kart_perf (user_id, tier, auto_tier, gpu, device, mem_gb, cores, fps_avg, fps_low, draw_calls, track, seconds, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                [$u['id'], $tier, empty($b['auto']) ? 0 : 1, mb_substr((string) ($b['gpu'] ?? 'unknown'), 0, 120) ?: 'unknown', mb_substr((string) ($b['device'] ?? ''), 0, 80) ?: null, isset($b['mem']) ? (float) $b['mem'] : null, isset($b['cores']) ? (int) $b['cores'] : null, round($avg, 1), round($low, 1), isset($b['draws']) ? (int) $b['draws'] : null, self::track((string) ($b['track'] ?? 'gp')), min($sec, 3600), Db::now()]);
+        } catch (Throwable $e) { Http::json(['ok' => false]); }
+        Http::json(['ok' => true]);
+    }
+
+    /** GET /kart/tier-hint?gpu= : what Auto should pick for this graphics chip, learned from real races */
+    public function tierHint(): void
+    {
+        Auth::require(); $gpu = mb_substr((string) ($_GET['gpu'] ?? ''), 0, 120); $best = null;
+        try {
+            foreach (['high', 'medium', 'low'] as $t) {
+                $r = Db::one('SELECT COUNT(*) AS n, AVG(fps_avg) AS a, AVG(fps_low) AS l FROM kart_perf WHERE gpu = ? AND tier = ? AND created_at > ?', [$gpu, $t, gmdate('Y-m-d H:i:s', time() - 60 * 86400)]);
+                if ($r && (int) $r['n'] >= 3 && (float) $r['a'] >= 40 && (float) $r['l'] >= 25) { $best = $t; break; }   // smooth enough, on at least 3 races
+            }
+        } catch (Throwable $e) {}
+        Http::json(['gpu' => $gpu, 'tier' => $best]);
+    }
+
+    /** GET /admin/kart-perf : how the game runs on players' phones */
+    public function adminPerf(): void
+    {
+        $u = Auth::require(); if (($u['role'] ?? (!empty($u['is_admin']) ? 'admin' : 'user')) !== 'admin') Http::json(['error' => 'forbidden', 'message' => 'Admins only.'], 403);
+        $since = gmdate('Y-m-d H:i:s', time() - 30 * 86400); $q = function ($sql, $p = []) { $st = Db::pdo()->prepare($sql); $st->execute($p); return $st->fetchAll(); };
+        try {
+            $tiers = $q('SELECT tier, COUNT(*) AS n, AVG(fps_avg) AS a, AVG(fps_low) AS l, SUM(CASE WHEN fps_avg < 25 THEN 1 ELSE 0 END) AS choppy, SUM(auto_tier) AS auto FROM kart_perf WHERE created_at > ? GROUP BY tier', [$since]);
+            $gpus = $q('SELECT gpu, COUNT(*) AS n, AVG(fps_avg) AS a, AVG(fps_low) AS l, MAX(device) AS device FROM kart_perf WHERE created_at > ? GROUP BY gpu ORDER BY n DESC LIMIT 15', [$since]);
+            $recent = $q('SELECT p.tier, p.auto_tier, p.gpu, p.device, p.fps_avg, p.fps_low, p.track, p.created_at, u.name FROM kart_perf p JOIN users u ON u.id = p.user_id ORDER BY p.id DESC LIMIT 25');
+        } catch (Throwable $e) { Http::json(['ready' => false]); }
+        Http::json(['ready' => true,
+            'tiers' => array_map(fn($r) => ['tier' => $r['tier'], 'races' => (int) $r['n'], 'fps' => round((float) $r['a'], 1), 'low' => round((float) $r['l'], 1), 'choppy' => (int) $r['choppy'], 'auto' => (int) $r['auto']], $tiers),
+            'gpus' => array_map(fn($r) => ['gpu' => $r['gpu'], 'device' => $r['device'], 'races' => (int) $r['n'], 'fps' => round((float) $r['a'], 1), 'low' => round((float) $r['l'], 1)], $gpus),
+            'recent' => array_map(fn($r) => ['tier' => $r['tier'], 'auto' => (bool) $r['auto_tier'], 'gpu' => $r['gpu'], 'device' => $r['device'], 'fps' => (float) $r['fps_avg'], 'low' => (float) $r['fps_low'], 'track' => $r['track'], 'at' => $r['created_at'], 'name' => self::first($r['name'])], $recent)]);
     }
 
     /** GET /kart/board?track=&span=week|all : best lap per driver, and where I stand */
@@ -125,13 +253,16 @@ final class KartController
     {
         $u = Auth::require(); $track = self::track((string) ($_GET['track'] ?? 'abuja'));
         $week = ($_GET['span'] ?? 'week') === 'week';
-        $since = $week ? gmdate('Y-m-d H:i:s', time() - 7 * 86400) : '2000-01-01';
+        if ($week) self::awardWeekly();
+        $since = $week ? self::weekStart(0) : '2000-01-01';
         $st = Db::pdo()->prepare('SELECT k.user_id, MIN(k.lap_ms) AS best, u.name, u.tag FROM kart_times k JOIN users u ON u.id = k.user_id WHERE k.track = ? AND k.created_at > ? AND u.deleted_at IS NULL GROUP BY k.user_id, u.name, u.tag ORDER BY best LIMIT 50');
         $st->execute([$track, $since]); $rows = $st->fetchAll();
         $mine = null;
         foreach ($rows as $i => $r) if ((int) $r['user_id'] === (int) $u['id']) $mine = ['rank' => $i + 1, 'best' => (int) $r['best']];
         if (!$mine) { $b = Db::one('SELECT MIN(lap_ms) AS b FROM kart_times WHERE user_id = ? AND track = ? AND created_at > ?', [$u['id'], $track, $since]); if ($b && $b['b']) $mine = ['rank' => null, 'best' => (int) $b['b']]; }
-        Http::json(['track' => $track, 'trackName' => self::TRACKS[$track], 'span' => $week ? 'week' : 'all', 'me' => $mine,
+        $last = []; try { $st = Db::pdo()->prepare('SELECT p.place, p.lap_ms, p.coins, u.name, u.tag FROM kart_prizes p JOIN users u ON u.id = p.user_id WHERE p.week = ? AND p.track = ? ORDER BY p.place'); $st->execute([self::weekKey(-1), $track]); $last = array_map(fn($r) => ['place' => (int) $r['place'], 'name' => self::first($r['name']), 'tag' => $r['tag'], 'lapMs' => (int) $r['lap_ms'], 'coins' => (int) $r['coins']], $st->fetchAll()); } catch (Throwable $e) {}
+        $tournament = ['endsAt' => str_replace(' ', 'T', self::weekStart(1)) . 'Z', 'prizes' => self::WEEK_PRIZES, 'lastWeek' => $last];
+        Http::json(['track' => $track, 'trackName' => self::TRACKS[$track], 'span' => $week ? 'week' : 'all', 'me' => $mine, 'tournament' => $tournament,
             'rows' => array_map(fn($r, $i) => ['rank' => $i + 1, 'userId' => (int) $r['user_id'], 'name' => self::first($r['name']), 'tag' => $r['tag'], 'avatar' => Auth::picture((int) $r['user_id']), 'lapMs' => (int) $r['best'], 'me' => (int) $r['user_id'] === (int) $u['id']], $rows, array_keys($rows))]);
     }
 
@@ -165,7 +296,21 @@ final class KartController
                 if ($st->rowCount() === 1) { $daily = ['bonus' => $bonus, 'streak' => $streak]; $earned += $bonus; }
             }
         } catch (Throwable $e) {} // before migration 038 there is simply no daily bonus
-        Http::json(['personalBest' => $pb, 'previousBest' => $prev && $prev['b'] ? (int) $prev['b'] : null, 'rank' => $rank, 'coinsEarned' => $earned, 'daily' => $daily, 'coins' => (int) (Db::one('SELECT coins FROM kart_profiles WHERE user_id = ?', [$u['id']])['coins'] ?? 0)], 201);
+        $uid = (int) $u['id']; $got = []; $stats = is_array($b['stats'] ?? null) ? $b['stats'] : [];
+        $add = function ($a) use (&$got) { if ($a) $got[] = $a; };
+        $add(self::achieve($uid, 'first_race'));
+        if ($place === 1 && $mode !== 'solo') $add(self::achieve($uid, 'first_win'));
+        $pr = self::profile($uid);
+        if ((int) $pr['wins'] >= 10) $add(self::achieve($uid, 'wins_10'));
+        if ((int) ($pr['streak'] ?? 0) >= 7) $add(self::achieve($uid, 'streak_7'));
+        if ((int) ($stats['drifts'] ?? 0) >= 10) $add(self::achieve($uid, 'drifter'));
+        if ((int) ($stats['bananaHits'] ?? 0) >= 1 && $mode !== 'solo') $add(self::achieve($uid, 'banana'));
+        if ($mode === 'room') $add(self::achieve($uid, 'friend_race'));
+        // a friend's ghost is checked here, not taken on trust: the lap must beat that friend's real best
+        $fid = (int) ($stats['ghostFriend'] ?? 0);
+        if ($fid && class_exists('FriendsController') && FriendsController::state($uid, $fid) === 'friends') { $fb = Db::one('SELECT MIN(lap_ms) AS b FROM kart_times WHERE user_id = ? AND track = ?', [$fid, $track]); if ($fb && $fb['b'] && $lap < (int) $fb['b']) $add(self::achieve($uid, 'ghost_beaten')); }
+        $bonusCoins = array_sum(array_map(fn($a) => $a['coins'], $got));
+        Http::json(['personalBest' => $pb, 'previousBest' => $prev && $prev['b'] ? (int) $prev['b'] : null, 'rank' => $rank, 'coinsEarned' => $earned + $bonusCoins, 'daily' => $daily, 'achievements' => $got, 'coins' => (int) (Db::one('SELECT coins FROM kart_profiles WHERE user_id = ?', [$u['id']])['coins'] ?? 0)], 201);
     }
 
     /** POST /kart/gp { place } : a bonus for finishing all four Grand Prix races (a real Grand Prix takes 6 minutes or more) */
@@ -176,16 +321,22 @@ final class KartController
         self::profile((int) $u['id']);
         Db::run('UPDATE kart_profiles SET coins = coins + ?, wins = wins + ?, updated_at = ? WHERE user_id = ?', [$coins, $place === 1 ? 1 : 0, Db::now(), $u['id']]);
         Track::hit($u, 'kart', 'gp_finish');
-        Http::json(['coinsEarned' => $coins, 'garage' => self::shapeProfile(self::profile((int) $u['id']))]);
+        $ach = $place === 1 ? self::achieve((int) $u['id'], 'gp_champion') : null;
+        Http::json(['coinsEarned' => $coins, 'achievements' => $ach ? [$ach] : [], 'garage' => self::shapeProfile(self::profile((int) $u['id']))]);
     }
 
     /** GET /kart/ghost?track=&who=me|best : a lap to race against */
     public function ghost(): void
     {
-        $u = Auth::require(); $track = self::track((string) ($_GET['track'] ?? 'abuja'));
-        $me = ($_GET['who'] ?? 'me') === 'me';
-        $r = Db::one('SELECT k.ghost, k.lap_ms, u.name FROM kart_times k JOIN users u ON u.id = k.user_id WHERE k.track = ? AND k.ghost IS NOT NULL' . ($me ? ' AND k.user_id = ' . (int) $u['id'] : '') . ' ORDER BY k.lap_ms LIMIT 1', [$track]);
-        Http::json(['ghost' => $r ? ['name' => $me ? 'Your best' : self::first($r['name']), 'lapMs' => (int) $r['lap_ms'], 'path' => json_decode((string) $r['ghost'], true)] : null]);
+        $u = Auth::require(); $track = self::track((string) ($_GET['track'] ?? 'abuja')); $who = (string) ($_GET['who'] ?? 'me');
+        $where = ''; $label = null;
+        if ($who === 'friend') {
+            $fid = (int) ($_GET['id'] ?? 0);
+            if (!$fid || !class_exists('FriendsController') || FriendsController::state((int) $u['id'], $fid) !== 'friends') Http::json(['error' => 'forbidden', 'message' => 'You can race the ghost of friends only.'], 403);
+            $where = ' AND k.user_id = ' . $fid;
+        } elseif ($who === 'me') { $where = ' AND k.user_id = ' . (int) $u['id']; $label = 'Your best'; }
+        $r = Db::one('SELECT k.ghost, k.lap_ms, u.name FROM kart_times k JOIN users u ON u.id = k.user_id WHERE k.track = ? AND k.ghost IS NOT NULL' . $where . ' ORDER BY k.lap_ms LIMIT 1', [$track]);
+        Http::json(['ghost' => $r ? ['name' => $label ?? self::first($r['name']), 'lapMs' => (int) $r['lap_ms'], 'path' => json_decode((string) $r['ghost'], true)] : null]);
     }
 
     /* ------------------------------ Rooms ------------------------------ */

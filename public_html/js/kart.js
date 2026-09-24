@@ -76,6 +76,9 @@ const ENVS = {
 };
 const BOOSTS = [0.1, 0.33, 0.52, 0.8];
 
+/** Time left until the tournament ends, in words. */
+function tLeft(iso) { const ms = new Date(iso) - Date.now(); if (ms <= 0) return 'a moment'; const d = Math.floor(ms / 86400000), hh = Math.floor(ms % 86400000 / 3600000), mm = Math.floor(ms % 3600000 / 60000); return d ? `${d}d ${hh}h` : hh ? `${hh}h ${mm}m` : `${mm}m`; }
+
 export function registerKart({ route, go, state, api, ui, failed }) {
   const { h, toast, topbar, icon, busy, avatar } = ui;
   const fmt = (ms) => { if (ms == null) return '–'; const m = Math.floor(ms / 60000), s = (ms % 60000) / 1000; return m + ':' + s.toFixed(2).padStart(5, '0'); };
@@ -95,6 +98,8 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       <button class="kart-btn kart-btn-gp" id="gpstart"><b>🏆 Grand Prix</b><span>Four races: city streets, the Grand Prix circuit, then both reversed. Points for every finish.</span></button>
       <button class="kart-btn kart-btn-go" data-go="/kart/play?mode=bots"><b>Race</b><span>Three Abuja drivers, item boxes: 🌶️ pepper, 🍌 banana, 🥤 zobo, ⚡ NEPA</span></button>
       <button class="kart-btn" data-go="/kart/play?mode=solo"><b>Time trial</b><span>Beat your own ghost, lap after lap</span></button>
+      <div class="card stack" style="padding:12px 14px;gap:8px" id="fghosts"><div class="h-sm">👻 Race a friend's ghost</div><div class="small muted">Loading your friends' best laps…</div></div>
+      <a class="card row" href="#/kart/trophies" style="padding:12px 14px;gap:12px"><span style="font-size:26px">🏆</span><span class="grow"><b>Trophies</b><br><span class="small muted" id="trophysum">Achievements that pay coins</span></span>${icon('chevron-right')}</a>
       <button class="kart-btn" data-go="/kart/play?mode=solo&ghost=best"><b>Chase the champion</b><span>Race the fastest lap in Abuja</span></button>
       <div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Race your friends</div>
         <button class="btn btn-primary" id="newroom">${icon('flag-checkered')} Start a race room</button>
@@ -110,6 +115,12 @@ export function registerKart({ route, go, state, api, ui, failed }) {
   }, {
     mount(el) {
       el.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
+      // learn what this phone's chip runs smoothly (Auto uses it next race)
+      if (gpuName()) api.kartTierHint(gpuName()).then((r) => { try { if (r.tier) localStorage.setItem('buja_kart_hint', JSON.stringify({ gpu: gpuName(), tier: r.tier, at: Date.now() })); } catch {} }).catch(() => {});
+      api.kartAchievements().then((r) => { const n = r.achievements.filter((a) => a.earnedAt).length; const s = el.querySelector('#trophysum'); if (s) s.textContent = n + ' of ' + r.achievements.length + ' earned'; }).catch(() => {});
+      api.kartFriendGhosts({ track: myTrack() }).then((r) => { const box = el.querySelector('#fghosts'); if (!box) return;
+        box.innerHTML = '<div class="h-sm">👻 Race a friend\'s ghost</div>' + (r.friends.length ? r.friends.slice(0, 6).map((f) => `<button class="row kart-fghost" data-fid="${f.id}" style="gap:10px"><img src="${f.avatar || ''}" alt="" onerror="this.style.visibility='hidden'"><span class="grow" style="text-align:left"><b>${h(f.name)}</b><br><span class="small muted">best ${fmt(f.lapMs)} on ${h(TRACKS[r.track] ? TRACKS[r.track].name : r.track)}</span></span><span class="tag">Race</span></button>`).join('') : '<div class="small muted">When friends set a lap on this circuit, race their ghost here. <a href="#/friends" style="text-decoration:underline">Add friends</a></div>');
+        box.querySelectorAll('[data-fid]').forEach((b) => b.addEventListener('click', () => go('/kart/play?mode=solo&ghost=friend&fid=' + b.dataset.fid + '&track=' + r.track))); }).catch(() => { const box = el.querySelector('#fghosts'); if (box) box.remove(); });
       el.querySelector('#gpstart')?.addEventListener('click', () => { gpSave({ round: 0, pts: {} }); go('/kart/play?mode=gp&track=' + GP_ROUNDS[0]); });
       api.kartGarage().then((r) => { const c = el.querySelector('#coins'); if (c) c.textContent = '🪙 ' + r.garage.coins; }).catch(() => {});
       el.querySelectorAll('[data-track]').forEach((b) => b.addEventListener('click', () => { try { localStorage.setItem('buja_kart_track', b.dataset.track); } catch {} go('/kart'); location.reload(); }));
@@ -176,10 +187,24 @@ export function registerKart({ route, go, state, api, ui, failed }) {
     const span = new URLSearchParams(location.hash.split('?')[1] || '').get('span') || 'week';
     const tr = new URLSearchParams(location.hash.split('?')[1] || '').get('track') || myTrack(); const b = await api.kartBoard({ span, track: tr });
     return `${topbar('Leaderboard', '/kart')}<main class="pad stack" style="gap:12px">
-      <div class="row" style="gap:8px"><a class="chip ${span === 'week' ? 'on' : ''}" href="#/kart/board?span=week">This week</a><a class="chip ${span === 'all' ? 'on' : ''}" href="#/kart/board?span=all">All time</a></div>
+      <div class="kart-tabs">${Object.entries(TRACKS).map(([id, t]) => `<a class="chip ${b.track === id ? 'on' : ''}" href="#/kart/board?span=${span}&track=${id}">${h(t.name)}</a>`).join('')}</div>
+      <div class="row" style="gap:8px"><a class="chip ${span === 'week' ? 'on' : ''}" href="#/kart/board?span=week&track=${b.track}">This week</a><a class="chip ${span === 'all' ? 'on' : ''}" href="#/kart/board?span=all&track=${b.track}">All time</a></div>
+      ${span === 'week' && b.tournament ? `<div class="kart-tourney"><div class="row" style="gap:10px"><span style="font-size:28px">🏁</span><div class="grow"><b>Weekly tournament</b><div class="small">Top 3 fastest laps win coins. Ends in <b id="tleft">${tLeft(b.tournament.endsAt)}</b> (Sunday midnight).</div></div></div>
+        <div class="row" style="gap:6px">${[1, 2, 3].map((p) => `<span class="kart-prize">${['', '🥇', '🥈', '🥉'][p]} ${Number(b.tournament.prizes[p]).toLocaleString('en-NG')}</span>`).join('')}</div>
+        ${b.tournament.lastWeek.length ? `<div class="small" style="opacity:.85">Last week: ${b.tournament.lastWeek.map((w) => `${['', '🥇', '🥈', '🥉'][w.place]} ${h(w.name)} ${fmt(w.lapMs)}`).join(' · ')}</div>` : ''}</div>` : ''}
       <div class="small muted">${h(b.trackName)} · best lap per driver</div>
       ${b.rows.length ? `<div class="card list">${b.rows.map((r) => `<a class="item" href="#/@${h(r.tag || '')}" style="${r.me ? 'background:var(--orange-tint)' : ''}"><div style="width:30px;font-weight:900;font-size:16px;color:${r.rank <= 3 ? ['#D4A017', '#9AA0AB', '#B87333'][r.rank - 1] : 'var(--ink-3)'}">${r.rank}</div>${r.avatar ? `<img src="${h(r.avatar)}" alt="" style="width:34px;height:34px;border-radius:17px;object-fit:cover">` : avatar(r.name, 34)}<div class="grow"><div class="t">${h(r.name)}${r.me ? ' (you)' : ''}</div><div class="s">@${h(r.tag || '')}</div></div><div style="font:800 15px ui-monospace,Menlo,monospace">${fmt(r.lapMs)}</div></a>`).join('')}</div>` : `<div class="placeholder" style="padding:40px 0"><div class="h-md">No laps yet ${span === 'week' ? 'this week' : ''}</div><a class="btn btn-primary" href="#/kart/play?mode=solo" style="width:auto">Set the first time</a></div>`}
       ${b.me && !b.me.rank ? `<div class="small muted">Your best: ${fmt(b.me.best)}</div>` : ''}
+    </main>`;
+  });
+
+  /* ============================== TROPHIES ============================== */
+  route('/kart/trophies', { auth: true, tabs: '' }, async () => {
+    const { achievements: a } = await api.kartAchievements();
+    const done = a.filter((x) => x.earnedAt).length;
+    return `${topbar('Trophies', '/kart')}<main class="pad stack" style="gap:12px">
+      <div class="card row" style="padding:14px;gap:12px"><span style="font-size:34px">🏆</span><div class="grow"><div style="font:900 22px Inter,system-ui">${done} of ${a.length}</div><div class="small muted">Each trophy pays coins, once.</div></div></div>
+      <div class="kart-shop">${a.map((x) => `<div class="kart-item-card ${x.earnedAt ? 'on' : 'locked'}"><b>${x.earnedAt ? '🏆' : '🔒'} ${h(x.title)}</b><span>${h(x.how)}</span><em>${x.earnedAt ? 'Earned ' + new Date(x.earnedAt.replace(' ', 'T') + 'Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '+' + x.coins + ' 🪙'}</em></div>`).join('')}</div>
     </main>`;
   });
 
@@ -253,7 +278,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       const mode = q.get('mode') || 'bots', code = q.get('code');
       document.body.classList.add('kart-on');
       const trackId = TRACKS[q.get('track')] ? q.get('track') : myTrack();
-      const game = new Race(el, { mode, code, trackId, ghostWho: q.get('ghost') === 'best' ? 'best' : 'me', api, me: state.user, go, toast, h, fmt, ord });
+      const game = new Race(el, { mode, code, trackId, ghostWho: ['best', 'friend'].includes(q.get('ghost')) ? q.get('ghost') : 'me', ghostFriend: +q.get('fid') || 0, api, me: state.user, go, toast, h, fmt, ord });
       try { await game.start(); } catch (e) { console.error(e); el.querySelector('#count').innerHTML = `<div style="font-size:18px;max-width:280px;text-align:center">This phone could not start 3D graphics. ${h(e.message || '')}</div>`; }
       const obs = new MutationObserver(() => { if (!document.body.contains(el)) { obs.disconnect(); game.stop(); document.body.classList.remove('kart-on'); } });
       obs.observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
@@ -325,7 +350,7 @@ class Race {
 
     if (this.mode === 'bots' || this.mode === 'gp') this.bots = Object.entries(DRIVERS).filter(([id]) => id !== this.driver).map(([id, d]) => [d.name, d.colour, d.skill * (1 + 0.022 * (this.avgLevel || 0))]).map(([n, c, skill], i) => { const k = this.makeKart(c); k.name = n; k.skill = skill; k.lane = (i - 1) * 4; this.placeOnGrid(k, i + 1); k.v = 0; k.s = k.startS; k.lap = 1; return k; });
     else this.bots = [];
-    if (this.mode === 'solo') { try { const g = (await this.api.kartGhost({ who: this.ghostWho, track: this.trackId })).ghost; if (g && g.path && g.path.length > 10) { this.ghost = { ...g, kart: this.makeKart('#FFFFFF', false, true) }; this.toast('Racing ' + g.name + ': ' + this.fmt(g.lapMs)); } } catch {} }
+    if (this.mode === 'solo') { try { const g = (await this.api.kartGhost({ who: this.ghostWho, track: this.trackId, ...(this.ghostWho === 'friend' ? { id: this.ghostFriend } : {}) })).ghost; if (g && g.path && g.path.length > 10) { this.ghost = { ...g, kart: this.makeKart('#FFFFFF', false, true) }; this.toast('Racing ' + g.name + ': ' + this.fmt(g.lapMs)); } } catch {} }
     if (this.mode === 'room') { this.el.querySelector('#chatbtn').style.display = ''; this.bindChat(); await this.syncRoom(true); }
 
     window.__bujaKart = this; // lets tests and support look inside a race
@@ -333,7 +358,22 @@ class Race {
     this.phase = 'count'; this.countFrom = this.mode === 'room' && this.room && this.room.startAt ? null : performance.now() + 3200;
     this.loop = this.loop.bind(this); requestAnimationFrame(this.loop);
   }
-  stop() { window.removeEventListener('orientationchange', this._rot); try { screen.orientation && screen.orientation.removeEventListener && screen.orientation.removeEventListener('change', this._rot); } catch {} this.audio.stop(); try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch {} try { if (document.fullscreenElement) document.exitFullscreen(); } catch {} window.removeEventListener('deviceorientation', this._tilt); document.removeEventListener('visibilitychange', this._vis); this.running = false; window.removeEventListener('resize', this._onResize); window.removeEventListener('keydown', this._kd); window.removeEventListener('keyup', this._ku); try { this.renderer.dispose(); } catch {} }
+  /** Send how this race ran on this phone, once. Auto learns from it; admins see it. */
+  reportPerf() {
+    // judged by time raced, not frame count: the slowest phones draw the fewest frames, and they matter most here
+    if (this._perfSent || !this._ft) return;
+    let skip = 0, t = 0; while (skip < this._ft.length && t < 2000) t += this._ft[skip++];   // the first two seconds settle in
+    const ft = this._ft.slice(skip).filter((x) => x > 0 && x < 2000); if (ft.length < 20) return;
+    const secs = ft.reduce((a, b) => a + b, 0) / 1000; if (secs < 15) return; this._perfSent = true;
+    const sorted = ft.slice().sort((a, b) => a - b); const p90 = sorted[Math.floor(sorted.length * 0.9)];
+    const fpsAvg = ft.length / secs, fpsLow = Math.min(fpsAvg, 1000 / p90);
+    const auto = ((() => { try { return localStorage.getItem('buja_kart_gfx'); } catch { return null; } })() || 'auto') === 'auto';
+    const device = (navigator.userAgent.match(/Android [\d.]+; ([^;)]+)/) || [])[1] || null;
+    this.api.kartPerf({ tier: this.tier, auto, gpu: gpuName() || 'unknown', device, mem: navigator.deviceMemory || null, cores: navigator.hardwareConcurrency || null, fpsAvg: Math.round(fpsAvg * 10) / 10, fpsLow: Math.round(fpsLow * 10) / 10, draws: this.renderer.info.render.calls, track: this.trackId, seconds: Math.round(secs) }).catch(() => {});
+    // choppy on Auto: next race one level lower, and say so
+    if (auto && fpsAvg < 24 && this.tier !== 'low') { try { localStorage.setItem('buja_kart_autodown', JSON.stringify({ gpu: gpuName(), tier: LEVELS[LEVELS.indexOf(this.tier) - 1] })); } catch {} this._lowered = true; }
+  }
+  stop() { this.reportPerf(); window.removeEventListener('orientationchange', this._rot); try { screen.orientation && screen.orientation.removeEventListener && screen.orientation.removeEventListener('change', this._rot); } catch {} this.audio.stop(); try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch {} try { if (document.fullscreenElement) document.exitFullscreen(); } catch {} window.removeEventListener('deviceorientation', this._tilt); document.removeEventListener('visibilitychange', this._vis); this.running = false; window.removeEventListener('resize', this._onResize); window.removeEventListener('keydown', this._kd); window.removeEventListener('keyup', this._ku); try { this.renderer.dispose(); } catch {} }
   resize() { const w = this.el.clientWidth || innerWidth, hgt = this.el.clientHeight || innerHeight; this.renderer.setSize(w, hgt, false); this.camera.aspect = w / hgt; this.camera.updateProjectionMatrix(); }
 
   /* ------------------------------ the circuit: real Abuja streets ------------------------------ */
@@ -638,7 +678,7 @@ class Race {
     const grip = drift && Math.abs(steer) > 0 ? 1.55 : 1;
     const turn = steer * grip * (0.9 + 0.8 * Math.min(1, k.v / 18)) * dt * (k.v > 1 ? 1 : k.v);
     k.h += turn * 1.05 * (k.turnMul || 1);
-    if (!isAI) { if (drift && Math.abs(steer) > 0 && k.v > 14) k.drift = Math.min(2.2, k.drift + dt); else if (k.drift > 0.55) { k.boost = Math.min(1.6, k.drift * 0.7) * (k.boostMul || 1); k.drift = 0; this.buzz(20); } else k.drift = 0; }
+    if (!isAI) { if (drift && Math.abs(steer) > 0 && k.v > 14) k.drift = Math.min(2.2, k.drift + dt); else if (k.drift > 0.55) { k.boost = Math.min(1.6, k.drift * 0.7) * (k.boostMul || 1); k.drift = 0; this.buzz(20); this._drifts = (this._drifts || 0) + 1; } else k.drift = 0; }
     k.position.x += Math.sin(k.h) * k.v * dt; k.position.z += Math.cos(k.h) * k.v * dt;
     // walls: slide along instead of stopping dead
     if (Math.abs(on.lateral) > ROAD_W / 2 + 9) { const t = this.tangents[on.i], back = Math.sign(on.lateral) * (Math.abs(on.lateral) - (ROAD_W / 2 + 9)); k.position.x += t.z * back; k.position.z -= t.x * back; if (!isAI && k.v > 8 && !k._hit) { this.audio.bump(); this.shake = 0.35; this.buzz(30); } k._hit = true; k.v *= 0.9; } else k._hit = false;
@@ -676,6 +716,7 @@ class Race {
   /* ------------------------------ the loop ------------------------------ */
   loop(now) {
     if (!this.running) return;
+    if (this.phase === 'race' && !this.paused) { if (this._lastFrame) (this._ft || (this._ft = [])).push(now - this._lastFrame); this._lastFrame = now; } else this._lastFrame = 0;
     const dt = Math.min(0.05, this.clock.getDelta());
     const count = this.el.querySelector('#count');
     if (this.phase === 'count') {
@@ -778,7 +819,7 @@ class Race {
         ${bonus && bonus.coinsEarned ? `<div class="kart-coins">+${bonus.coinsEarned} 🪙 Grand Prix bonus</div>` : ''}</div>`;
       this._gpNext = done ? null : GP_ROUNDS[st.round];
     }
-    try { saved = await this.api.kartSaveTime({ place: this.mode === 'solo' ? 1 : place, track: this.trackId, lapMs: this.bestLap, raceMs, mode: this.mode, ghost: this.bestPath }); } catch {}
+    try { this.reportPerf(); saved = await this.api.kartSaveTime({ place: this.mode === 'solo' ? 1 : place, track: this.trackId, lapMs: this.bestLap, raceMs, mode: this.mode, ghost: this.bestPath, stats: { drifts: this._drifts || 0, bananaHits: this._bananaHits || 0, ghostFriend: this.ghostWho === 'friend' ? this.ghostFriend : 0 } }); } catch {}
     if (this.mode === 'room') { try { await this.api.kartFinish(this.code, raceMs); } catch {} }
     const r = this.el.querySelector('#result');
     r.innerHTML = `<div class="kart-card"><div class="kart-place"><img class="kart-face" src="/assets/kart/driver-${this.driver}.jpg" alt="" style="--c:${DRIVERS[this.driver].colour}"><span>${this.mode === 'solo' ? '🏁' : place === 1 ? '🏆' : '🏁'}</span></div>
@@ -786,6 +827,8 @@ class Race {
       <div class="kart-row"><span>Race</span><b>${this.fmt(raceMs)}</b></div><div class="kart-row"><span>Best lap</span><b>${this.fmt(this.bestLap)}</b></div>
       ${saved ? `<div class="kart-row"><span>Abuja ranking, all time</span><b>${this.ord(saved.rank)}</b></div>${saved.personalBest ? '<div class="kart-pb">New personal best!</div>' : `<div class="kart-sub">Your best: ${this.fmt(saved.previousBest)}</div>`}` : ''}
       ${saved && saved.coinsEarned ? `<div class="kart-coins">+${saved.coinsEarned} 🪙 <span>${saved.coins} in the garage</span></div>` : ''}
+      ${saved && saved.achievements && saved.achievements.length ? `<div class="kart-ach-new">${saved.achievements.map((a) => `<div>🏆 <b>${this.h(a.title)}</b><span>+${a.coins}</span></div>`).join('')}</div>` : ''}
+      ${this._lowered ? '<div class="kart-sub">That race ran a little choppy, so Auto will use lower graphics next time.</div>' : ''}
       ${saved && saved.daily ? `<div class="kart-sub">Includes today's first-race bonus: +${saved.daily.bonus} (${saved.daily.streak}-day streak${saved.daily.streak < 7 ? ', come back tomorrow for more' : ', the maximum'})</div>` : ''}
       ${gpHtml}
       <div class="kart-actions"><button class="btn btn-primary" id="again">${this.mode === 'room' ? 'Back to the room' : this.mode === 'gp' ? (this._gpNext ? 'Next race: ' + TRACKS[this._gpNext].name : 'Back to Buja Kart') : 'Race again'}</button><a class="btn btn-outline" href="#/kart/board?track=${this.trackId}">Leaderboard</a><a class="btn btn-ghost" href="#/kart">Menu</a></div></div>`;
@@ -864,7 +907,7 @@ class Race {
     // bananas: anyone driving over one spins out (the dropper is safe for a second)
     this.bananas = this.bananas.filter((ban) => {
       for (const k of racers) { if (k === ban.owner && now - ban.born < 1200) continue;
-        if ((k.position.x - ban.g.position.x) ** 2 + (k.position.z - ban.g.position.z) ** 2 < 1.7 ** 2 && !(k.spin > 0)) { k.spin = 1.1; k.v *= 0.45; if (k === this.player) { this.audio.tone(500, 0.5, 'sine', 0.2, 0, -350); this.callout('🍌 Spun out!', false); this.buzz(50); } this.scene.remove(ban.g); return false; } }
+        if ((k.position.x - ban.g.position.x) ** 2 + (k.position.z - ban.g.position.z) ** 2 < 1.7 ** 2 && !(k.spin > 0)) { k.spin = 1.1; k.v *= 0.45; if (ban.owner === this.player && k !== this.player) this._bananaHits = (this._bananaHits || 0) + 1; if (k === this.player) { this.audio.tone(500, 0.5, 'sine', 0.2, 0, -350); this.callout('🍌 Spun out!', false); this.buzz(50); } this.scene.remove(ban.g); return false; } }
       ban.g.rotation.y += dt; return now - ban.born < 45000;
     });
     // computer drivers use what they pick up, after a moment's thought
@@ -1101,12 +1144,25 @@ class Race {
 /*                                     helpers for the world                                        */
 /* ================================================================================================ */
 /** Graphics quality: low for small or weak phones, high for strong ones; the menu can override it. */
+/** The graphics chip the browser reports, e.g. "Mali-G52 MC2". Read once. */
+let _gpu = null;
+function gpuName() {
+  if (_gpu !== null) return _gpu;
+  _gpu = ''; try { const c = document.createElement('canvas').getContext('webgl'); const e = c.getExtension('WEBGL_debug_renderer_info'); _gpu = e ? String(c.getParameter(e.UNMASKED_RENDERER_WEBGL)) : ''; } catch {}
+  return _gpu;
+}
+const LEVELS = ['low', 'medium', 'high'];
 function pickTier() {
   const saved = (() => { try { return localStorage.getItem('buja_kart_gfx'); } catch { return null; } })();
   if (saved && saved !== 'auto') return saved;
   const mem = navigator.deviceMemory || 4, cores = navigator.hardwareConcurrency || 4;
-  let gpu = ''; try { const c = document.createElement('canvas').getContext('webgl'); const e = c.getExtension('WEBGL_debug_renderer_info'); gpu = e ? String(c.getParameter(e.UNMASKED_RENDERER_WEBGL)) : ''; } catch {}
+  const gpu = gpuName();
   if (/SwiftShader|llvmpipe/i.test(gpu)) return 'low';
+  const store = (key) => { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } };
+  // 1. this phone ran choppy last time on Auto: stay a level lower
+  const down = store('buja_kart_autodown'); if (down && down.gpu === gpu && LEVELS.includes(down.tier)) return down.tier;
+  // 2. what real races on this same chip say runs smoothly (learned by the server)
+  const hint = store('buja_kart_hint'); if (hint && hint.gpu === gpu && LEVELS.includes(hint.tier) && Date.now() - hint.at < 7 * 86400000) return hint.tier;
   if (mem <= 3 || cores <= 4 || /Mali-(G5[0-9]|T|4)|PowerVR|Adreno \(TM\) [3-5]/i.test(gpu)) return mem >= 4 && !/Mali-(T|4)|PowerVR/i.test(gpu) ? 'medium' : 'low';
   return mem >= 6 && cores >= 8 ? 'high' : 'medium';
 }

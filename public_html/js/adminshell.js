@@ -8,6 +8,7 @@ const NAV = [
   ['Learning', [['/admin/learn', 'book-open', 'Learn analytics'], ['/admin/learners', 'user', 'Learners']]],
   ['Send', [['/admin/broadcast', 'paper-plane', 'Notifications']]],
   ['Money', [['/admin/escrow', 'shield-halved', 'Escrow']]],
+  ['Games', [['/admin/kart-perf', 'gamepad', 'Buja Kart on phones']]],
   ['Settings', [['/admin/waka-pricing', 'gas-pump', 'Waka pricing'], ['/admin/ads', 'bolt', 'Ads']]],
 ];
 
@@ -35,6 +36,24 @@ export function registerAdminShell({ route, go, state, api, ui, failed }) {
   shell((location.hash.slice(1) || '/').split('?')[0]);
 
   /* ---------------- Social moderation ---------------- */
+  /* ---------- Buja Kart: how it runs on real phones ---------- */
+  route('/admin/kart-perf', { auth: true, tabs: '' }, async () => {
+    const g = guard(); if (g) return g;
+    const d = await api.adminKartPerf();
+    if (!d.ready) return `${topbar('Buja Kart on phones', '/admin')}<main class="pad"><div class="card" style="padding:14px">Waiting for migration 039 to be installed.</div></main>`;
+    const tone = (fps) => fps >= 40 ? 'var(--green-dark)' : fps >= 25 ? 'var(--orange-dark)' : '#D92D20';
+    const total = d.tiers.reduce((a, t) => a + t.races, 0);
+    return `${topbar('Buja Kart on phones', '/admin')}<main class="pad stack" style="gap:12px">
+      <div class="small muted" style="line-height:1.5">Every race reports its frame rate. 40+ is smooth, 25 to 40 is fine, under 25 is choppy. "Slowest" is the slowest tenth of frames, the stutter people feel. Last 30 days, ${total} race${total === 1 ? '' : 's'}.</div>
+      <div class="section">BY GRAPHICS LEVEL</div>
+      ${d.tiers.length ? `<div class="card list">${['low', 'medium', 'high'].map((t) => d.tiers.find((x) => x.tier === t)).filter(Boolean).map((t) => `<div class="item"><div class="grow"><div class="t">${t.tier[0].toUpperCase() + t.tier.slice(1)}</div><div class="s">${t.races} races · ${t.auto} chosen by Auto · ${t.choppy} choppy</div></div><div style="text-align:right"><b style="color:${tone(t.fps)};font-size:18px">${t.fps} fps</b><div class="s">slowest ${t.low}</div></div></div>`).join('')}</div>` : '<div class="small muted">No races reported yet.</div>'}
+      <div class="section">BY PHONE GRAPHICS CHIP</div>
+      ${d.gpus.length ? `<div class="card list">${d.gpus.map((x) => `<div class="item"><div class="grow" style="min-width:0"><div class="t" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(x.gpu)}</div><div class="s">${h(x.device || 'phone model not shared')} · ${x.races} races</div></div><div style="text-align:right"><b style="color:${tone(x.fps)}">${x.fps} fps</b><div class="s">slowest ${x.low}</div></div></div>`).join('')}</div>` : '<div class="small muted">None yet.</div>'}
+      <div class="section">LATEST RACES</div>
+      ${d.recent.length ? `<div class="card list">${d.recent.map((x) => `<div class="item"><div class="grow" style="min-width:0"><div class="t">${h(x.name)} · ${x.tier}${x.auto ? ' (Auto)' : ''}</div><div class="s" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(x.device || x.gpu)} · ${h(x.track || '')}</div></div><b style="color:${tone(x.fps)}">${x.fps}</b></div>`).join('')}</div>` : '<div class="small muted">None yet.</div>'}
+    </main>`;
+  });
+
   route('/admin/social', { auth: true, tabs: '' }, async () => {
     const g = guard(); if (g) return g;
     const f = new URLSearchParams(location.hash.split('?')[1] || '');

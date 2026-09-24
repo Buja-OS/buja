@@ -22,6 +22,8 @@ final class Cron
             if ((int) $lagos->format('N') === 1 && (int) $lagos->format('G') >= 7 && self::stamp('digest_tick') < $now - 60) { self::mark('digest_tick'); self::digest(5); return; }
             // Breakdown requests waiting on a mechanic: next round every minute, even when the customer's screen is closed.
             if (Db::one("SELECT 1 AS x FROM service_jobs WHERE mode = 'nearest' AND status = 'requested' LIMIT 1") && self::stamp('dispatch_tick') < $now - 30) { self::mark('dispatch_tick'); ServiceJobController::escalateAll(20); }
+            // Buja Kart: pay last week's tournament once, early on Monday, even if nobody opens the leaderboard.
+            if (self::stamp('kart_week_tick') < $now - 3600) { self::mark('kart_week_tick'); KartController::awardWeekly(); }
             // Escrow: release after 3 quiet days, refund after 7 days with no handover, retry failed payouts. Every 10 minutes.
             if (self::stamp('escrow_tick') < $now - 600 && Db::one("SELECT 1 AS x FROM escrow_orders WHERE status IN ('paid','shipped') LIMIT 1")) { self::mark('escrow_tick'); EscrowController::tick(); return; }
             // Broadcasts still queued: forty more per poll.

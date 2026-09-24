@@ -1,4 +1,4 @@
-# Buja, Phase 37: the Buja Kart shop
+# Buja, Phase 38: Buja Kart on real phones, tournaments and trophies
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -765,6 +765,29 @@ cannot spend the same coins twice. Friends in a race room see each other's paint
 
 Migration 038 adds owned, equipped, daily_on and streak to kart_profiles. Before it runs, the shop says it is waiting
 and everything else works; the Launch checklist reports it.
+
+## Phase 38: Buja Kart on real phones, weekly tournaments, trophies, friend ghosts
+
+**Real-phone performance.** Every race of 15 seconds or more reports, once, its graphics level, whether Auto chose it,
+the phone's graphics chip and model, average frame rate and the slowest tenth of frames (judged by time raced, so the
+slowest phones still report). Admin, Games, Buja Kart on phones shows it by level, by chip, and race by race. Auto
+learns from it: a chip with at least 3 smooth races (40 fps average, 25 at its slowest) at a level gets that level;
+a race that runs under 24 fps on Auto drops the next race one level, and the result card says so.
+
+**Weekly tournament.** The leaderboard's "This week" is now Monday to Sunday, Abuja time, with a countdown. The top 3
+fastest laps on each circuit win 1,000, 600 and 300 coins, paid once early on Monday (by the scheduler, or the first
+leaderboard view), with a notification and the "On the podium" trophy. Last week's winners show on the board. The board
+also gained circuit tabs, and "This week / All time" now keeps the circuit.
+
+**Trophies.** Twelve, each paying coins once: first race, first win, ten wins, Grand Prix champion, 7 days in a row,
+10 drift boosts in a race, a banana spin-out, beating a friend's ghost (checked against that friend's real best lap),
+a race with friends, owning 5 shop items, a maxed upgrade, a weekly podium. New ones appear on the result card.
+
+**Race a friend's ghost.** The menu lists friends with a best lap on the current circuit; their ghost is served only
+to friends.
+
+Migration 039 adds kart_perf, kart_achievements and kart_prizes. Before it runs, everything else works and the Launch
+checklist says so.
 
 ## What is next
 
