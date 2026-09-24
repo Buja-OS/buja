@@ -69,6 +69,8 @@ return [
     // Paystack (dashboard.paystack.com > Settings > API Keys). Test key sk_test_... first, then live.
     'paystack_secret' => $env('PAYSTACK_SECRET', ''),
     'paystack_mock' => filter_var($env('PAYSTACK_MOCK', 'false'), FILTER_VALIDATE_BOOL),
+    // Escrow payouts go out by Paystack transfer only when this is on; otherwise they wait in Admin, Escrow
+    'paystack_transfers' => filter_var($env('PAYSTACK_TRANSFERS', 'false'), FILTER_VALIDATE_BOOL),
 
     // Cloudflare R2 (or any S3-compatible bucket) for photos and CVs. Leave empty to keep files in the database.
     'r2_account_id' => $env('R2_ACCOUNT_ID', ''),

@@ -1,4 +1,4 @@
-# Buja, Phase 31: Buja Kart on real Abuja streets, with modern graphics
+# Buja, Phase 35: Grand Prix, Match privacy, Declutter escrow
 
 Abuja-only super-app PWA. Six modules: Work, Match, Waka, Homes, Declutter, Ask.
 Phase 1 delivers the shell every module plugs into.
@@ -700,6 +700,32 @@ High adds sharper shadows, glossy kart paint and anti-aliasing.
 
 **Waka.** The live Waka map has a 3D button: it tilts the map and raises real building heights from OpenStreetMap
 (OpenFreeMap's building layer), the same data source Google-free and cacheable.
+
+## Phase 35: four in one stretch
+
+**Reviewed and adopted: the friends, saved mechanics and garage work** (migration 036, made in another session). Friend
+requests by Buja Tag with suggestions; save a mechanic and ask for them first on a breakdown (they are rung alone in the
+first round, then normal dispatch); a garage with coins, upgrades and paints. Its game file (the Grand Prix circuit,
+City Gate, grandstands, GAS and BRAKE columns at each edge, dark no-blur buttons redrawn after rotation) is kept, with a
+bright white rim added to the buttons.
+
+**Buja Kart Grand Prix.** Four races: City streets, the Grand Prix circuit, then both reversed. Points 10, 7, 5, 3; a
+standings table after each race; a champion at the end with a coin bonus (400, 250, 150, 80). Reversed circuits flip
+every position along the lap (landmarks, the City Gate) and keep the start where it is.
+
+**Match privacy.** Distances were measured between exact GPS points and shown to a tenth of a kilometre, so someone
+could walk around and pinpoint a person. Now each person's position is snapped to a ~550 m grid and moved by a private,
+fixed offset (up to ~280 m) that only the server knows; distances are between these points and shown as "under 2 km"
+or whole kilometres. A walker passing within 1.5 km sees "under 2 km" throughout. Match chats show a clear card:
+"Meeting her? Share your live location with a friend until you check in safe" (Trip Share, prefilled).
+
+**Declutter escrow: Buy safely** (migration 037). On listings whose seller accepts escrow. The buyer pays price plus a
+protection fee (2.5%, min N100, max N2,500) through Paystack; Buja holds it; the seller hands over; the buyer confirms,
+or reports a problem within 3 days, or it releases itself. Not handed over within 7 days means an automatic refund. A
+seller can cancel before handover (refund). Accepted offers set the price. Sellers add a bank account checked with the
+bank; Buja keeps only the last four digits, Paystack holds the rest. Payouts go by Paystack transfer when
+PAYSTACK_TRANSFERS=1, otherwise they wait in Admin, Money, Escrow for you to pay and tick "Mark paid". Disputes are
+decided there too. Transfer webhooks keep payouts honest. The scheduler releases, refunds and retries every 10 minutes.
 
 ## What is next
 

@@ -389,6 +389,18 @@ $router->post('/friends/{id}/{action}',      [FriendsController::class, 'act']);
 // My mechanics
 $router->post('/artisans/{id}/save',         [ServiceJobController::class, 'save']);
 // Buja Kart garage
+$router->post('/kart/gp',                    [KartController::class, 'gpFinish']);
 $router->get('/kart/garage',                 [KartController::class, 'garage']);
 $router->post('/kart/garage/upgrade',        [KartController::class, 'upgrade']);
 $router->post('/kart/garage/paint',          [KartController::class, 'paint']);
+
+// Declutter escrow: Buy safely
+$router->post('/escrow/buy/{id}',             [EscrowController::class, 'buy']);
+$router->get('/escrow/orders',                [EscrowController::class, 'mine']);
+$router->get('/escrow/orders/{id}',           [EscrowController::class, 'show']);
+$router->post('/escrow/orders/{id}/{action}', [EscrowController::class, 'act']);
+$router->get('/escrow/banks',                 [EscrowController::class, 'banks']);
+$router->get('/escrow/account',               [EscrowController::class, 'account']);
+$router->post('/escrow/account',              [EscrowController::class, 'saveAccount']);
+$router->get('/admin/escrow',                 [EscrowController::class, 'adminIndex']);
+$router->post('/admin/escrow/{id}/{action}',  [EscrowController::class, 'adminAct']);

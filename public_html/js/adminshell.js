@@ -7,6 +7,7 @@ const NAV = [
   ['Content', [['/admin/social', 'message', 'Social posts'], ['/admin/news', 'circle-info', 'News feed'], ['/admin/spots', 'location-dot', 'Places'], ['/admin/meetups', 'ticket', 'Events'], ['/admin/artisans', 'screwdriver-wrench', 'Artisans'], ['/admin/citizen', 'building-columns', 'Citizen reports']]],
   ['Learning', [['/admin/learn', 'book-open', 'Learn analytics'], ['/admin/learners', 'user', 'Learners']]],
   ['Send', [['/admin/broadcast', 'paper-plane', 'Notifications']]],
+  ['Money', [['/admin/escrow', 'shield-halved', 'Escrow']]],
   ['Settings', [['/admin/waka-pricing', 'gas-pump', 'Waka pricing'], ['/admin/ads', 'bolt', 'Ads']]],
 ];
 

@@ -24,8 +24,10 @@ final class MatchController
         if ($me) {
             $out['match'] = MatchRules::score($me, $p);
             if (($me['lat'] ?? null) !== null && ($p['lat'] ?? null) !== null) {
-                $km = WakaRules::km((float) $me['lat'], (float) $me['lng'], (float) $p['lat'], (float) $p['lng']);
-                $out['km'] = $km < 1 ? round($km, 1) : (float) round($km); // under a kilometre stays deliberately vague
+                // both ends blurred (see MatchRules::fuzz), and shown only as "under 2 km" or whole kilometres
+                [$la, $lo] = MatchRules::fuzz((int) $me['user_id'], (float) $me['lat'], (float) $me['lng']); [$lb, $lob] = MatchRules::fuzz((int) $p['user_id'], (float) $p['lat'], (float) $p['lng']);
+                $km = WakaRules::km($la, $lo, $lb, $lob);
+                $out['km'] = MatchRules::shownKm($km); $out['kmApprox'] = true;
                 $out['match']['proximity'] = $km <= 3 ? 'same' : ($km <= 10 ? 'nearby' : 'abuja');
             }
         }

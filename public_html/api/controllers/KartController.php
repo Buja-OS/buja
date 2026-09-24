@@ -9,7 +9,7 @@ declare(strict_types=1);
  */
 final class KartController
 {
-    public const TRACKS = ['gp' => 'Abuja Grand Prix Circuit', 'abuja' => 'Abuja city streets'];
+    public const TRACKS = ['gp' => 'Abuja Grand Prix Circuit', 'abuja' => 'Abuja city streets', 'gp-r' => 'Grand Prix, reversed', 'abuja-r' => 'City streets, reversed'];
     public const MIN_LAP_MS = 20000;          // anything faster is not a real lap on this track
     public const COLOURS = ['#FF7A1A', '#1F5FBF', '#2E7D1E', '#C2185B', '#7A3E96', '#0E7C86'];
     public const STATS = ['engine' => 'Engine', 'accel' => 'Acceleration', 'handling' => 'Handling', 'boost' => 'Boost'];
@@ -87,7 +87,7 @@ final class KartController
         $track = self::track((string) ($b['track'] ?? 'abuja'));
         $lap = (int) ($b['lapMs'] ?? 0); $race = (int) ($b['raceMs'] ?? 0);
         if ($lap < self::MIN_LAP_MS || $lap > 600000 || $race < $lap || $race > 3600000) Http::json(['error' => 'validation', 'message' => 'That time does not look like a real race.'], 422);
-        $mode = in_array($b['mode'] ?? '', ['solo', 'bots', 'room'], true) ? $b['mode'] : 'solo';
+        $mode = in_array($b['mode'] ?? '', ['solo', 'bots', 'room', 'gp'], true) ? $b['mode'] : 'solo';
         $ghost = null;
         if (!empty($b['ghost']) && is_array($b['ghost']) && count($b['ghost']) <= 1200) $ghost = json_encode(array_map(fn($p) => [round((float) $p[0], 1), round((float) $p[1], 1), round((float) $p[2], 2)], array_values($b['ghost'])));
         $prev = Db::one('SELECT MIN(lap_ms) AS b FROM kart_times WHERE user_id = ? AND track = ?', [$u['id'], $track]);
@@ -99,6 +99,17 @@ final class KartController
         self::profile((int) $u['id']);
         Db::run('UPDATE kart_profiles SET coins = coins + ?, races = races + 1, wins = wins + ?, updated_at = ? WHERE user_id = ?', [$earned, $place === 1 && $mode !== 'solo' ? 1 : 0, Db::now(), $u['id']]);
         Http::json(['personalBest' => $pb, 'previousBest' => $prev && $prev['b'] ? (int) $prev['b'] : null, 'rank' => $rank, 'coinsEarned' => $earned, 'coins' => (int) (Db::one('SELECT coins FROM kart_profiles WHERE user_id = ?', [$u['id']])['coins'] ?? 0)], 201);
+    }
+
+    /** POST /kart/gp { place } : a bonus for finishing all four Grand Prix races (a real Grand Prix takes 6 minutes or more) */
+    public function gpFinish(): void
+    {
+        $u = Auth::require(); RateLimit::hit('kartgp', 1, 300);
+        $place = max(1, min(4, (int) (Http::body()['place'] ?? 4))); $coins = [1 => 400, 2 => 250, 3 => 150, 4 => 80][$place];
+        self::profile((int) $u['id']);
+        Db::run('UPDATE kart_profiles SET coins = coins + ?, wins = wins + ?, updated_at = ? WHERE user_id = ?', [$coins, $place === 1 ? 1 : 0, Db::now(), $u['id']]);
+        Track::hit($u, 'kart', 'gp_finish');
+        Http::json(['coinsEarned' => $coins, 'garage' => self::shapeProfile(self::profile((int) $u['id']))]);
     }
 
     /** GET /kart/ghost?track=&who=me|best : a lap to race against */

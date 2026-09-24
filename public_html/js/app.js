@@ -330,6 +330,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
       <a class="item" href="#/tickets"><div class="mi">${icon('ticket')}</div><div class="grow"><div class="t">My tickets</div><div class="s">Events you have paid for</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/friends"><div class="mi" style="background:#EEF0FF;color:#4B4FC4">${icon('users')}</div><div class="grow"><div class="t">Friends</div><div class="s">Your friends, requests, and people you may know</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/tag"><div class="mi" style="background:#FFF1E6;color:#E8660A;font-weight:900;font-size:18px">@</div><div class="grow"><div class="t">@${h(state.user.tag || '')}</div><div class="s">Your Buja Tag: share it so people can find you</div></div>${icon('chevron-right')}</a>
+      <a class="item" href="#/orders"><div class="mi" style="background:#E7F6EC;color:var(--green-dark)">${icon('shield-halved')}</div><div class="grow"><div class="t">Buy safely orders</div><div class="s">Declutter items paid through Buja</div></div>${icon('chevron-right')}</a>
       ${state.user.artisan ? `<a class="item" href="#/artisans/dashboard"><div class="mi" style="background:#FDECEA;color:#D92D20">${icon('gauge-high')}</div><div class="grow"><div class="t">Mechanic dashboard</div><div class="s">${state.user.artisan.available ? 'Taking jobs' : 'Switched off'} · your jobs, earnings and hours</div></div>${icon('chevron-right')}</a>` : ''}
       <a class="item" href="#/jobs"><div class="mi">${icon('wrench')}</div><div class="grow"><div class="t">My jobs</div><div class="s">Artisans you called, and jobs you are doing</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/alerts"><div class="mi">${icon('bell')}</div><div class="grow"><div class="t">Saved searches</div><div class="s">Be told when a job, home or item matches</div></div>${icon('chevron-right')}</a>
@@ -444,12 +445,13 @@ const MODULES = {
   citymore:    () => import('./citymore.js').then((m) => m.registerCityMore(BASE)),
   jobs:        () => import('./servicejobs.js').then((m) => m.registerJobs(BASE)),
   kart:        () => import('./kart.js').then((m) => m.registerKart(BASE)),
+  escrow:      () => import('./escrow.js').then((m) => m.registerEscrow(BASE)),
   tags:        () => import('./tags.js').then((m) => m.registerTags(BASE)),
 };
 /** First path segment → the modules that own screens under it. Several share /admin and /report. */
 const LAZY = {
   work: ['work'], match: ['match'], waka: ['waka'], homes: ['homes'], declutter: ['declutter'], ask: ['ask'],
-  admin: ['trust', 'services', 'citymore'], plus: ['trust'], verify: ['trust'],
+  admin: ['trust', 'services', 'citymore', 'escrow'], orders: ['escrow'], payout: ['escrow'], plus: ['trust'], verify: ['trust'],
   news: ['city'], radio: ['city'], social: ['city'], safety: ['safety'], trip: ['safety'],
   install: ['growth'], invite: ['growth'], join: ['growth'], privacy: ['growth'], terms: ['growth'], search: ['growth'], report: ['growth', 'services'],
   artisans: ['services', 'jobs'], jobs: ['jobs'], breakdown: ['jobs'], meetup: ['services'], tickets: ['services'],

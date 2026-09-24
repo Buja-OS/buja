@@ -65,10 +65,13 @@ export function registerDeclutter({ route, go, state, api, ui, DISTRICTS, failed
       <div class="row" style="gap:10px;padding:12px 14px;background:var(--orange-tint);border-radius:12px;font-size:12px;color:var(--orange-dark);line-height:1.5">${icon('shield-halved')}<span><strong>Stay safe.</strong> Meet in a public place, test before paying, and never send a deposit to reserve an item.</span></div>
     </main>
     ${l.mine || l.status !== 'active' ? '' : `<div class="row" style="gap:10px;padding:12px 20px 16px;background:var(--card);border-top:1px solid var(--line);position:sticky;bottom:0">
+      ${l.escrowOk ? `<button class="btn btn-ink" id="buysafe" style="flex:1.2">${icon('shield-halved')} Buy safely</button>` : ''}
       <button class="btn btn-outline" data-chat="${l.id}" data-offer="1" style="flex:1">${icon('naira-sign')} Make offer</button>
-      <button class="btn btn-primary" data-chat="${l.id}" style="flex:1.3">${icon('message')} Chat with ${h(l.seller.name.split(' ')[0])}</button></div>`}`;
+      <button class="btn btn-primary" data-chat="${l.id}" style="flex:1.3">${icon('message')} Chat with ${h(l.seller.name.split(' ')[0])}</button></div>
+    ${l.escrowOk ? `<div class="small muted" style="padding:0 20px 14px;background:var(--card);line-height:1.4">${icon('shield-halved')} <b>Buy safely:</b> pay into Buja, and ${h(l.seller.name.split(' ')[0])} is paid only when you confirm the item arrived. Small protection fee.</div>` : ''}`}`;
   }, {
     mount(el) {
+      el.querySelector('#buysafe')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.escrowBuy(el.dataset.lid || location.hash.split('/')[2].split('?')[0]); if (!confirm(`Pay ₦${Number(r.total).toLocaleString('en-NG')}? That is ₦${Number(r.price).toLocaleString('en-NG')} for the item plus ₦${Number(r.fee).toLocaleString('en-NG')} buyer protection. Buja holds it until you confirm the item arrived.`)) { busy(b, false); return; } location.href = r.url; } catch (err) { busy(b, false); failed(el, err); } });
       bindSaves(el);
       const slides = el.querySelectorAll('[data-slide]'); let i = 0;
       el.querySelector('#gallery')?.addEventListener('click', (e) => { if (e.target.closest('a,button') || slides.length < 2) return; i = (i + (e.clientX > innerWidth / 2 ? 1 : slides.length - 1)) % slides.length; slides.forEach((s, k) => { s.style.display = k === i ? '' : 'none'; }); el.querySelectorAll('[data-dot]').forEach((d, k) => { d.style.background = `rgba(255,255,255,${k === i ? 1 : .4})`; }); });

@@ -3,17 +3,42 @@
 import * as THREE from './vendor/three.module.min.js';
 import { Sky } from './vendor/three-sky.js';
 
-const LAPS = 3;
+let LAPS = 3;
 const ROAD_W = 16;                     // metres
 const MAX_V = 36, OFF_V = 15, BOOST_V = 46; // m/s
 let SAMPLES = 600;                    // set from the real circuit when it loads (one point every 4 m)
 const CIRCUIT_URL = '/assets/kart/abuja-circuit.json';
+const TRACKS = {
+  gp:    { url: '/assets/kart/abuja-gp.json', name: 'Abuja Grand Prix', blurb: 'Grandstands at Eagle Square, the Mosque, Aso Rock, through the City Gate' },
+  abuja: { url: CIRCUIT_URL, name: 'City streets', blurb: 'Real Abuja roads: Independence Avenue to Tafawa Balewa Way' },
+};
+// Reversed circuits: the same streets driven the other way round
+TRACKS['abuja-r'] = { url: CIRCUIT_URL, reverse: true, name: 'City streets, reversed', blurb: 'Tafawa Balewa Way back to Independence Avenue' };
+TRACKS['gp-r'] = { url: '/assets/kart/abuja-gp.json', reverse: true, name: 'Grand Prix, reversed', blurb: 'Through the City Gate the other way, Aso Rock on your left' };
+/** Flip a circuit's direction: the start stays put, every position along the lap is mirrored. */
+function reverseCircuit(c) {
+  const n = c.lap.length, flip = (s) => (n - s) % n;
+  const out = { ...c, lap: [c.lap[0], ...c.lap.slice(1).reverse()], name: c.name + ' (reversed)' };
+  if (Array.isArray(c.landmarks)) out.landmarks = c.landmarks.map((l) => ({ ...l, s: flip(l.s) }));
+  if (typeof c.gate === 'number') out.gate = flip(c.gate);
+  return out;
+}
+// The Grand Prix: four races, points for each finish, a champion at the end
+const GP_ROUNDS = ['abuja', 'gp', 'abuja-r', 'gp-r'];
+const GP_POINTS = [10, 7, 5, 3];
+const gpState = () => { try { return JSON.parse(sessionStorage.getItem('buja_kart_gp') || 'null'); } catch { return null; } };
+const gpSave = (s) => { try { if (s) sessionStorage.setItem('buja_kart_gp', JSON.stringify(s)); else sessionStorage.removeItem('buja_kart_gp'); } catch {} };
+const myTrack = () => { try { const t = localStorage.getItem('buja_kart_track'); return TRACKS[t] ? t : 'gp'; } catch { return 'gp'; } };
 const DRIVERS = {
   green:  { name: 'Amaka', colour: '#1E9E55', skill: 1.0 },
   red:    { name: 'Tunde', colour: '#E0342B', skill: 0.99 },
   yellow: { name: 'Ngozi', colour: '#F2B51C', skill: 0.97 },
   blue:   { name: 'Musa',  colour: '#2459D6', skill: 0.95 },
 };
+const PAINTS = { green: '#1E9E55', red: '#E0342B', yellow: '#F2B51C', blue: '#2459D6', gold: '#D4A93A', chrome: '#C9CED6', naija: '#008751', pink: '#E85D9E', black: '#17171C' };
+const PAINT_NAMES = { green: 'Amaka green', red: 'Tunde red', yellow: 'Ngozi yellow', blue: 'Musa blue', gold: 'Gold', chrome: 'Chrome', naija: 'Naija green', pink: 'Hot pink', black: 'Midnight' };
+/** What each upgrade level does: small, steady gains so racing skill still matters most. */
+const UPGRADE = { engine: (l) => ({ topMul: 1 + 0.03 * l }), accel: (l) => ({ accMul: 1 + 0.08 * l }), handling: (l) => ({ turnMul: 1 + 0.05 * l, offBonus: l }), boost: (l) => ({ boostMul: 1 + 0.12 * l }) };
 const myDriver = () => { try { const d = localStorage.getItem('buja_kart_driver'); return DRIVERS[d] ? d : 'green'; } catch { return 'green'; } };
 const TEX = '/assets/kart/';
 const BOOSTS = [0.1, 0.33, 0.52, 0.8];
@@ -25,13 +50,16 @@ export function registerKart({ route, go, state, api, ui, failed }) {
 
   /* ============================== MENU ============================== */
   route('/kart', { auth: true, tabs: '' }, async () => {
-    const b = await api.kartBoard({ span: 'week' }).catch(() => ({ rows: [], me: null }));
+    const b = await api.kartBoard({ span: 'week', track: myTrack() }).catch(() => ({ rows: [], me: null }));
     return `${topbar('Buja Kart', '/home', `<a class="iconbtn" href="#/kart/board" aria-label="Leaderboard">${icon('star')}</a>`)}
     <main class="pad stack" style="gap:14px">
       <div class="kart-hero kart-hero-art"><img src="/assets/kart/hero.jpg" alt="Buja Kart: racing past the City Gate, the National Mosque and Aso Rock"><div class="kart-hero-text"><div class="kart-logo">BUJA <span>KART</span></div><div>Race round Eagle Square, the National Mosque, NNPC Towers and Aso Rock.</div></div></div>
       <div class="card stack" style="padding:12px 14px;gap:10px"><div class="h-sm">Choose your driver</div>
         <div class="kart-drivers">${Object.entries(DRIVERS).map(([id, d]) => `<button class="kart-driver ${myDriver() === id ? 'on' : ''}" data-driver="${id}" style="--c:${d.colour}"><img src="/assets/kart/driver-${id}.jpg" alt=""><b>${d.name}</b></button>`).join('')}</div></div>
       ${b.me ? `<div class="card row" style="padding:12px 14px;gap:10px"><span style="font-size:22px">🏁</span><div class="grow"><div style="font-weight:700">Your best lap this week: ${fmt(b.me.best)}</div><div class="small muted">${b.me.rank ? ord(b.me.rank) + ' in Abuja this week' : 'Set a time to get on the board'}</div></div><a class="btn btn-sm btn-outline" href="#/kart/board" style="width:auto">Board</a></div>` : ''}
+      <a class="card row" href="#/kart/garage" style="padding:12px 14px;gap:12px"><span style="font-size:26px">🔧</span><span class="grow"><b>Garage</b><br><span class="small muted">Upgrade your engine, acceleration, handling and boost; buy paint</span></span><span class="tag" id="coins">🪙 …</span></a>
+      <div class="kart-tracks">${Object.entries(TRACKS).map(([id, t]) => `<button class="kart-track ${myTrack() === id ? 'on' : ''}" data-track="${id}"><b>${t.name}</b><span>${t.blurb}</span></button>`).join('')}</div>
+      <button class="kart-btn kart-btn-gp" id="gpstart"><b>🏆 Grand Prix</b><span>Four races: city streets, the Grand Prix circuit, then both reversed. Points for every finish.</span></button>
       <button class="kart-btn kart-btn-go" data-go="/kart/play?mode=bots"><b>Race</b><span>Three Abuja drivers, item boxes: 🌶️ pepper, 🍌 banana, 🥤 zobo, ⚡ NEPA</span></button>
       <button class="kart-btn" data-go="/kart/play?mode=solo"><b>Time trial</b><span>Beat your own ghost, lap after lap</span></button>
       <button class="kart-btn" data-go="/kart/play?mode=solo&ghost=best"><b>Chase the champion</b><span>Race the fastest lap in Abuja</span></button>
@@ -41,26 +69,51 @@ export function registerKart({ route, go, state, api, ui, failed }) {
         <div class="small muted">Invite friends by their Buja Tag. Chat while you race.</div></div>
       <div class="card row" style="padding:12px 14px;gap:10px"><div class="grow"><div style="font-weight:700">Graphics</div><div class="small muted">Auto picks what your phone can run smoothly</div></div><select class="input" id="gfx" style="width:auto;height:40px">${['auto', 'low', 'medium', 'high'].map((g) => `<option value="${g}" ${((() => { try { return localStorage.getItem('buja_kart_gfx'); } catch { return null; } })() || 'auto') === g ? 'selected' : ''}>${g[0].toUpperCase() + g.slice(1)}</option>`).join('')}</select></div>
       <div class="card stack" style="padding:12px 14px;gap:10px">
-        ${[['buja_kart_orient', 'Screen', [['portrait', 'Upright'], ['landscape', 'Sideways']], 'portrait'], ['buja_kart_steer', 'Steering', [['buttons', 'Buttons'], ['tilt', 'Tilt the phone']], 'buttons'], ['buja_kart_sfx', 'Sound effects', [['1', 'On'], ['0', 'Off']], '1'], ['buja_kart_music', 'Music', [['1', 'On'], ['0', 'Off']], '1']].map(([key, label, opts, def]) => { const cur = (() => { try { return localStorage.getItem(key) || def; } catch { return def; } })(); return `<div class="row" style="gap:10px"><div class="grow" style="font-weight:600">${label}</div><select class="input" data-set="${key}" style="width:auto;height:38px">${opts.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`; }).join('')}
+        ${[['buja_kart_orient', 'Screen', [['portrait', 'Upright'], ['landscape', 'Sideways']], 'portrait'], ['buja_kart_steer', 'Steering', [['buttons', 'Buttons'], ['tilt', 'Tilt the phone']], 'buttons'], ['buja_kart_gas', 'Accelerate', [['pedal', 'GAS button'], ['auto', 'Automatic']], 'pedal'], ['buja_kart_sfx', 'Sound effects', [['1', 'On'], ['0', 'Off']], '1'], ['buja_kart_music', 'Music', [['1', 'On'], ['0', 'Off']], '1']].map(([key, label, opts, def]) => { const cur = (() => { try { return localStorage.getItem(key) || def; } catch { return def; } })(); return `<div class="row" style="gap:10px"><div class="grow" style="font-weight:600">${label}</div><select class="input" data-set="${key}" style="width:auto;height:38px">${opts.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`; }).join('')}
       </div>
       <div class="small muted" style="line-height:1.5">The circuit follows real central Abuja streets (Independence Avenue, Herbert Macaulay Way, Sani Abacha Way, Tafawa Balewa Way), compressed for a raceable lap. Road data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, ODbL. Engine and drive-by sounds recorded by alex_jauk and kontraa.</div>
-      <div class="small muted" style="line-height:1.5">Controls: ◀ on the left edge and ▶ on the right edge steer, one thumb each. Hold a turn at speed and you drift automatically; let go for a boost (or hold 🔥). The kart drives itself forward; hold 🔥 while turning to drift, and let go for a boost. Drive through a ? box for an item, then tap it to use it (E on a keyboard). On a keyboard: arrow keys and space.</div>
+      <div class="small muted" style="line-height:1.5">Controls: right thumb on GAS and ▶, left thumb on BRAKE and ◀. Holding ◀ or ▶ keeps the gas on through corners; let go of everything to coast. Hold a turn at speed to drift, let go for a boost. Keyboard: arrows, space to drift. The kart drives itself forward; hold 🔥 while turning to drift, and let go for a boost. Drive through a ? box for an item, then tap it to use it (E on a keyboard). On a keyboard: arrow keys and space.</div>
     </main>`;
   }, {
     mount(el) {
       el.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
+      el.querySelector('#gpstart')?.addEventListener('click', () => { gpSave({ round: 0, pts: {} }); go('/kart/play?mode=gp&track=' + GP_ROUNDS[0]); });
+      api.kartGarage().then((r) => { const c = el.querySelector('#coins'); if (c) c.textContent = '🪙 ' + r.garage.coins; }).catch(() => {});
+      el.querySelectorAll('[data-track]').forEach((b) => b.addEventListener('click', () => { try { localStorage.setItem('buja_kart_track', b.dataset.track); } catch {} go('/kart'); location.reload(); }));
       el.querySelectorAll('[data-driver]').forEach((b) => b.addEventListener('click', () => { try { localStorage.setItem('buja_kart_driver', b.dataset.driver); } catch {} el.querySelectorAll('[data-driver]').forEach((x) => x.classList.toggle('on', x === b)); toast(DRIVERS[b.dataset.driver].name + ' is ready'); }));
       el.querySelector('#gfx')?.addEventListener('change', (e) => { try { localStorage.setItem('buja_kart_gfx', e.target.value); } catch {} toast('Graphics: ' + e.target.value); });
       el.querySelectorAll('[data-set]').forEach((s) => s.addEventListener('change', (e) => { try { localStorage.setItem(s.dataset.set, e.target.value); } catch {} }));
-      el.querySelector('#newroom').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.kartNewRoom({ track: 'abuja' }); go('/kart/room/' + r.code); } catch (err) { busy(b, false); failed(el, err); } });
+      el.querySelector('#newroom').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.kartNewRoom({ track: myTrack() }); go('/kart/room/' + r.code); } catch (err) { busy(b, false); failed(el, err); } });
       el.querySelector('#joinroom').addEventListener('click', () => { const c = el.querySelector('#code').value.trim().toUpperCase(); if (c.length === 5) go('/kart/room/' + c); else toast('Room codes have 5 letters'); });
+    }
+  });
+
+  /* ============================== GARAGE ============================== */
+  route('/kart/garage', { auth: true, tabs: '' }, async () => {
+    const { garage: g } = await api.kartGarage();
+    const desc = { engine: 'Higher top speed', accel: 'Faster off the line and out of corners', handling: 'Tighter turns, less slowdown on grass', boost: 'Longer boosts from pads, drifts and pepper' };
+    return `${topbar('Garage', '/kart')}<main class="pad stack" style="gap:14px">
+      <div class="card row" style="padding:16px;gap:12px"><span style="font-size:34px">🪙</span><div class="grow"><div style="font:900 26px Inter,system-ui">${g.coins}</div><div class="small muted">coins · ${g.races} races, ${g.wins} wins</div></div></div>
+      <div class="small muted" style="line-height:1.5">Earn coins every race: 120 for a win, 80 for 2nd, 60 for 3rd, 40 otherwise, 50 more for a personal best, and a bonus for racing friends. Your rivals get a little quicker as you upgrade, so races stay close.</div>
+      <div class="section">UPGRADES</div>
+      ${g.stats.map((s) => `<div class="card stack" style="padding:12px 14px;gap:8px"><div class="row" style="gap:10px"><div class="grow"><div style="font-weight:800">${s.label}</div><div class="small muted">${desc[s.id]}</div></div>
+        ${s.next ? `<button class="btn btn-sm ${g.coins >= s.next ? 'btn-primary' : 'btn-ghost'}" data-up="${s.id}" style="width:auto" ${g.coins >= s.next ? '' : 'disabled'}>🪙 ${s.next}</button>` : '<span class="tag green">Maxed</span>'}</div>
+        <div class="kart-pips">${Array.from({ length: g.maxLevel }, (_, i) => `<i class="${i < s.level ? 'on' : ''}"></i>`).join('')}</div></div>`).join('')}
+      <div class="section">PAINT</div>
+      <div class="kart-paints">${g.paints.map((p) => `<button class="kart-paint ${g.paint === p.id ? 'on' : ''}" data-paint="${p.id}" style="--c:${PAINTS[p.id]}"><i></i><b>${PAINT_NAMES[p.id]}</b><span>${p.owned ? (g.paint === p.id ? 'In use' : 'Owned') : '🪙 ' + p.price}</span></button>`).join('')}</div>
+      <button class="btn btn-ghost" data-paint="">Use my driver's colour</button>
+    </main>`;
+  }, {
+    mount(el) {
+      el.querySelectorAll('[data-up]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { await api.kartUpgrade(b.dataset.up); toast('Upgraded'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } }));
+      el.querySelectorAll('[data-paint]').forEach((b) => b.addEventListener('click', async () => { if (!b.dataset.paint) { try { localStorage.removeItem('buja_kart_paint'); } catch {} toast('Using your driver\'s colour'); location.reload(); return; } busy(b, true); try { await api.kartPaint(b.dataset.paint); try { localStorage.setItem('buja_kart_paint', b.dataset.paint); } catch {} toast('Painted'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } }));
     }
   });
 
   /* ============================== LEADERBOARD ============================== */
   route('/kart/board', { auth: true, tabs: '' }, async () => {
     const span = new URLSearchParams(location.hash.split('?')[1] || '').get('span') || 'week';
-    const b = await api.kartBoard({ span });
+    const tr = new URLSearchParams(location.hash.split('?')[1] || '').get('track') || myTrack(); const b = await api.kartBoard({ span, track: tr });
     return `${topbar('Leaderboard', '/kart')}<main class="pad stack" style="gap:12px">
       <div class="row" style="gap:8px"><a class="chip ${span === 'week' ? 'on' : ''}" href="#/kart/board?span=week">This week</a><a class="chip ${span === 'all' ? 'on' : ''}" href="#/kart/board?span=all">All time</a></div>
       <div class="small muted">${h(b.trackName)} · best lap per driver</div>
@@ -76,7 +129,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       let chatAfter = 0, alive = true; const chat = [];
       const draw = () => {
         const r = d.room;
-        if (r.status === 'racing') { alive = false; go('/kart/play?mode=room&code=' + r.code); return; }
+        if (r.status === 'racing') { alive = false; go('/kart/play?mode=room&code=' + r.code + '&track=' + r.track); return; }
         d.chat.forEach((c) => { chat.push(c); chatAfter = Math.max(chatAfter, c.id); });
         el.querySelector('#lobby').innerHTML = `
           <div class="card row" style="padding:14px;gap:12px"><div class="grow"><div class="small muted">Room code</div><div style="font:900 28px ui-monospace,Menlo,monospace;letter-spacing:6px">${h(r.code)}</div></div><button class="btn btn-sm btn-outline" id="share" style="width:auto">${icon('paper-plane')} Share</button></div>
@@ -128,8 +181,9 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       <div class="kart-pause" id="pausebox"></div>
       <button class="kart-chatbtn" id="chatbtn" aria-label="Chat" style="display:none">${icon('message')}</button>
       <div class="kart-speed"><b id="spd">0</b><span>km/h</span><i id="boostbar"></i></div>
-      <button class="kart-steer kart-steer-l" id="kl" aria-label="Steer left">◀</button><button class="kart-steer kart-steer-r" id="kr" aria-label="Steer right">▶</button>
-      <div class="kart-mid"><button id="kb" aria-label="Brake">■</button><button id="kd" class="kart-drift" aria-label="Drift and boost">🔥</button></div>
+      <div class="kart-col kart-col-l"><button class="kart-pedal kart-brake" id="kb" aria-label="Brake">BRAKE</button><button class="kart-steer" id="kl" aria-label="Steer left">◀</button></div>
+      <div class="kart-col kart-col-r"><button class="kart-pedal kart-gas" id="kg" aria-label="Accelerate">GAS</button><button class="kart-steer" id="kr" aria-label="Steer right">▶</button></div>
+      <div class="kart-mid"><button id="kd" class="kart-drift" aria-label="Drift and boost">🔥</button></div>
       <div class="kart-chatbox" id="chatbox"></div>
       <div class="kart-result" id="result"></div>
     </div>`, {
@@ -137,7 +191,8 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       const q = new URLSearchParams(location.hash.split('?')[1] || '');
       const mode = q.get('mode') || 'bots', code = q.get('code');
       document.body.classList.add('kart-on');
-      const game = new Race(el, { mode, code, ghostWho: q.get('ghost') === 'best' ? 'best' : 'me', api, me: state.user, go, toast, h, fmt, ord });
+      const trackId = TRACKS[q.get('track')] ? q.get('track') : myTrack();
+      const game = new Race(el, { mode, code, trackId, ghostWho: q.get('ghost') === 'best' ? 'best' : 'me', api, me: state.user, go, toast, h, fmt, ord });
       try { await game.start(); } catch (e) { console.error(e); el.querySelector('#count').innerHTML = `<div style="font-size:18px;max-width:280px;text-align:center">This phone could not start 3D graphics. ${h(e.message || '')}</div>`; }
       const obs = new MutationObserver(() => { if (!document.body.contains(el)) { obs.disconnect(); game.stop(); document.body.classList.remove('kart-on'); } });
       obs.observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
@@ -181,23 +236,29 @@ class Race {
     if (T !== 'low') { const sh = this.sun.shadow; sh.mapSize.set(T === 'high' ? 2048 : 1024, T === 'high' ? 2048 : 1024); sh.camera.left = sh.camera.bottom = -70; sh.camera.right = sh.camera.top = 70; sh.camera.near = 50; sh.camera.far = 700; sh.bias = -0.0004; sh.normalBias = 0.6; this.sun.castShadow = true; }
     this.scene.add(this.sun, this.sun.target);
     this.tex = await loadTextures(this.renderer, T);
-    this.circuit = await (await fetch(CIRCUIT_URL)).json();
-    SAMPLES = this.circuit.lap.length;
-    this.buildTrack(); this.buildWorld(); this.buildLandmarks(); this.buildBarriers();
+    const T0 = TRACKS[this.trackId || 'gp']; this.circuit = await (await fetch(T0.url)).json(); if (T0.reverse) this.circuit = reverseCircuit(this.circuit);
+    SAMPLES = this.circuit.lap.length; LAPS = this.circuit.laps || 3;
+    this.el.querySelector('#lap').textContent = `LAP 1/${LAPS}`;
+    this.buildTrack(); this.buildWorld(); this.buildLandmarks(); this.buildBarriers(); this.buildCityGate(); if (this.circuit.id === 'gp') this.buildGrandPrix();
+    this.bakeStatic();   // fuse everything that never moves into one object per material: far fewer draw calls
     this.fx = new KartFX(this.scene, this.tier);
-    this.items = this.mode === 'bots'; if (this.items) this.buildItemBoxes();
+    this.items = this.mode === 'bots' || this.mode === 'gp'; if (this.items) this.buildItemBoxes();
     this.audio.wake();
     if (((() => { try { return localStorage.getItem('buja_kart_orient'); } catch { return null; } })()) === 'landscape') this.setLandscape(true, true);
     if (this.steerMode === 'tilt') this.enableTilt(true);
-    this.driver = myDriver(); this.player = this.makeKart(DRIVERS[this.driver].colour, true);
-    this.resize(); this._onResize = () => { this.resize(); this.redrawControls(); setTimeout(() => { this.resize(); this.redrawControls(); }, 350); }; window.addEventListener('resize', this._onResize); window.addEventListener('orientationchange', this._onResize); document.addEventListener('fullscreenchange', this._onResize);
+    this.driver = myDriver();
+    let garage = null; try { garage = (await this.api.kartGarage()).garage; } catch {}
+    const paint = garage && garage.paint && PAINTS[garage.paint] ? PAINTS[garage.paint] : DRIVERS[this.driver].colour;
+    this.player = this.makeKart(paint, true);
+    if (garage) { let lv = 0; garage.stats.forEach((s) => { Object.assign(this.player, UPGRADE[s.id](s.level)); lv += s.level; }); this.avgLevel = lv / garage.stats.length; if (garage.paint === 'chrome' || garage.paint === 'gold') { this.player.paint.metalness = 0.9; this.player.paint.roughness = 0.18; } }
+    this.resize(); this._onResize = () => this.resize(); window.addEventListener('resize', this._onResize);
     this.bindControls();
     this.placeOnGrid(this.player, 0);
     this.minimap();
 
-    if (this.mode === 'bots') this.bots = Object.entries(DRIVERS).filter(([id]) => id !== this.driver).map(([id, d]) => [d.name, d.colour, d.skill]).map(([n, c, skill], i) => { const k = this.makeKart(c); k.name = n; k.skill = skill; k.lane = (i - 1) * 4; this.placeOnGrid(k, i + 1); k.v = 0; k.s = k.startS; k.lap = 1; return k; });
+    if (this.mode === 'bots' || this.mode === 'gp') this.bots = Object.entries(DRIVERS).filter(([id]) => id !== this.driver).map(([id, d]) => [d.name, d.colour, d.skill * (1 + 0.022 * (this.avgLevel || 0))]).map(([n, c, skill], i) => { const k = this.makeKart(c); k.name = n; k.skill = skill; k.lane = (i - 1) * 4; this.placeOnGrid(k, i + 1); k.v = 0; k.s = k.startS; k.lap = 1; return k; });
     else this.bots = [];
-    if (this.mode === 'solo') { try { const g = (await this.api.kartGhost({ who: this.ghostWho })).ghost; if (g && g.path && g.path.length > 10) { this.ghost = { ...g, kart: this.makeKart('#FFFFFF', false, true) }; this.toast('Racing ' + g.name + ': ' + this.fmt(g.lapMs)); } } catch {} }
+    if (this.mode === 'solo') { try { const g = (await this.api.kartGhost({ who: this.ghostWho, track: this.trackId })).ghost; if (g && g.path && g.path.length > 10) { this.ghost = { ...g, kart: this.makeKart('#FFFFFF', false, true) }; this.toast('Racing ' + g.name + ': ' + this.fmt(g.lapMs)); } } catch {} }
     if (this.mode === 'room') { this.el.querySelector('#chatbtn').style.display = ''; this.bindChat(); await this.syncRoom(true); }
 
     window.__bujaKart = this; // lets tests and support look inside a race
@@ -205,9 +266,7 @@ class Race {
     this.phase = 'count'; this.countFrom = this.mode === 'room' && this.room && this.room.startAt ? null : performance.now() + 3200;
     this.loop = this.loop.bind(this); requestAnimationFrame(this.loop);
   }
-  stop() { this.audio.stop(); try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch {} try { if (document.fullscreenElement) document.exitFullscreen(); } catch {} window.removeEventListener('deviceorientation', this._tilt); document.removeEventListener('visibilitychange', this._vis); this.running = false; window.removeEventListener('resize', this._onResize); window.removeEventListener('orientationchange', this._onResize); document.removeEventListener('fullscreenchange', this._onResize); window.removeEventListener('keydown', this._kd); window.removeEventListener('keyup', this._ku); try { this.renderer.dispose(); } catch {} }
-  /** After a rotation or going full screen, rebuild the controls' layer so Chrome on Android always repaints them. */
-  redrawControls() { const s = this.el.querySelector('.kart-stage') || this.el.firstElementChild; if (!s) return; s.classList.remove('kart-redraw'); void s.offsetWidth; s.classList.add('kart-redraw'); this.el.querySelectorAll('.kart-steer, .kart-mid').forEach((b) => { b.style.display = 'none'; void b.offsetWidth; b.style.display = ''; }); }
+  stop() { window.removeEventListener('orientationchange', this._rot); try { screen.orientation && screen.orientation.removeEventListener && screen.orientation.removeEventListener('change', this._rot); } catch {} this.audio.stop(); try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch {} try { if (document.fullscreenElement) document.exitFullscreen(); } catch {} window.removeEventListener('deviceorientation', this._tilt); document.removeEventListener('visibilitychange', this._vis); this.running = false; window.removeEventListener('resize', this._onResize); window.removeEventListener('keydown', this._kd); window.removeEventListener('keyup', this._ku); try { this.renderer.dispose(); } catch {} }
   resize() { const w = this.el.clientWidth || innerWidth, hgt = this.el.clientHeight || innerHeight; this.renderer.setSize(w, hgt, false); this.camera.aspect = w / hgt; this.camera.updateProjectionMatrix(); }
 
   /* ------------------------------ the circuit: real Abuja streets ------------------------------ */
@@ -249,7 +308,7 @@ class Race {
     for (let i = 0; i < SAMPLES; i++) { const a = this.samples[i], b = this.samples[(i + 1) % SAMPLES]; quad(a, b, ROAD_W / 2 - 0.6, 0.12); quad(a, b, -ROAD_W / 2 + 0.6, 0.12); if (i % 3 === 0) quad(a, this.samples[(i + 2) % SAMPLES], 0, 0.14); }
     const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3)); lg.setIndex(li); lg.computeVertexNormals();
     this.scene.add(new THREE.Mesh(lg, new THREE.MeshStandardMaterial({ color: '#F2F2EC', roughness: 0.5 })));
-    // start/finish: chequered strip and a gantry
+    // start/finish: chequered strip and a gantry (the Grand Prix circuit has its own, with lights)
     const cv = document.createElement('canvas'); cv.width = 128; cv.height = 16; const cx = cv.getContext('2d'); for (let i = 0; i < 32; i++) for (let j = 0; j < 4; j++) { cx.fillStyle = (i + j) % 2 ? '#111' : '#fff'; cx.fillRect(i * 4, j * 4, 4, 4); }
     const ct = new THREE.CanvasTexture(cv); ct.magFilter = THREE.NearestFilter; ct.colorSpace = THREE.SRGBColorSpace;
     const fin = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, 2.5), new THREE.MeshStandardMaterial({ map: ct, roughness: 0.6 })); fin.rotation.x = -Math.PI / 2; fin.rotation.z = -Math.atan2(this.tangents[0].x, this.tangents[0].z) + Math.PI / 2; fin.position.copy(this.samples[0]).setY(0.06); this.scene.add(fin);
@@ -259,7 +318,7 @@ class Race {
     const bc = document.createElement('canvas'); bc.width = 512; bc.height = 64; const bg = bc.getContext('2d'); bg.fillStyle = '#FF7A1A'; bg.fillRect(0, 0, 512, 64); bg.fillStyle = '#fff'; bg.font = '900 42px Inter, system-ui, sans-serif'; bg.textAlign = 'center'; bg.textBaseline = 'middle'; bg.fillText('BUJA KART · ABUJA', 256, 34);
     const bt = new THREE.CanvasTexture(bc); bt.colorSpace = THREE.SRGBColorSpace; const banner = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W + 5, 1.6), new THREE.MeshBasicMaterial({ map: bt })); banner.position.set(0, 8.4, -0.46); banner.rotation.y = Math.PI; g1.add(banner);
     const banner2 = banner.clone(); banner2.position.z = 0.46; banner2.rotation.y = 0; g1.add(banner2);
-    this.placeAlong(g1, 0, 0); this.scene.add(g1);
+    if (C.id !== 'gp') { this.placeAlong(g1, 0, 0); this.scene.add(g1); }
     // boost pads: glowing chevrons
     const padC = document.createElement('canvas'); padC.width = 64; padC.height = 128; const pg = padC.getContext('2d'); pg.fillStyle = '#1a3d10'; pg.fillRect(0, 0, 64, 128); pg.strokeStyle = '#7ED957'; pg.lineWidth = 10; for (let y = 16; y < 128; y += 36) { pg.beginPath(); pg.moveTo(8, y + 20); pg.lineTo(32, y); pg.lineTo(56, y + 20); pg.stroke(); }
     const padT = new THREE.CanvasTexture(padC); padT.colorSpace = THREE.SRGBColorSpace;
@@ -292,9 +351,10 @@ class Race {
     const ground = new THREE.Mesh(new THREE.CircleGeometry(3200, 48), new THREE.MeshStandardMaterial({ map: gt, roughness: 1 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; this.scene.add(ground);
     const clearOfTrack = (x, z, r) => { for (let i = 0; i < SAMPLES; i += 3) { const p = this.samples[i]; if ((p.x - x) ** 2 + (p.z - z) ** 2 < r * r) return false; } return true; };
     const CLEAR = { assembly: 135, mosque: 105, eagle: 90, christian: 80, nnpc: 75, cbn: 70, tower: 60, millennium: 70 }; // each landmark's own space
-    const nearLandmark = (x, z) => this.circuit.landmarks.some((l) => l.id !== 'aso' && (l.x - x) ** 2 + (l.z - z) ** 2 < (CLEAR[l.id] || 85) ** 2);
+    const inNoBuild = (x, z) => (this.circuit.noBuild || []).some(([cx, cz, r]) => (x - cx) ** 2 + (z - cz) ** 2 < r * r);
+    const nearLandmark = (x, z) => inNoBuild(x, z) || this.circuit.landmarks.some((l) => l.id !== 'aso' && (l.x - x) ** 2 + (l.z - z) ** 2 < (CLEAR[l.id] || 85) ** 2);
     // Buildings: one instanced mesh, facades from a texture sheet, floors and bays repeating to each building's real size.
-    const N = T === 'low' ? 140 : T === 'medium' ? 240 : 340;
+    const sparse = !!this.circuit.sparse; const N = Math.round((T === 'low' ? 140 : T === 'medium' ? 240 : 340) * (sparse ? 0.45 : 1));
     const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, 0);
     const style = new Float32Array(N);
     const mat = new THREE.MeshStandardMaterial({ map: this.tex.facades, roughness: 0.55, metalness: 0.15 });
@@ -311,7 +371,7 @@ class Race {
     const bm = new THREE.InstancedMesh(geo, mat, N); bm.castShadow = T === 'high'; bm.receiveShadow = true;
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(); let n = 0, tries = 0;
     while (n < N && tries < N * 12) {
-      tries++; const s = Math.floor(Math.random() * SAMPLES), side = Math.random() < 0.5 ? -1 : 1, off = side * (ROAD_W / 2 + 14 + Math.random() * 70);
+      tries++; const s = Math.floor(Math.random() * SAMPLES), side = Math.random() < 0.5 ? -1 : 1, off = side * (ROAD_W / 2 + (sparse ? 55 : 14) + Math.random() * (sparse ? 110 : 70));
       const p = this.samples[s], t = this.tangents[s], x = p.x - t.z * off, z = p.z + t.x * off;
       const w = 16 + Math.random() * 22, d = 14 + Math.random() * 20;
       if (!clearOfTrack(x, z, ROAD_W / 2 + 6 + Math.max(w, d) * 0.6) || nearLandmark(x, z)) continue;
@@ -331,7 +391,7 @@ class Race {
     let np = 0, nn = 0; const col = new THREE.Color();
     for (let s = 0; s < SAMPLES; s += 3) for (const side of [-1, 1]) {
       const p = this.samples[s], t = this.tangents[s], off = side * (ROAD_W / 2 + 8.5), x = p.x - t.z * off, z = p.z + t.x * off;
-      if (!clearOfTrack(x, z, ROAD_W / 2 + 7.5)) continue;
+      if (!clearOfTrack(x, z, ROAD_W / 2 + 7.5) || inNoBuild(x, z)) continue;
       const sc = 0.85 + Math.random() * 0.35; m4.compose(new THREE.Vector3(x, 0, z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * 6), new THREE.Vector3(sc, sc, sc));
       if ((s / 3) % 2 === 0) { if (np < TN) { pt.setMatrixAt(np, m4); pf.setMatrixAt(np, m4); np++; } } else if (nn < TN) { nt.setMatrixAt(nn, m4); nc.setMatrixAt(nn, m4); nc.setColorAt(nn, col.setHSL(0.27 + Math.random() * 0.05, 0.45, 0.28 + Math.random() * 0.08)); nn++; }
     }
@@ -365,9 +425,13 @@ class Race {
         [-10, 10].forEach((x) => { g.add(box(7, 30, 7, stone, x, 0, 30)); const sp = new THREE.Mesh(new THREE.ConeGeometry(4.4, 26, 8), stone); sp.position.set(x, 43, 30); sp.castShadow = true; g.add(sp); });
         const main = new THREE.Mesh(new THREE.ConeGeometry(6, 52, 8), stone); main.position.set(0, 46, 34); main.castShadow = true; g.add(main); g.add(box(12, 20, 12, stone, 0, 0, 34));
         const cross = new THREE.Group(); cross.add(box(0.8, 7, 0.8, gold), box(4, 0.8, 0.8, gold, 0, 4.6, 0)); cross.position.set(0, 72, 34); g.add(cross); return g; },
-      nnpc: () => { const g = new THREE.Group(); const frame = S({ color: '#D8DEE3', roughness: 0.5, metalness: 0.3 });
-        [[-13, -13], [13, -13], [-13, 13], [13, 13]].forEach(([x, z]) => { const t = box(16, 75, 16, glass, x, 0, z); g.add(t); for (let y = 6; y < 75; y += 6) g.add(box(16.3, 0.7, 16.3, frame, x, y, z)); g.add(box(17, 2, 17, frame, x, 75, z)); });
-        g.add(box(46, 12, 46, frame)); return g; },
+      nnpc: () => { const g = new THREE.Group(); const band = S({ color: '#D8DEE3', roughness: 0.45, metalness: 0.4 });
+        // four round glass towers with white floor bands, joined by sky bridges, on a low podium
+        [[-15, -15], [15, -15], [-15, 15], [15, 15]].forEach(([x, z], i) => { const hgt = 78 + (i % 2) * 6; const t = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, hgt, 28), glass); t.position.set(x, hgt / 2 + 10, z); t.castShadow = true; g.add(t);
+          for (let y = 16; y < hgt + 10; y += 7) { const r = new THREE.Mesh(new THREE.CylinderGeometry(9.25, 9.25, 0.8, 28), band); r.position.set(x, y, z); g.add(r); }
+          const cap = new THREE.Mesh(new THREE.CylinderGeometry(9.4, 9.4, 3, 28), band); cap.position.set(x, hgt + 11.5, z); g.add(cap); });
+        [[0, -15, 30, 5], [0, 15, 30, 5], [-15, 0, 5, 30], [15, 0, 5, 30]].forEach(([x, z, w, d]) => g.add(box(w, 5, d, band, x, 58, z)));
+        g.add(box(58, 10, 58, band)); const roof = new THREE.Mesh(new THREE.ConeGeometry(12, 6, 4), S({ color: '#1D6B6A', roughness: 0.4, metalness: 0.3 })); roof.rotation.y = Math.PI / 4; roof.position.set(0, 13, 0); g.add(roof); return g; },
       mosque: () => { const g = new THREE.Group(); g.add(box(56, 18, 56, white));
         for (let i = -2; i <= 2; i++) for (const s of [-1, 1]) { g.add(box(6, 9, 0.6, S({ color: '#C8B99A', roughness: 0.7 }), i * 10, 3, s * 28.2)); g.add(box(0.6, 9, 6, S({ color: '#C8B99A', roughness: 0.7 }), s * 28.2, 3, i * 10)); }
         const drum = new THREE.Mesh(new THREE.CylinderGeometry(17, 17, 7, 40), white); drum.position.y = 21.5; drum.castShadow = true; g.add(drum);
@@ -384,8 +448,10 @@ class Race {
         for (let a = 0; a < 24; a++) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.9, 20, 8), stone); c.position.set(Math.cos(a / 24 * Math.PI * 2) * 43, 10, Math.sin(a / 24 * Math.PI * 2) * 43); c.castShadow = true; g.add(c); }
         const ring = new THREE.Mesh(new THREE.CylinderGeometry(45, 45, 2, 40), stone); ring.position.y = 21; g.add(ring);
         const dome = new THREE.Mesh(lathe([[26, 0], [25, 6], [21, 12], [15, 16.5], [8, 19], [0, 20]], 48), copper); dome.position.y = 22; dome.castShadow = true; g.add(dome);
+        [[-62, 0], [62, 0], [0, -62], [0, 62]].forEach(([x, z]) => { g.add(box(34, 12, 34, white, x, 0, z)); const d = new THREE.Mesh(new THREE.SphereGeometry(10, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2), copper); d.position.set(x, 12, z); d.scale.y = 0.7; d.castShadow = true; g.add(d); });
         const lan = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 3, 8, 12), stone); lan.position.y = 46; g.add(lan); const top = new THREE.Mesh(new THREE.SphereGeometry(2.6, 16, 10), gold); top.position.y = 51; g.add(top); return g; },
-      cbn: () => { const g = new THREE.Group(); g.add(box(40, 95, 26, glass)); for (let y = 8; y < 95; y += 8) g.add(box(40.4, 1.4, 26.4, stone, 0, y, 0)); g.add(box(14, 95, 28, stone, 0, 0, 0)); g.add(box(60, 14, 40, stone)); return g; },
+      cbn: () => { const g = new THREE.Group(); const dark = S({ color: '#1C2733', metalness: 0.85, roughness: 0.12 }), fin = S({ color: '#3A4652', metalness: 0.6, roughness: 0.3 });
+        g.add(box(46, 92, 28, dark)); for (let x = -22; x <= 22; x += 4.4) g.add(box(0.7, 92, 28.6, fin, x, 0, 0)); g.add(box(12, 100, 30, dark, 0, 0, 0)); g.add(box(50, 3, 32, fin, 0, 92, 0)); g.add(box(70, 12, 44, S({ color: '#D9D4C8', roughness: 0.6 }))); return g; },
       tower: () => { const g = new THREE.Group(); const shaft = new THREE.Mesh(lathe([[5, 0], [3.2, 100], [2.2, 150], [0.6, 172], [0, 175]], 24), S({ color: '#E8ECEF', metalness: 0.6, roughness: 0.25 })); shaft.castShadow = true; g.add(shaft);
         const pod = new THREE.Mesh(lathe([[1, 0], [9, 2], [10, 5], [8, 8], [1, 9]], 32), glass); pod.position.y = 118; pod.castShadow = true; g.add(pod); g.add(box(26, 5, 26, stone)); return g; },
       aso: () => { const m = new THREE.Mesh(rockGeometry(4, 0.82, 5), new THREE.MeshStandardMaterial({ map: this.tex.rock, roughness: 0.95, color: '#C4B3A0' })); m.scale.set(330, 300, 260); m.castShadow = false; const g = new THREE.Group(); g.add(m); return g; },
@@ -418,7 +484,7 @@ class Race {
     // body: a side profile extruded across the width, with rounded edges
     const sp = new THREE.Shape(); sp.moveTo(-1.55, 0.25); sp.lineTo(1.35, 0.25); sp.quadraticCurveTo(1.85, 0.3, 1.9, 0.5); sp.lineTo(1.2, 0.72); sp.lineTo(0.2, 0.78); sp.lineTo(-0.9, 0.95); sp.lineTo(-1.5, 0.9); sp.lineTo(-1.62, 0.5); sp.lineTo(-1.55, 0.25);
     const bodyG = new THREE.ExtrudeGeometry(sp, { depth: 1.2, bevelEnabled: true, bevelThickness: 0.12, bevelSize: 0.1, bevelSegments: 2 }); bodyG.translate(0, 0, -0.6); bodyG.rotateY(-Math.PI / 2);
-    const body = new THREE.Mesh(bodyG, paint); g.add(body);
+    const body = new THREE.Mesh(bodyG, paint); g.add(body); g.paint = paint;
     const pods = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.28, 1.2), paint); pods.position.set(0, 0.42, -0.1); g.add(pods);
     const wing = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.08, 0.45), dark); wing.position.set(0, 1.18, -1.5); g.add(wing); [-0.8, 0.8].forEach((x) => { const s = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 0.3), dark); s.position.set(x, 1.0, -1.5); g.add(s); });
     const seat = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.55, 0.6), dark); seat.position.set(0, 0.95, -0.55); g.add(seat);
@@ -431,6 +497,9 @@ class Race {
     g.traverse((o) => { if (o.isMesh && !ghost) o.castShadow = true; });
     if (!ghost && T === 'low') { const sh = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 3.8), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.3, depthWrite: false })); sh.rotation.x = -Math.PI / 2; sh.position.y = 0.03; g.add(sh); }
     if (isPlayer) { g.flame = new THREE.Mesh(new THREE.ConeGeometry(0.32, 1.4, 10), new THREE.MeshBasicMaterial({ color: '#FFB020' })); g.flame.rotation.x = -Math.PI / 2; g.flame.position.set(0, 0.6, -2.1); g.flame.visible = false; g.add(g.flame); }
+    // fuse the kart's fixed parts by material (the wheels spin and steer, the boost flame flickers, so they stay separate)
+    { const fixed = new Map(); g.children.slice().forEach((c) => { if (!c.isMesh || c === g.flame || Array.isArray(c.material)) return; c.updateMatrix(); const key = c.material.uuid; if (!fixed.has(key)) fixed.set(key, { mat: c.material, geos: [], parts: [] }); const b = fixed.get(key); const geo = c.geometry.clone(); geo.applyMatrix4(c.matrix); if (!geo.attributes.uv) return; b.geos.push(geo); b.parts.push(c); });
+      for (const b of fixed.values()) if (b.parts.length > 1) { b.parts.forEach((c) => g.remove(c)); const m = new THREE.Mesh(mergeGeos(b.geos), b.mat); m.castShadow = !ghost; g.add(m); } }
     g.rotation.order = 'YXZ'; g.wheels.forEach((w) => { w.rotation.order = 'YXZ'; });
     g.v = 0; g.h = 0; g.lap = 1; g.s = 0; g.boost = 0; g.drift = 0; g.idx = 0; g.lean = 0; g.pitch = 0;
     this.scene.add(g); return g;
@@ -445,13 +514,16 @@ class Race {
   bindControls() {
     const hold = (id, key) => { const b = this.el.querySelector('#' + id); const on = (e) => { e.preventDefault(); this.input[key] = 1; b.classList.add('on'); }; const off = (e) => { e && e.preventDefault(); this.input[key] = 0; b.classList.remove('on'); };
       b.addEventListener('touchstart', on, { passive: false }); b.addEventListener('touchend', off); b.addEventListener('touchcancel', off); b.addEventListener('mousedown', on); b.addEventListener('mouseup', off); b.addEventListener('mouseleave', off); };
-    hold('kl', 'l'); hold('kr', 'r'); hold('kb', 'brake'); hold('kd', 'drift');
+    hold('kl', 'l'); hold('kr', 'r'); hold('kb', 'brake'); hold('kd', 'drift'); hold('kg', 'gas');
+    this.autoGas = (() => { try { return localStorage.getItem('buja_kart_gas') === 'auto'; } catch { return false; } })(); if (this.autoGas) this.el.classList.add('kart-autogas');
+    // after a rotation, make sure the layout and the controls are redrawn
+    this._rot = () => setTimeout(() => { this.resize(); this.el.querySelectorAll('.kart-col,.kart-mid').forEach((c) => { c.style.display = 'none'; void c.offsetHeight; c.style.display = ''; }); }, 250); window.addEventListener('orientationchange', this._rot); screen.orientation && screen.orientation.addEventListener && screen.orientation.addEventListener('change', this._rot);
     const wake = () => this.audio.wake(); this.el.addEventListener('touchstart', wake, { passive: true }); this.el.addEventListener('mousedown', wake);
     this.el.querySelector('#pause').addEventListener('click', () => this.togglePause());
     const use = (e) => { e && e.preventDefault(); if (this.phase === 'race') this.useItem(this.player); }; const ki = this.el.querySelector('#ki'); ki.addEventListener('touchstart', use, { passive: false }); ki.addEventListener('mousedown', use);
     window.addEventListener('keydown', (e) => { if (e.key === 'e' || e.key === 'E' || e.key === 'Enter') use(e); });
     this._vis = () => { if (document.hidden && this.phase === 'race' && this.mode !== 'room' && !this.paused) this.togglePause(); }; document.addEventListener('visibilitychange', this._vis);
-    const map = { ArrowLeft: 'l', a: 'l', A: 'l', ArrowRight: 'r', d: 'r', D: 'r', ArrowDown: 'brake', s: 'brake', S: 'brake', ' ': 'drift', Shift: 'drift' };
+    const map = { ArrowLeft: 'l', a: 'l', A: 'l', ArrowRight: 'r', d: 'r', D: 'r', ArrowDown: 'brake', s: 'brake', S: 'brake', ArrowUp: 'gas', w: 'gas', W: 'gas', ' ': 'drift', Shift: 'drift' };
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') this.togglePause(); });
     this._kd = (e) => { if (map[e.key]) { this.input[map[e.key]] = 1; e.preventDefault(); } }; this._ku = (e) => { if (map[e.key]) this.input[map[e.key]] = 0; };
     window.addEventListener('keydown', this._kd); window.addEventListener('keyup', this._ku);
@@ -459,22 +531,22 @@ class Race {
   }
 
   /* ------------------------------ physics ------------------------------ */
-  drive(k, dt, steer, brake, drift, isAI = false) {
+  drive(k, dt, steer, brake, drift, isAI = false, gas = true) {
     const on = this.nearest(k.position.x, k.position.z, k.idx); k.idx = on.i;
     const off = Math.abs(on.lateral) > ROAD_W / 2 + 1.2;
-    let top = off ? OFF_V : MAX_V * (isAI ? k.skill : 1); if (k.boost > 0) { top = BOOST_V; k.boost -= dt; }
+    let top = off ? OFF_V + (k.offBonus || 0) : MAX_V * (isAI ? k.skill : 1) * (k.topMul || 1); if (k.boost > 0) { top = BOOST_V * (k.topMul || 1); k.boost -= dt; }
     if (k.slow > 0) { k.slow -= dt; top *= 0.6; k.boost = 0; }
     if (k.spin > 0) { k.spin -= dt; steer = 0; drift = false; top = Math.min(top, 8); }
-    const accel = brake ? -28 : (k.v < top ? 13 : -9);
+    const accel = brake ? -28 : !gas ? (k.v > 0 ? -5 : 0) : (k.v < top ? 13 * (k.accMul || 1) : -9);   // off the gas: the kart coasts down
     k.v = Math.max(0, Math.min(k.boost > 0 ? BOOST_V : top + 2, k.v + accel * dt));
     const grip = drift && Math.abs(steer) > 0 ? 1.55 : 1;
     const turn = steer * grip * (0.9 + 0.8 * Math.min(1, k.v / 18)) * dt * (k.v > 1 ? 1 : k.v);
-    k.h += turn * 1.05;
-    if (!isAI) { if (drift && Math.abs(steer) > 0 && k.v > 14) k.drift = Math.min(2.2, k.drift + dt); else if (k.drift > 0.55) { k.boost = Math.min(1.6, k.drift * 0.7); k.drift = 0; this.buzz(20); } else k.drift = 0; }
+    k.h += turn * 1.05 * (k.turnMul || 1);
+    if (!isAI) { if (drift && Math.abs(steer) > 0 && k.v > 14) k.drift = Math.min(2.2, k.drift + dt); else if (k.drift > 0.55) { k.boost = Math.min(1.6, k.drift * 0.7) * (k.boostMul || 1); k.drift = 0; this.buzz(20); } else k.drift = 0; }
     k.position.x += Math.sin(k.h) * k.v * dt; k.position.z += Math.cos(k.h) * k.v * dt;
     // walls: slide along instead of stopping dead
     if (Math.abs(on.lateral) > ROAD_W / 2 + 9) { const t = this.tangents[on.i], back = Math.sign(on.lateral) * (Math.abs(on.lateral) - (ROAD_W / 2 + 9)); k.position.x += t.z * back; k.position.z -= t.x * back; if (!isAI && k.v > 8 && !k._hit) { this.audio.bump(); this.shake = 0.35; this.buzz(30); } k._hit = true; k.v *= 0.9; } else k._hit = false;
-    if (this.pads.some((p) => Math.abs(p - on.i) < 4) && Math.abs(on.lateral) < 3) { if (!isAI && k.boost <= 0) this.audio.boost(); k.boost = Math.max(k.boost, 1.1); }
+    if (this.pads.some((p) => Math.abs(p - on.i) < 4) && Math.abs(on.lateral) < 3) { if (!isAI && k.boost <= 0) this.audio.boost(); k.boost = Math.max(k.boost, 1.1 * (k.boostMul || 1)); }
     // lean into turns, dip under braking, front wheels steer
     const lean = -steer * Math.min(1, k.v / 22) * (drift ? 0.11 : 0.07); k.lean += (lean - k.lean) * 0.15;
     const pitch = brake ? 0.035 : (k.boost > 0 ? -0.03 : -0.01 * Math.min(1, k.v / 30)); k.pitch += (pitch - k.pitch) * 0.12;
@@ -513,6 +585,7 @@ class Race {
     if (this.phase === 'count') {
       const startAt = this.countFrom ?? (this.room && this.room.startAt ? performance.now() + (this.room.startAt - (Date.now() + (this.skew || 0))) : null);
       if (startAt != null) { this.countFrom = startAt; const left = Math.ceil((startAt - performance.now()) / 1000);
+        if (this.startLights) { const lit = left > 3 ? 0 : left <= 0 ? 0 : Math.min(5, Math.round((1 - (startAt - performance.now()) / 3000) * 5)); this.startLights.forEach((m, i) => { m.material.emissiveIntensity = i < lit ? 3 : 0; m.material.color.set(i < lit ? '#FF2A1A' : '#2A0E0C'); }); }
         if (left !== this._lastLeft) { this._lastLeft = left; if (left >= 1 && left <= 3) this.audio.beep(false); else if (left <= 0) this.audio.beep(true); }
         count.innerHTML = left > 3 ? '' : left > 0 ? `<b class="pop">${left}</b>` : '<b class="pop go">GO!</b>';
         if (left <= 0) { this.phase = 'race'; this.t0 = startAt; this.lapStart = startAt; this.buzz(40); setTimeout(() => { count.innerHTML = ''; }, 700); } }
@@ -523,9 +596,11 @@ class Race {
       // automatic drift: a turn held for half a second at speed, timed in real time so slow phones behave like fast ones
       if ((this.input.l || this.input.r) && this.player.v > 17) this._steerSince = this._steerSince || now; else this._steerSince = 0;
       const autoDrift = !!this._steerSince && now - this._steerSince > 450;
-      const steer = this.steerMode === 'tilt' ? Math.max(-1, Math.min(1, this.tilt)) : (this.input.l ? 1 : 0) - (this.input.r ? 1 : 0);
+      const btn = (this.input.l ? 1 : 0) - (this.input.r ? 1 : 0);
+      const steer = this.steerMode === 'tilt' && !btn ? Math.max(-1, Math.min(1, this.tilt)) : btn;
       if (this.phase === 'race') {
-        const on = this.drive(this.player, dt, steer, this.input.brake, this.input.drift || autoDrift);
+        const gasOn = this.autoGas || this.input.gas || this.input.l || this.input.r || (this.steerMode === 'tilt' && !this.input.brake && this.input.gas !== 0 && this._tiltGas);
+        const on = this.drive(this.player, dt, steer, this.input.brake, this.input.drift || autoDrift, false, !!gasOn);
         this.recording.push([Math.round(this.player.position.x * 10) / 10, Math.round(this.player.position.z * 10) / 10, Math.round(this.player.h * 100) / 100]);
         if (this.player.lapEvent) this.completeLap(now);
         this.nearLandmark(on.i);
@@ -537,7 +612,7 @@ class Race {
       this.hud(now);
       if (this.fx) this.fx.update(dt);
       if (this.items && this.phase === 'race') this.itemTick(now, dt);
-      const P = this.player; this.audio.update(P.v, !this.input.brake, P._drifting, P._off, false);
+      const P = this.player; this.audio.update(P.v, !this.input.brake && (this.autoGas || this.input.gas || this.input.l || this.input.r), P._drifting, P._off, false);
       // wrong way: facing against the circuit for more than a second
       const t = this.tangents[P.idx], dot = Math.sin(P.h) * t.x + Math.cos(P.h) * t.z;
       // counted in real time, so a slow phone shows it as quickly as a fast one
@@ -591,16 +666,34 @@ class Race {
     this.phase = 'done'; const raceMs = Math.round(now - this.t0);
     const place = this.placing(); this.buzz(80); this.audio.finish(this.mode === 'solo' || place === 1);
     let saved = null;
-    try { saved = await this.api.kartSaveTime({ track: 'abuja', lapMs: this.bestLap, raceMs, mode: this.mode, ghost: this.bestPath }); } catch {}
+    let gpHtml = '';
+    if (this.mode === 'gp') {
+      const st = gpState() || { round: 0, pts: {} };
+      // finishing order: me by my place; the others by who finished first, then by how far round they are
+      const me = DRIVERS[this.driver].name; const others = this.bots.slice().sort((a, b) => (a.finished || 1e12) - (b.finished || 1e12) || b.s - a.s).map((b) => b.name);
+      const order = others.slice(); order.splice(place - 1, 0, me);
+      order.forEach((n, i) => { st.pts[n] = (st.pts[n] || 0) + (GP_POINTS[i] || 0); });
+      st.round = (st.round || 0) + 1; st.last = order; gpSave(st);
+      const table = Object.entries(st.pts).sort((a, b) => b[1] - a[1]);
+      const done = st.round >= GP_ROUNDS.length; const champ = table[0][0] === me; const myPos = 1 + table.findIndex(([n]) => n === me);
+      let bonus = null; if (done) { try { bonus = await this.api.kartGpFinish({ place: myPos }); } catch {} gpSave(null); }
+      gpHtml = `<div class="kart-gp"><div class="kart-gp-h">${done ? (champ ? '🏆 Grand Prix champion!' : 'Grand Prix complete: ' + this.ord(myPos)) : `Grand Prix · round ${st.round} of ${GP_ROUNDS.length}`}</div>
+        ${table.map(([n, p], i) => `<div class="kart-row ${n === me ? 'me' : ''}"><span>${i + 1}. ${this.h(n)}${n === me ? ' (you)' : ''}</span><b>${p} pts</b></div>`).join('')}
+        ${bonus && bonus.coinsEarned ? `<div class="kart-coins">+${bonus.coinsEarned} 🪙 Grand Prix bonus</div>` : ''}</div>`;
+      this._gpNext = done ? null : GP_ROUNDS[st.round];
+    }
+    try { saved = await this.api.kartSaveTime({ place: this.mode === 'solo' ? 1 : place, track: this.trackId, lapMs: this.bestLap, raceMs, mode: this.mode, ghost: this.bestPath }); } catch {}
     if (this.mode === 'room') { try { await this.api.kartFinish(this.code, raceMs); } catch {} }
     const r = this.el.querySelector('#result');
     r.innerHTML = `<div class="kart-card"><div class="kart-place"><img class="kart-face" src="/assets/kart/driver-${this.driver}.jpg" alt="" style="--c:${DRIVERS[this.driver].colour}"><span>${this.mode === 'solo' ? '🏁' : place === 1 ? '🏆' : '🏁'}</span></div>
       <div class="kart-big">${this.mode === 'solo' ? 'Race complete' : this.ord(place) + ' place'}</div>
       <div class="kart-row"><span>Race</span><b>${this.fmt(raceMs)}</b></div><div class="kart-row"><span>Best lap</span><b>${this.fmt(this.bestLap)}</b></div>
       ${saved ? `<div class="kart-row"><span>Abuja ranking, all time</span><b>${this.ord(saved.rank)}</b></div>${saved.personalBest ? '<div class="kart-pb">New personal best!</div>' : `<div class="kart-sub">Your best: ${this.fmt(saved.previousBest)}</div>`}` : ''}
-      <div class="kart-actions"><button class="btn btn-primary" id="again">${this.mode === 'room' ? 'Back to the room' : 'Race again'}</button><a class="btn btn-outline" href="#/kart/board">Leaderboard</a><a class="btn btn-ghost" href="#/kart">Menu</a></div></div>`;
+      ${saved && saved.coinsEarned ? `<div class="kart-coins">+${saved.coinsEarned} 🪙 <span>${saved.coins} in the garage</span></div>` : ''}
+      ${gpHtml}
+      <div class="kart-actions"><button class="btn btn-primary" id="again">${this.mode === 'room' ? 'Back to the room' : this.mode === 'gp' ? (this._gpNext ? 'Next race: ' + TRACKS[this._gpNext].name : 'Back to Buja Kart') : 'Race again'}</button><a class="btn btn-outline" href="#/kart/board?track=${this.trackId}">Leaderboard</a><a class="btn btn-ghost" href="#/kart">Menu</a></div></div>`;
     r.classList.add('on');
-    r.querySelector('#again').addEventListener('click', () => { if (this.mode === 'room') this.go('/kart/room/' + this.code); else location.reload(); });
+    r.querySelector('#again').addEventListener('click', () => { if (this.mode === 'room') this.go('/kart/room/' + this.code); else if (this.mode === 'gp') { if (this._gpNext) { location.hash = '#/kart/play?mode=gp&track=' + this._gpNext; location.reload(); } else this.go('/kart'); } else location.reload(); });
   }
   placing() {
     const me = this.player.s + (this.phase === 'done' ? 10 : 0);
@@ -629,10 +722,10 @@ class Race {
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
     const mat = new THREE.MeshStandardMaterial({ map: t, emissive: '#FFB020', emissiveMap: t, emissiveIntensity: 0.55, transparent: true, opacity: 0.92, roughness: 0.3 });
     const geo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
-    this.boxes = [];
+    this.boxes = []; this.boxMesh = new THREE.InstancedMesh(geo, mat, 16); this.boxMesh.castShadow = this.tier !== 'low'; this.scene.add(this.boxMesh);
     for (const at of [0.17, 0.42, 0.66, 0.9]) {
       const s = Math.floor(at * SAMPLES);
-      for (const lane of [-5.2, -1.75, 1.75, 5.2]) { const m = new THREE.Mesh(geo, mat); this.placeAlong(m, s, lane); m.position.y = 1.3; m.castShadow = this.tier !== 'low'; this.scene.add(m); this.boxes.push({ m, back: 0 }); }
+      for (const lane of [-5.2, -1.75, 1.75, 5.2]) { const m = new THREE.Object3D(); this.placeAlong(m, s, lane); m.position.y = 1.3; m.visible = true; this.boxes.push({ m, back: 0 }); }
     }
     this.bananas = [];
     this.ITEMS = {
@@ -653,7 +746,7 @@ class Race {
   useItem(k) {
     if (!k.item) return; const id = k.item; const me = k === this.player;
     const ahead = [this.player, ...this.bots].filter((o) => o !== k && o.s > k.s);
-    if (id === 'pepper') { k.boost = Math.max(k.boost, 1.25); if (me) this.audio.boost(); }
+    if (id === 'pepper') { k.boost = Math.max(k.boost, 1.25 * (k.boostMul || 1)); if (me) this.audio.boost(); }
     if (id === 'banana') { const g = new THREE.Group(); const peel = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.18, 6, 12, Math.PI * 1.4), new THREE.MeshStandardMaterial({ color: '#F4D03F', roughness: 0.5 })); peel.rotation.x = Math.PI / 2; peel.position.y = 0.2; g.add(peel);
       g.position.set(k.position.x - Math.sin(k.h) * 3.2, 0, k.position.z - Math.cos(k.h) * 3.2); this.scene.add(g); this.bananas.push({ g, owner: k, born: performance.now() }); if (me) this.audio.tone(300, 0.15, 'triangle', 0.15, 0, -120); }
     if (id === 'zobo') { ahead.forEach((o) => { if (o === this.player) this.splat(); else { o.slow = Math.max(o.slow || 0, 1.2); o.wobble = 3; } }); this.audio.noise(0.4, 0.3, 700, 0, 'bandpass'); }
@@ -664,9 +757,11 @@ class Race {
   splat() { const s = this.el.querySelector('#splat'); s.classList.remove('on'); void s.offsetWidth; s.classList.add('on'); this.buzz(40); }
   blackout() { const d = this.el.querySelector('#dark'); d.classList.remove('on'); void d.offsetWidth; d.classList.add('on'); this.buzz(60); }
   itemTick(now, dt) {
-    const racers = [this.player, ...this.bots];
+    const racers = [this.player, ...this.bots]; if (this.boxMesh) this.boxMesh.instanceMatrix.needsUpdate = true;
     for (const b of this.boxes) {
-      if (b.back > now) { b.m.visible = false; continue; } b.m.visible = true; b.m.rotation.y += dt * 1.6; b.m.rotation.x += dt * 0.7; b.m.position.y = 1.3 + Math.sin(now / 300 + b.m.position.x) * 0.15;
+      const bi = this.boxes.indexOf(b);
+      if (b.back > now) { b.m.visible = false; b.m.scale.setScalar(0.0001); b.m.updateMatrix(); this.boxMesh.setMatrixAt(bi, b.m.matrix); continue; }
+      b.m.visible = true; b.m.scale.setScalar(1); b.m.rotation.y += dt * 1.6; b.m.rotation.x += dt * 0.7; b.m.position.y = 1.3 + Math.sin(now / 300 + b.m.position.x) * 0.15; b.m.updateMatrix(); this.boxMesh.setMatrixAt(bi, b.m.matrix);
       for (const k of racers) if (!k.item && (k.position.x - b.m.position.x) ** 2 + (k.position.z - b.m.position.z) ** 2 < 2.4 ** 2) { b.back = now + 4000; this.fx && [0, 1, 2, 3, 4].forEach(() => this.fx.puff(b.m.position.x, 1.2, b.m.position.z, [1, 0.8, 0.3], 1.4, 2)); this.giveItem(k, this.drawItem(k)); break; }
     }
     // bananas: anyone driving over one spins out (the dropper is safe for a second)
@@ -729,6 +824,101 @@ class Race {
     window.addEventListener('deviceorientation', this._tilt);
     this.steerMode = 'tilt'; try { localStorage.setItem('buja_kart_steer', 'tilt'); } catch {} this.el.classList.add('kart-tiltmode'); return true;
   }
+  /** Abuja City Gate, spanning the road so you drive under it: white stone, green bands, the gold eagle on top.
+   *  Placed on the straightest stretch of the lap's second half. */
+  buildCityGate() {
+    let best = this.circuit.gate != null ? this.circuit.gate : Math.floor(SAMPLES * 0.55), bend = this.circuit.gate != null ? -1 : Infinity;
+    for (let s = Math.floor(SAMPLES * 0.45); s < Math.floor(SAMPLES * 0.8); s += 2) { let b = 0; for (let d = -10; d <= 10; d++) b += 1 - this.tangents[(s + d + SAMPLES) % SAMPLES].dot(this.tangents[s]); if (b < bend && !this.circuit.landmarks.some((l) => Math.abs(l.s - s) < 25)) { bend = b; best = s; } }
+    const S = (o) => new THREE.MeshStandardMaterial(o); const stone = S({ color: '#F2EDE2', roughness: 0.7 }), green = S({ color: '#008751', roughness: 0.5 }), gold = S({ color: '#E0A93A', metalness: 1, roughness: 0.25 });
+    const g = new THREE.Group(); const span = ROAD_W / 2 + 4;
+    const box = (w, h, d, m, x, y, z = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = b.receiveShadow = true; g.add(b); return b; };
+    for (const side of [-1, 1]) {
+      const pil = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 3.4, 34, 4), stone); pil.rotation.y = Math.PI / 4; pil.position.set(side * span, 17, 0); pil.castShadow = true; g.add(pil); box(4.2, 2.2, 5.2, green, side * span, 13); // tall tapering pillars with a green band
+      box(3, 8, 4, stone, side * (span + 5.5), 4); box(3.2, 1, 4.2, green, side * (span + 5.5), 8.3);   // the low side gates
+    }
+    box(span * 2 + 5, 3.2, 6.6, stone, 0, 21); box(span * 2 + 6, 0.9, 7, green, 0, 19.2);             // the crossbar and its green line
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(span - 2.2, 0.9, 8, 28, Math.PI), stone); arch.position.set(0, 12.6, 0); arch.scale.y = 0.62; arch.castShadow = true; g.add(arch);
+    box(5, 2, 3.6, stone, 0, 23.6); const eagle = new THREE.Mesh(new THREE.ConeGeometry(1.6, 3.6, 5), gold); eagle.position.set(0, 26.4, 0); g.add(eagle); box(7, 0.8, 0.7, gold, 0, 26.2);
+    // a green-white-green panel on the crossbar, both faces
+    const c = document.createElement('canvas'); c.width = 256; c.height = 32; const x2 = c.getContext('2d'); x2.fillStyle = '#F2EDE2'; x2.fillRect(0, 0, 256, 32); x2.fillStyle = '#008751'; x2.font = '800 22px Inter, system-ui, sans-serif'; x2.textAlign = 'center'; x2.textBaseline = 'middle'; x2.fillText('WELCOME TO ABUJA', 128, 17);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    for (const z of [-3.31, 3.31]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(span * 1.6, 2.2), new THREE.MeshStandardMaterial({ map: t, roughness: 0.6 })); p.position.set(0, 21, z); if (z < 0) p.rotation.y = Math.PI; g.add(p); }
+    this.placeAlong(g, best, 0); this.scene.add(g);
+    this.landmarkAt.push({ s: best, name: 'City Gate' });
+  }
+  /** Merge every static mesh that shares a material into one mesh. Animated things (flags, starting lights) are left
+   *  alone, as are instanced meshes, sprites, and meshes with per-vertex colours or several materials. */
+  bakeStatic() {
+    const keep = new Set([...(this.flags || []), ...(this.startLights || [])]);
+    const buckets = new Map(); const drop = [];
+    this.scene.updateMatrixWorld(true);
+    this.scene.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh || keep.has(o) || Array.isArray(o.material) || !o.geometry.attributes.position || o.geometry.attributes.color || o.geometry.attributes.aStyle) return;
+      if (!o.geometry.attributes.normal || !o.geometry.attributes.uv) return;
+      const key = o.material.uuid; if (!buckets.has(key)) buckets.set(key, { mat: o.material, geos: [], cast: false });
+      const b = buckets.get(key); const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld); b.geos.push(g); b.cast = b.cast || o.castShadow; drop.push(o);
+    });
+    let before = drop.length, after = 0;
+    for (const { mat, geos, cast } of buckets.values()) { if (geos.length < 2) { continue; } const m = new THREE.Mesh(mergeGeos(geos), mat); m.castShadow = cast; m.receiveShadow = true; this.scene.add(m); after++; }
+    // only remove the originals whose bucket was merged
+    for (const o of drop) { const b = buckets.get(o.material.uuid); if (b.geos.length >= 2) o.parent && o.parent.remove(o); }
+    this._baked = { before, after };
+  }
+  /** The Grand Prix start: two covered grandstands full of spectators, the START / FINISH gantry with five lights,
+   *  painted grid boxes, catch fences, a line of Nigerian flags, and Millennium Park's lakes inside the circuit. */
+  buildGrandPrix() {
+    const T = this.tier; const S = (o) => new THREE.MeshStandardMaterial(o); const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+    const white = S({ color: '#F4F4F2', roughness: 0.5 }), steel = S({ color: '#8A9099', metalness: 0.7, roughness: 0.35 }), seat = S({ color: '#2F6FBF', roughness: 0.6 });
+    // grandstands along the start straight, one on each side, stepped seating under a white canopy
+    const crowdN = T === 'low' ? 500 : 1400; const crowd = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 1.0, 0.45), S({ roughness: 0.8 }), crowdN); let nc = 0; const col = new THREE.Color();
+    const shirts = ['#E0342B', '#1E9E55', '#F2B51C', '#2459D6', '#FFFFFF', '#101014', '#FF7A1A', '#7A3E96'];
+    for (const side of [-1, 1]) {
+      const g = new THREE.Group(), len = 170, rows = 7, off = ROAD_W / 2 + 18;
+      for (let r = 0; r < rows; r++) { const b = new THREE.Mesh(new THREE.BoxGeometry(len, 1.2 + r * 1.1, 2.2), r % 2 ? seat : white); b.position.set(0, (1.2 + r * 1.1) / 2, r * 2.2); b.receiveShadow = true; g.add(b); }
+      for (let x = -len / 2; x <= len / 2; x += 17) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.5, 16, 0.5), steel); p.position.set(x, 8, rows * 2.2 + 0.5); g.add(p); const p2 = p.clone(); p2.position.z = -1; p2.scale.y = 0.95; g.add(p2); }
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(len + 6, 0.6, rows * 2.2 + 7), white); roof.position.set(0, 16.2, rows * 1.1); roof.rotation.x = -0.07; roof.castShadow = T !== 'low'; g.add(roof);
+      // place along the straight, seats facing the track
+      const s0 = 18, p0 = this.samples[s0], t0 = this.tangents[s0]; g.position.set(p0.x - t0.z * off * side, 0, p0.z + t0.x * off * side); g.rotation.y = Math.atan2(t0.x, t0.z) + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
+      this.scene.add(g); g.updateMatrixWorld(true);
+      for (let r = 0; r < rows && nc < crowdN; r++) for (let x = -len / 2 + 1; x < len / 2 - 1 && nc < crowdN; x += 0.9 + Math.random() * 0.6) {
+        if (Math.random() < 0.18) continue; const v = new THREE.Vector3(x, 1.2 + r * 1.1 + 0.5, r * 2.2 - 0.2).applyMatrix4(g.matrixWorld);
+        m4.compose(v, q.setFromAxisAngle(up, g.rotation.y), new THREE.Vector3(1, 0.85 + Math.random() * 0.3, 1)); crowd.setMatrixAt(nc, m4); crowd.setColorAt(nc, col.set(shirts[Math.floor(Math.random() * shirts.length)])); nc++; }
+    }
+    crowd.count = nc; this.scene.add(crowd);
+    // the gantry: START / FINISH LINE between chequered panels, and five starting lights
+    const c = document.createElement('canvas'); c.width = 1024; c.height = 96; const x = c.getContext('2d');
+    for (let i = 0; i < 16; i++) for (let j = 0; j < 6; j++) { x.fillStyle = (i + j) % 2 ? '#111' : '#fff'; x.fillRect(i * 16, j * 16, 16, 16); x.fillRect(768 + i * 16, j * 16, 16, 16); }
+    x.fillStyle = '#F2F2F0'; x.fillRect(256, 0, 512, 96); x.fillStyle = '#111'; x.font = '900 54px Inter, system-ui, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('START / FINISH LINE', 512, 50);
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    const gant = new THREE.Group(); [-1, 1].forEach((s) => { const p = new THREE.Mesh(new THREE.BoxGeometry(0.9, 11, 0.9), steel); p.position.set(s * (ROAD_W / 2 + 3), 5.5, 0); p.castShadow = true; gant.add(p); });
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(ROAD_W + 7, 2.4, 0.6), [white, white, white, white, S({ map: tex, roughness: 0.5 }), S({ map: tex, roughness: 0.5 })]); sign.position.y = 11.4; sign.castShadow = true; gant.add(sign);
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(6.4, 1.3, 0.8), S({ color: '#101014', roughness: 0.4 })); housing.position.set(0, 9.4, -0.1); gant.add(housing);
+    this.startLights = [0, 1, 2, 3, 4].map((i) => { const l = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 10), new THREE.MeshStandardMaterial({ color: '#2A0E0C', emissive: '#FF2A1A', emissiveIntensity: 0, roughness: 0.3 })); l.position.set(-2.4 + i * 1.2, 9.4, -0.55); gant.add(l); return l; });
+    this.placeAlong(gant, 1, 0); gant.rotation.y += Math.PI; this.scene.add(gant);
+    // grid boxes painted behind the line
+    const gp = [], gi = [];
+    for (let slot = 0; slot < 6; slot++) { const row = Math.floor(slot / 2), colx = slot % 2 ? 3.4 : -3.4, s = (SAMPLES - 4 - row * 3 + SAMPLES) % SAMPLES, p = this.samples[s], t = this.tangents[s], nx = -t.z, nz = t.x;
+      const cx = p.x + nx * colx, cz = p.z + nz * colx; const seg = (a1, b1, a2, b2) => { const v = gp.length / 3; gp.push(cx + nx * a1 + t.x * b1, 0.06, cz + nz * a1 + t.z * b1, cx + nx * a2 + t.x * b1, 0.06, cz + nz * a2 + t.z * b1, cx + nx * a1 + t.x * b2, 0.06, cz + nz * a1 + t.z * b2, cx + nx * a2 + t.x * b2, 0.06, cz + nz * a2 + t.z * b2); gi.push(v, v + 2, v + 1, v + 1, v + 2, v + 3); };
+      seg(-1.6, 1.3, 1.6, 1.6); seg(-1.6, -1.2, -1.35, 1.6); seg(1.35, -1.2, 1.6, 1.6); }
+    const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3)); gg.setIndex(gi); gg.computeVertexNormals(); this.scene.add(new THREE.Mesh(gg, S({ color: '#F4F4EE', roughness: 0.5, side: THREE.DoubleSide })));
+    // catch fences and Nigerian flags along the straight
+    const fc = document.createElement('canvas'); fc.width = fc.height = 64; const fx = fc.getContext('2d'); fx.strokeStyle = 'rgba(200,205,210,0.9)'; fx.lineWidth = 3; for (let i = -64; i < 128; i += 16) { fx.beginPath(); fx.moveTo(i, 0); fx.lineTo(i + 64, 64); fx.stroke(); fx.beginPath(); fx.moveTo(i + 64, 0); fx.lineTo(i, 64); fx.stroke(); }
+    const ft = new THREE.CanvasTexture(fc); ft.wrapS = ft.wrapT = THREE.RepeatWrapping; ft.repeat.set(1 / 3, 1 / 3);
+    const fence = new THREE.MeshStandardMaterial({ map: ft, transparent: true, alphaTest: 0.2, side: THREE.DoubleSide, metalness: 0.5, roughness: 0.4 });
+    for (const side of [-1, 1]) { const pos = [], uv = [], idx = []; let dist = 0;
+      for (let k2 = -45; k2 <= 60; k2++) { const s = (k2 + SAMPLES) % SAMPLES, p = this.samples[s], t = this.tangents[s], o = side * (ROAD_W / 2 + 10.5); if (k2 > -45) dist += 4; pos.push(p.x - t.z * o, 0.2, p.z + t.x * o, p.x - t.z * o, 4.2, p.z + t.x * o); uv.push(dist, 0, dist, 4); if (k2 < 60) { const v = (k2 + 45) * 2; idx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2); } }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals(); this.scene.add(new THREE.Mesh(g, fence)); }
+    this.flags = this.flags || [];
+    const flagMat = new THREE.MeshStandardMaterial({ map: flagTexture(), side: THREE.DoubleSide, roughness: 0.7 }); // one material for every flag, so they fuse into one
+    for (let s = 45; s < 140; s += 7) for (const side of [-1, 1]) { const p = this.samples[s], t = this.tangents[s], o = side * (ROAD_W / 2 + 12.5);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 7, 6), steel); pole.position.set(p.x - t.z * o, 3.5, p.z + t.x * o); this.scene.add(pole);
+      const f = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.4, 8, 1), flagMat); f.position.set(pole.position.x + t.x * 1.1, 6.2, pole.position.z + t.z * 1.1); f.rotation.y = Math.atan2(t.x, t.z) + Math.PI / 2; this.scene.add(f); }
+    // Millennium Park: lakes and walkways inside the circuit
+    const park = this.circuit.park; if (park) { const water = S({ color: '#2F86B5', metalness: 0.25, roughness: 0.06 }), path = S({ color: '#E3D6BC', roughness: 0.9 });
+      [[0, 0, 42, 26], [80, 60, 30, 18], [-70, 70, 26, 20], [60, -80, 22, 16]].forEach(([dx, dz, rx, rz], i) => { const l = new THREE.Mesh(new THREE.CircleGeometry(1, 36), water); l.rotation.x = -Math.PI / 2; l.scale.set(rx, rz, 1); l.position.set(park.x + dx, 0.25, park.z + dz); l.rotation.z = i * 0.7; this.scene.add(l);
+        const rim = new THREE.Mesh(new THREE.RingGeometry(1, 1.08, 36), path); rim.rotation.x = -Math.PI / 2; rim.scale.set(rx, rz, 1); rim.position.set(park.x + dx, 0.24, park.z + dz); rim.rotation.z = i * 0.7; this.scene.add(rim); });
+      [[-90, -40, 200, 0.4], [20, 110, 160, -0.9], [110, -10, 140, 1.4]].forEach(([dx, dz, len, ang]) => { const w = new THREE.Mesh(new THREE.PlaneGeometry(4, len), path); w.rotation.x = -Math.PI / 2; w.rotation.z = ang; w.position.set(park.x + dx, 0.15, park.z + dz); this.scene.add(w); }); }
+  }
   /** Guard rails where the track edge stops you: red and white Armco panels, one draw call. */
   buildBarriers() {
     const pos = [], col = [], idx = []; const off = ROAD_W / 2 + 9.4;
@@ -761,7 +951,7 @@ class Race {
     const g = this.mini; g.clearRect(0, 0, 112, 112); g.fillStyle = 'rgba(16,16,20,.55)'; g.beginPath(); g.roundRect(0, 0, 112, 112, 14); g.fill();
     g.strokeStyle = '#E8E8EC'; g.lineWidth = 4; g.beginPath(); this.samples.forEach((p, i) => { const [x, y] = this.mm(p.x, p.z); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); g.stroke();
     const dot = (k, c, r = 3.5) => { const [x, y] = this.mm(k.position.x, k.position.z); g.fillStyle = c; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); };
-    this.bots.forEach((b) => dot(b, b.children[0].material.color.getStyle()));
+    this.bots.forEach((b) => dot(b, b.paint.color.getStyle()));
     Object.values(this.remotes).forEach((r) => r.kart && dot(r.kart, r.colour));
     if (this.ghost) dot(this.ghost.kart, 'rgba(255,255,255,.7)');
     dot(this.player, '#FF7A1A', 5);
@@ -778,7 +968,7 @@ class Race {
       if (first && d.room.status !== 'racing') { this.go('/kart/room/' + this.code); return; }
       const seen = new Set();
       d.players.forEach((p) => {
-        if (p.me) { const i = d.players.indexOf(p); if (first) this.placeOnGrid(this.player, i); this.player.children[0].material.color.set(p.colour); return; }
+        if (p.me) { const i = d.players.indexOf(p); if (first) this.placeOnGrid(this.player, i); this.player.paint.color.set(p.colour); return; }
         seen.add(p.id); let r = this.remotes[p.id];
         if (!r) { r = this.remotes[p.id] = { kart: this.makeKart(p.colour), colour: p.colour, name: p.name }; this.placeOnGrid(r.kart, d.players.indexOf(p)); this.addTag(r); }
         r.finish = p.finishMs;

@@ -70,4 +70,21 @@ final class MatchRules
         $kids = 0; if (($me['kids'] ?? '') !== '' && $me['kids'] === ($them['kids'] ?? null)) $kids = 10;
         return ['score' => min(100, $s + $faith + $near + $kids), 'shared' => $shared, 'proximity' => $prox];
     }
+
+    /**
+     * Where Match says someone is. Their real GPS point is snapped to a grid of roughly 550 m squares, then moved by a
+     * private offset of up to about 280 m that is fixed for that person and known only to the server. Distances are
+     * measured between these points, so walking around and watching a distance change cannot locate anyone, and a
+     * person moving within their own neighbourhood does not change what others see.
+     */
+    public static function fuzz(int $userId, float $lat, float $lng): array
+    {
+        $cell = 0.005;
+        $h = hash_hmac('sha256', 'match-fuzz:' . $userId, (string) Http::config('jwt_secret', 'buja'));
+        $ox = (hexdec(substr($h, 0, 6)) / 0xFFFFFF - 0.5) * $cell; $oy = (hexdec(substr($h, 6, 6)) / 0xFFFFFF - 0.5) * $cell;
+        return [floor($lat / $cell) * $cell + $cell / 2 + $oy, floor($lng / $cell) * $cell + $cell / 2 + $ox];
+    }
+
+    /** A distance people see: never closer than "under 2 km", otherwise whole kilometres. */
+    public static function shownKm(float $km): int { return $km < 2 ? 2 : (int) round($km); }
 }

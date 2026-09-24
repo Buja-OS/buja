@@ -47,6 +47,7 @@ final class PayController
     public function callback(): void
     {
         $ref = (string) ($_GET['reference'] ?? $_GET['trxref'] ?? ''); $origin = (string) Http::config('app_origin');
+        if (str_starts_with($ref, 'BJE-')) { $o = EscrowController::settle($ref); header('Location: ' . $origin . '/#/orders/' . ($o ? (int) $o['id'] : '') . '?paid=' . ($o && $o['status'] !== 'pending' ? '1' : '0')); exit; }
         if (str_starts_with($ref, 'BJT-')) { $t = TicketController::settle($ref); header('Location: ' . $origin . '/#/meetup/' . ($t ? (int) $t['event_id'] : '') . '?paid=' . ($t && in_array($t['status'], ['paid', 'used'], true) ? '1' : '0')); exit; }
         $p = $ref !== '' ? $this->settle($ref) : null;
         header('Location: ' . $origin . '/#/plus?paid=' . ($p && $p['status'] === 'paid' ? '1' : '0')); exit;
@@ -58,7 +59,8 @@ final class PayController
         $raw = file_get_contents('php://input') ?: '';
         if (!Paystack::webhookValid($raw, $_SERVER['HTTP_X_PAYSTACK_SIGNATURE'] ?? '')) { http_response_code(401); exit; }
         $j = json_decode($raw, true);
-        if (($j['event'] ?? '') === 'charge.success' && !empty($j['data']['reference'])) { $r = (string) $j['data']['reference']; if (str_starts_with($r, 'BJT-')) TicketController::settle($r); else $this->settle($r); }
+        if (($j['event'] ?? '') === 'charge.success' && !empty($j['data']['reference'])) { $r = (string) $j['data']['reference']; if (str_starts_with($r, 'BJT-')) TicketController::settle($r); elseif (str_starts_with($r, 'BJE-')) EscrowController::settle($r); else $this->settle($r); }
+        if (str_starts_with((string) ($j['event'] ?? ''), 'transfer.') && is_array($j['data'] ?? null)) EscrowController::transferEvent((string) $j['event'], $j['data']);
         http_response_code(200); echo 'ok'; exit;
     }
 }
