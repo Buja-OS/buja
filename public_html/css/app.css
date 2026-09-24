@@ -344,7 +344,7 @@ body.kart-on .tabbar{display:none}
 .kart-wrong{position:absolute;top:34%;left:50%;transform:translate(-50%,-50%) scale(.8);background:#D92D20;color:#fff;font:900 26px Inter,system-ui;letter-spacing:2px;padding:10px 22px;border-radius:14px;opacity:0;transition:.2s;pointer-events:none}
 .kart-wrong.on{opacity:1;transform:translate(-50%,-50%) scale(1);animation:kblink .6s infinite alternate}
 @keyframes kblink{to{background:#9E1C13}}
-.kart-callout{position:absolute;top:26%;right:14px;font:900 22px Inter,system-ui;color:#fff;padding:8px 14px;border-radius:14px;opacity:0;transform:translateX(20px);transition:.25s;pointer-events:none}
+.kart-callout{position:absolute;top:calc(118px + var(--safe-t,0px));right:14px;font:900 22px Inter,system-ui;color:#fff;padding:8px 14px;border-radius:14px;opacity:0;transform:translateX(20px);transition:.25s;pointer-events:none}
 .kart-callout.on{opacity:1;transform:none}
 .kart-callout.up{background:rgba(46,125,30,.9)} .kart-callout.down{background:rgba(217,45,32,.9)}
 .kart-lines{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .25s;background:repeating-conic-gradient(from 0deg at 50% 45%,rgba(255,255,255,.0) 0deg 5deg,rgba(255,255,255,.16) 5.5deg 6deg);-webkit-mask:radial-gradient(circle at 50% 45%,transparent 32%,#000 70%);mask:radial-gradient(circle at 50% 45%,transparent 32%,#000 70%)}
@@ -370,3 +370,14 @@ body.kart-on .tabbar{display:none}
 body.kart-on .app{max-width:none}
 body.kart-on .screen,body.kart-on .screen-enter{animation:none!important;transform:none!important;max-width:none}
 body.kart-on .kart-stage{width:100vw;height:100vh;height:100dvh}
+/* Buja Kart items (Phase 33) */
+.kart-item{position:absolute;right:calc(16px + var(--safe-r,0px));bottom:calc(112px + var(--safe-b,0px));width:74px;height:74px;border-radius:22px;border:3px solid #FFD23F;background:rgba(16,16,20,.72);font-size:38px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 18px rgba(255,210,63,.55);animation:kpop .35s cubic-bezier(.2,1.6,.4,1);touch-action:none}
+.kart-item i{position:absolute;right:6px;bottom:2px;font:900 14px Inter,system-ui;color:#FFD23F;font-style:normal}
+.kart-splat{position:absolute;inset:0;pointer-events:none;opacity:0;background:radial-gradient(circle at 30% 35%,rgba(160,20,45,.92) 0 11%,transparent 12%),radial-gradient(circle at 68% 30%,rgba(170,25,50,.9) 0 9%,transparent 10%),radial-gradient(circle at 55% 62%,rgba(150,15,40,.9) 0 14%,transparent 15%),radial-gradient(circle at 22% 70%,rgba(165,22,48,.88) 0 8%,transparent 9%),radial-gradient(circle at 82% 66%,rgba(155,18,42,.88) 0 10%,transparent 11%)}
+.kart-splat.on{animation:ksplat 3.4s ease-in forwards}
+@keyframes ksplat{0%{opacity:0;transform:scale(1.2)}6%{opacity:1;transform:scale(1)}70%{opacity:.9}100%{opacity:0}}
+.kart-dark{position:absolute;inset:0;pointer-events:none;opacity:0;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center}
+.kart-dark b{color:#FFD23F;font:900 26px Inter,system-ui;text-shadow:0 0 12px rgba(255,210,63,.6)}
+.kart-dark.on{animation:kdark 2.4s steps(1,end) forwards}
+@keyframes kdark{0%{opacity:1}12%{opacity:.2}18%{opacity:1}70%{opacity:.85}82%{opacity:.3}100%{opacity:0}}
+@media (orientation: landscape) and (max-height: 520px){.kart-item{bottom:calc(98px + var(--safe-b,0px));width:64px;height:64px;font-size:32px}}

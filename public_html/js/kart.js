@@ -24,7 +24,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       <div class="kart-hero"><div class="kart-hero-sky"></div><div class="kart-hero-rock"></div><div class="kart-hero-dome"></div><div class="kart-hero-road"></div>
         <div class="kart-hero-text"><div class="kart-logo">BUJA <span>KART</span></div><div>Race round Eagle Square, the National Mosque, NNPC Towers and Aso Rock.</div></div></div>
       ${b.me ? `<div class="card row" style="padding:12px 14px;gap:10px"><span style="font-size:22px">🏁</span><div class="grow"><div style="font-weight:700">Your best lap this week: ${fmt(b.me.best)}</div><div class="small muted">${b.me.rank ? ord(b.me.rank) + ' in Abuja this week' : 'Set a time to get on the board'}</div></div><a class="btn btn-sm btn-outline" href="#/kart/board" style="width:auto">Board</a></div>` : ''}
-      <button class="kart-btn kart-btn-go" data-go="/kart/play?mode=bots"><b>Race</b><span>You against three Abuja drivers</span></button>
+      <button class="kart-btn kart-btn-go" data-go="/kart/play?mode=bots"><b>Race</b><span>Three Abuja drivers, item boxes: 🌶️ pepper, 🍌 banana, 🥤 zobo, ⚡ NEPA</span></button>
       <button class="kart-btn" data-go="/kart/play?mode=solo"><b>Time trial</b><span>Beat your own ghost, lap after lap</span></button>
       <button class="kart-btn" data-go="/kart/play?mode=solo&ghost=best"><b>Chase the champion</b><span>Race the fastest lap in Abuja</span></button>
       <div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Race your friends</div>
@@ -36,7 +36,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
         ${[['buja_kart_orient', 'Screen', [['portrait', 'Upright'], ['landscape', 'Sideways']], 'portrait'], ['buja_kart_steer', 'Steering', [['buttons', 'Buttons'], ['tilt', 'Tilt the phone']], 'buttons'], ['buja_kart_sfx', 'Sound effects', [['1', 'On'], ['0', 'Off']], '1'], ['buja_kart_music', 'Music', [['1', 'On'], ['0', 'Off']], '1']].map(([key, label, opts, def]) => { const cur = (() => { try { return localStorage.getItem(key) || def; } catch { return def; } })(); return `<div class="row" style="gap:10px"><div class="grow" style="font-weight:600">${label}</div><select class="input" data-set="${key}" style="width:auto;height:38px">${opts.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`; }).join('')}
       </div>
       <div class="small muted" style="line-height:1.5">The circuit follows real central Abuja streets (Independence Avenue, Herbert Macaulay Way, Sani Abacha Way, Tafawa Balewa Way), compressed for a raceable lap. Road data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, ODbL. Engine and drive-by sounds recorded by alex_jauk and kontraa.</div>
-      <div class="small muted" style="line-height:1.5">Controls: tap the left and right halves of the bottom bar to steer. The kart drives itself forward; hold 🔥 while turning to drift, and let go for a boost. On a keyboard: arrow keys and space.</div>
+      <div class="small muted" style="line-height:1.5">Controls: tap the left and right halves of the bottom bar to steer. The kart drives itself forward; hold 🔥 while turning to drift, and let go for a boost. Drive through a ? box for an item, then tap it to use it (E on a keyboard). On a keyboard: arrow keys and space.</div>
     </main>`;
   }, {
     mount(el) {
@@ -112,6 +112,8 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       <div class="kart-bubbles" id="bubbles"></div>
       <button class="kart-quit" id="pause" aria-label="Pause">❚❚</button>
       <div class="kart-lines" id="lines"></div>
+      <div class="kart-splat" id="splat"></div><div class="kart-dark" id="dark"><b>NEPA took light!</b></div>
+      <button class="kart-item" id="ki" aria-label="Use item" style="display:none"></button>
       <div class="kart-wrong" id="wrong">WRONG WAY</div>
       <div class="kart-callout" id="callout"></div>
       <div class="kart-pause" id="pausebox"></div>
@@ -173,6 +175,7 @@ class Race {
     SAMPLES = this.circuit.lap.length;
     this.buildTrack(); this.buildWorld(); this.buildLandmarks(); this.buildBarriers();
     this.fx = new KartFX(this.scene, this.tier);
+    this.items = this.mode === 'bots'; if (this.items) this.buildItemBoxes();
     this.audio.wake();
     if (((() => { try { return localStorage.getItem('buja_kart_orient'); } catch { return null; } })()) === 'landscape') this.setLandscape(true, true);
     if (this.steerMode === 'tilt') this.enableTilt(true);
@@ -431,6 +434,8 @@ class Race {
     hold('kl', 'l'); hold('kr', 'r'); hold('kb', 'brake'); hold('kd', 'drift');
     const wake = () => this.audio.wake(); this.el.addEventListener('touchstart', wake, { passive: true }); this.el.addEventListener('mousedown', wake);
     this.el.querySelector('#pause').addEventListener('click', () => this.togglePause());
+    const use = (e) => { e && e.preventDefault(); if (this.phase === 'race') this.useItem(this.player); }; const ki = this.el.querySelector('#ki'); ki.addEventListener('touchstart', use, { passive: false }); ki.addEventListener('mousedown', use);
+    window.addEventListener('keydown', (e) => { if (e.key === 'e' || e.key === 'E' || e.key === 'Enter') use(e); });
     this._vis = () => { if (document.hidden && this.phase === 'race' && this.mode !== 'room' && !this.paused) this.togglePause(); }; document.addEventListener('visibilitychange', this._vis);
     const map = { ArrowLeft: 'l', a: 'l', A: 'l', ArrowRight: 'r', d: 'r', D: 'r', ArrowDown: 'brake', s: 'brake', S: 'brake', ' ': 'drift', Shift: 'drift' };
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') this.togglePause(); });
@@ -444,6 +449,8 @@ class Race {
     const on = this.nearest(k.position.x, k.position.z, k.idx); k.idx = on.i;
     const off = Math.abs(on.lateral) > ROAD_W / 2 + 1.2;
     let top = off ? OFF_V : MAX_V * (isAI ? k.skill : 1); if (k.boost > 0) { top = BOOST_V; k.boost -= dt; }
+    if (k.slow > 0) { k.slow -= dt; top *= 0.6; k.boost = 0; }
+    if (k.spin > 0) { k.spin -= dt; steer = 0; drift = false; top = Math.min(top, 8); }
     const accel = brake ? -28 : (k.v < top ? 13 : -9);
     k.v = Math.max(0, Math.min(k.boost > 0 ? BOOST_V : top + 2, k.v + accel * dt));
     const grip = drift && Math.abs(steer) > 0 ? 1.55 : 1;
@@ -468,7 +475,7 @@ class Race {
       }
       if (!isAI) { k._drifting = drifting; k._off = off; }
     }
-    k.rotation.y = k.h + (drift && Math.abs(steer) > 0 ? steer * 0.35 : 0);
+    k.rotation.y = k.h + (drift && Math.abs(steer) > 0 ? steer * 0.35 : 0) + (k.spin > 0 ? (1.1 - k.spin) * Math.PI * 3.6 : 0);
     k.wheels.forEach((w) => { w.rotation.x += k.v * dt / 0.42; });
     // laps: must pass the far side before the line counts
     const prog = on.i / SAMPLES; if (prog > 0.45 && prog < 0.55) k.passedHalf = true;
@@ -512,6 +519,7 @@ class Race {
       if (this.mode === 'room') { this.moveRemotes(now); if (now - this.lastSync > 200) { this.lastSync = now; this.syncRoom(); } }
       this.hud(now);
       if (this.fx) this.fx.update(dt);
+      if (this.items && this.phase === 'race') this.itemTick(now, dt);
       const P = this.player; this.audio.update(P.v, !this.input.brake, P._drifting, P._off, false);
       // wrong way: facing against the circuit for more than a second
       const t = this.tangents[P.idx], dot = Math.sin(P.h) * t.x + Math.cos(P.h) * t.z;
@@ -595,6 +603,64 @@ class Race {
   flash(t) { const c = this.el.querySelector('#count'); c.innerHTML = `<b class="pop" style="font-size:40px">${this.h(t)}</b>`; clearTimeout(this._fl); this._fl = setTimeout(() => { if (this.phase !== 'count') c.innerHTML = ''; }, 1400); }
   nearLandmark(i) { const l = this.landmarkAt.find((x) => Math.abs(x.s - i) < 22 || Math.abs(x.s - i) > SAMPLES - 22); const box = this.el.querySelector('#land'); const name = l ? l.name : ''; if (name !== this._land) { this._land = name; box.textContent = name; box.classList.toggle('on', !!name); } }
   buzz(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch {} }
+  /* ------------------------------ item boxes and power-ups ------------------------------ */
+  /** Rows of spinning boxes across the road. Racers further back get stronger items, like Mario Kart. */
+  buildItemBoxes() {
+    const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+    const gr = g.createLinearGradient(0, 0, 128, 128); gr.addColorStop(0, '#FF7A1A'); gr.addColorStop(0.5, '#FFD23F'); gr.addColorStop(1, '#7ED957'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    g.strokeStyle = '#fff'; g.lineWidth = 8; g.strokeRect(6, 6, 116, 116); g.fillStyle = '#fff'; g.font = '900 86px Inter, system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('?', 64, 70);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshStandardMaterial({ map: t, emissive: '#FFB020', emissiveMap: t, emissiveIntensity: 0.55, transparent: true, opacity: 0.92, roughness: 0.3 });
+    const geo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+    this.boxes = [];
+    for (const at of [0.17, 0.42, 0.66, 0.9]) {
+      const s = Math.floor(at * SAMPLES);
+      for (const lane of [-5.2, -1.75, 1.75, 5.2]) { const m = new THREE.Mesh(geo, mat); this.placeAlong(m, s, lane); m.position.y = 1.3; m.castShadow = this.tier !== 'low'; this.scene.add(m); this.boxes.push({ m, back: 0 }); }
+    }
+    this.bananas = [];
+    this.ITEMS = {
+      pepper: { icon: '🌶️', name: 'Pepper', uses: 3 },
+      banana: { icon: '🍌', name: 'Banana peel', uses: 1 },
+      zobo: { icon: '🥤', name: 'Zobo splash', uses: 1 },
+      nepa: { icon: '⚡', name: 'NEPA took light', uses: 1 },
+    };
+  }
+  /** A weighted draw: the leader mostly gets bananas and pepper, the back of the pack gets the big ones. */
+  drawItem(k) {
+    const racers = [this.player, ...this.bots]; const rank = 1 + racers.filter((o) => o !== k && o.s > k.s).length; const back = (rank - 1) / Math.max(1, racers.length - 1);
+    const w = { banana: 5 - back * 3, pepper: 3 + back * 2, zobo: 0.5 + back * 3, nepa: back > 0.5 ? back * 2.2 : 0 };
+    let r = Math.random() * Object.values(w).reduce((a, b) => a + b, 0); for (const [id, v] of Object.entries(w)) { r -= v; if (r <= 0) return id; } return 'banana';
+  }
+  giveItem(k, id) { k.item = id; k.itemUses = this.ITEMS[id].uses; if (k === this.player) { this.audio.tone(880, 0.12, 'triangle', 0.18); this.audio.tone(1320, 0.18, 'triangle', 0.16, 0.08); this.showItem(); this.callout(this.ITEMS[id].icon + ' ' + this.ITEMS[id].name, true); } else k.itemAt = performance.now() + 1500 + Math.random() * 4000; }
+  showItem() { const b = this.el.querySelector('#ki'); const k = this.player; if (!k.item) { b.style.display = 'none'; return; } b.style.display = ''; b.innerHTML = `<span>${this.ITEMS[k.item].icon}</span>${k.itemUses > 1 ? `<i>×${k.itemUses}</i>` : ''}`; }
+  useItem(k) {
+    if (!k.item) return; const id = k.item; const me = k === this.player;
+    const ahead = [this.player, ...this.bots].filter((o) => o !== k && o.s > k.s);
+    if (id === 'pepper') { k.boost = Math.max(k.boost, 1.25); if (me) this.audio.boost(); }
+    if (id === 'banana') { const g = new THREE.Group(); const peel = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.18, 6, 12, Math.PI * 1.4), new THREE.MeshStandardMaterial({ color: '#F4D03F', roughness: 0.5 })); peel.rotation.x = Math.PI / 2; peel.position.y = 0.2; g.add(peel);
+      g.position.set(k.position.x - Math.sin(k.h) * 3.2, 0, k.position.z - Math.cos(k.h) * 3.2); this.scene.add(g); this.bananas.push({ g, owner: k, born: performance.now() }); if (me) this.audio.tone(300, 0.15, 'triangle', 0.15, 0, -120); }
+    if (id === 'zobo') { ahead.forEach((o) => { if (o === this.player) this.splat(); else { o.slow = Math.max(o.slow || 0, 1.2); o.wobble = 3; } }); this.audio.noise(0.4, 0.3, 700, 0, 'bandpass'); }
+    if (id === 'nepa') { ahead.forEach((o) => { o.slow = Math.max(o.slow || 0, 3); }); if (ahead.includes(this.player)) this.blackout(); this.audio.tone(90, 0.8, 'sawtooth', 0.14, 0, -40); this.audio.noise(0.3, 0.25, 3000, 0, 'highpass'); if (!me) this.callout('⚡ NEPA took light!', false); }
+    k.itemUses--; if (k.itemUses <= 0) k.item = null;
+    if (me) this.showItem();
+  }
+  splat() { const s = this.el.querySelector('#splat'); s.classList.remove('on'); void s.offsetWidth; s.classList.add('on'); this.buzz(40); }
+  blackout() { const d = this.el.querySelector('#dark'); d.classList.remove('on'); void d.offsetWidth; d.classList.add('on'); this.buzz(60); }
+  itemTick(now, dt) {
+    const racers = [this.player, ...this.bots];
+    for (const b of this.boxes) {
+      if (b.back > now) { b.m.visible = false; continue; } b.m.visible = true; b.m.rotation.y += dt * 1.6; b.m.rotation.x += dt * 0.7; b.m.position.y = 1.3 + Math.sin(now / 300 + b.m.position.x) * 0.15;
+      for (const k of racers) if (!k.item && (k.position.x - b.m.position.x) ** 2 + (k.position.z - b.m.position.z) ** 2 < 2.4 ** 2) { b.back = now + 4000; this.fx && [0, 1, 2, 3, 4].forEach(() => this.fx.puff(b.m.position.x, 1.2, b.m.position.z, [1, 0.8, 0.3], 1.4, 2)); this.giveItem(k, this.drawItem(k)); break; }
+    }
+    // bananas: anyone driving over one spins out (the dropper is safe for a second)
+    this.bananas = this.bananas.filter((ban) => {
+      for (const k of racers) { if (k === ban.owner && now - ban.born < 1200) continue;
+        if ((k.position.x - ban.g.position.x) ** 2 + (k.position.z - ban.g.position.z) ** 2 < 1.7 ** 2 && !(k.spin > 0)) { k.spin = 1.1; k.v *= 0.45; if (k === this.player) { this.audio.tone(500, 0.5, 'sine', 0.2, 0, -350); this.callout('🍌 Spun out!', false); this.buzz(50); } this.scene.remove(ban.g); return false; } }
+      ban.g.rotation.y += dt; return now - ban.born < 45000;
+    });
+    // computer drivers use what they pick up, after a moment's thought
+    for (const b of this.bots) if (b.item && now > (b.itemAt || 0)) { this.useItem(b); b.itemAt = now + 900; }
+  }
   callout(text, good) { const c = this.el.querySelector('#callout'); c.textContent = text; c.className = 'kart-callout on ' + (good ? 'up' : 'down'); clearTimeout(this._co); this._co = setTimeout(() => { c.className = 'kart-callout'; }, 1300); }
 
   /** Pause: freezes the race and its clock. Online races keep going for everyone else, so they only show the menu. */
