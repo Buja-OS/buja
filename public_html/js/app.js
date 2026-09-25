@@ -1,7 +1,7 @@
 // Buja app: hash router and Phase 1 screens.
 import { state, setState, subscribe, applyTheme } from './store.js';
 import { api, detectApi, serverInfo } from './api.js';
-import { h, toast, mark, markAuto, topbar, tabbar, field, showErrors, bindEyes, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify, viewImages } from './ui.js';
+import { h, toast, mark, markAuto, topbar, tabbar, field, showErrors, bindEyes, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify, viewImages, placeHref } from './ui.js';
 import { registerMessages } from './messages.js';
 import { registerCall } from './call.js';
 import { registerAlerts } from './alerts.js';
@@ -429,7 +429,7 @@ registerCall({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, sho
 /* ---------------- Lazy modules ----------------
    Home, messages, calls and settings load at once. Every other part of Buja loads the first time its screen
    is opened, and all of them download quietly in the background once Home is showing, so later taps are instant. */
-const UI = { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify, viewImages };
+const UI = { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify, viewImages, placeHref };
 /* Any photo marked data-zoom opens full screen when tapped (profile pictures, listing photos). Same data-zoom-group: swipe through them. */
 document.addEventListener('click', (e) => {
   const z = e.target.closest('[data-zoom]'); if (!z) return;
@@ -457,6 +457,7 @@ const MODULES = {
   kart:        () => import('./kart.js').then((m) => m.registerKart(BASE)),
   escrow:      () => import('./escrow.js').then((m) => m.registerEscrow(BASE)),
   tags:        () => import('./tags.js').then((m) => m.registerTags(BASE)),
+  place:       () => import('./place.js').then((m) => m.registerPlace(BASE)),
 };
 /** First path segment → the modules that own screens under it. Several share /admin and /report. */
 const LAZY = {
@@ -467,7 +468,7 @@ const LAZY = {
   artisans: ['services', 'jobs'], jobs: ['jobs'], breakdown: ['jobs'], meetup: ['services'], tickets: ['services'],
   blood: ['citysignals'], fuel: ['citysignals'], light: ['citysignals'], lostfound: ['citysignals'], plates: ['citysignals'], prices: ['citysignals'],
   cert: ['learn'], learn: ['learn'], queues: ['citymore'], 'rent-index': ['citymore'], rides: ['citymore'],
-  kart: ['kart'], tag: ['tags'], t: ['tags'], find: ['tags'], friends: ['tags'],
+  kart: ['kart'], tag: ['tags'], t: ['tags'], find: ['tags'], friends: ['tags'], place: ['place'],
 };
 const loaded = {};
 function need(name) { if (!loaded[name]) loaded[name] = MODULES[name]().catch((e) => { delete loaded[name]; throw e; }); return loaded[name]; }

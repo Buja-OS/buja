@@ -1,6 +1,6 @@
 // Buja Ask: the AI guide, grounded on Buja's places. Registered into the app router by app.js.
 export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
-  const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon } = ui;
+  const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon , placeHref } = ui;
   const stars = (n) => `<span style="color:var(--orange)">${'★'.repeat(Math.round(n || 0))}</span><span style="color:var(--line)">${'★'.repeat(5 - Math.round(n || 0))}</span>`;
   const catIcon = { food: 'bus', lounge: 'wine-glass', relax: 'route', nightlife: 'bolt', shopping: 'tags', kids: 'users', worship: 'circle-check', services: 'gear', hotel: 'house-chimney', culture: 'camera' };
   /** The phone's position if it answers quickly. Never holds an answer for more than four seconds. */
@@ -81,7 +81,7 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
     <main class="pad stack" style="gap:14px">
       ${s.photos && s.photos.length ? `<div class="row" id="gal" style="gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px">${s.photos.map((p) => `<div style="position:relative;flex-shrink:0"><img src="${p.url}" alt="" loading="lazy" style="width:${s.photos.length === 1 ? '100%' : '176px'};height:132px;object-fit:cover;border-radius:14px;display:block"><button data-delphoto="${p.id}" aria-label="Remove photo" style="position:absolute;right:6px;top:6px;width:26px;height:26px;border-radius:13px;border:none;background:rgba(0,0,0,.55);color:#fff;font-size:11px">${icon('xmark')}</button></div>`).join('')}</div>` : ''}
       <label class="btn btn-sm btn-outline" style="width:auto;cursor:pointer">${icon('camera')} ${s.photos && s.photos.length ? 'Add another photo' : 'Add the first photo'}<input type="file" accept="image/*" id="spotpic" style="display:none"></label>
-      ${s.thumb ? `<a href="https://www.google.com/maps?q=${s.lat},${s.lng}" target="_blank" rel="noopener" style="display:block;height:150px;border-radius:16px;overflow:hidden;position:relative;background:#E8EDE4">
+      ${s.thumb ? `<a href="${h(placeHref({ lat: s.lat, lng: s.lng, name: s.name }))}" style="display:block;height:150px;border-radius:16px;overflow:hidden;position:relative;background:#E8EDE4">
         <img src="${s.thumb.url}" alt="" style="position:absolute;left:calc(50% - ${Math.round(s.thumb.fx * 256)}px);top:calc(50% - ${Math.round(s.thumb.fy * 256)}px);width:256px;height:256px;max-width:none">
         <span style="position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:8px;background:var(--orange);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></span>
         <span style="position:absolute;right:10px;bottom:10px;background:rgba(255,255,255,.9);border-radius:8px;padding:4px 8px;font-size:11px;font-weight:600;color:var(--ink)">Open in maps</span></a>` : ''}

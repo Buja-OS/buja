@@ -1,6 +1,6 @@
 // Buja: office queues, commute sharing, the rent index, and Learn analytics for the admin. Registered by app.js.
 export function registerCityMore({ route, go, state, api, ui, DISTRICTS, failed }) {
-  const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon, avatar } = ui;
+  const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon, avatar , placeHref } = ui;
   const q = () => new URLSearchParams(location.hash.split('?')[1] || '');
   const ago = (iso) => { if (!iso) return ''; const d = (Date.now() - new Date(iso.replace(' ', 'T') + 'Z')) / 1000; return d < 60 ? 'just now' : d < 3600 ? Math.round(d / 60) + ' min ago' : d < 86400 ? Math.round(d / 3600) + ' h ago' : Math.round(d / 86400) + ' d ago'; };
   const naira = (n) => '₦' + Number(n).toLocaleString();
@@ -19,7 +19,7 @@ export function registerCityMore({ route, go, state, api, ui, DISTRICTS, failed 
       ${d.offices.map((o) => `<div class="card stack" style="padding:12px 14px;gap:8px">
         <div class="row" style="gap:10px"><div class="grow" style="min-width:0"><div style="font-size:15px;font-weight:700">${h(o.name)}</div><div class="small muted">${h(o.serviceLabel)} · ${h(o.district)}${o.km != null ? ' · ' + o.km + ' km' : ''}</div></div>${o.today ? `<span class="tag" style="background:var(--surface);color:${CROWDCOL[o.today.crowd]};font-weight:700">${h(o.today.crowdLabel)}</span>` : ''}</div>
         ${o.today ? `<div class="row" style="gap:12px;font-size:14px"><span><strong>${o.today.crowd === 'closed' ? '—' : o.today.wait + ' min'}</strong> <span class="small muted">wait</span></span><span class="grow"></span><span class="small" style="color:var(--green-dark)">${h(o.today.by)}, ${ago(o.today.at)} · ${o.today.n} report${o.today.n === 1 ? '' : 's'} today</span></div>${o.today.note ? `<div class="small" style="color:var(--ink-2)">“${h(o.today.note)}”</div>` : ''}` : `<div class="small muted">No reports in the last 12 hours.</div>`}
-        <div class="row" style="gap:8px"><button class="btn btn-sm btn-outline grow" data-report="${o.id}" data-name="${h(o.name)}">I am here, report the queue</button>${o.lat != null ? `<a class="iconbtn" href="https://www.google.com/maps?q=${o.lat},${o.lng}" target="_blank" rel="noopener" style="width:34px;height:34px" aria-label="Map">${icon('location-dot')}</a>` : ''}</div>
+        <div class="row" style="gap:8px"><button class="btn btn-sm btn-outline grow" data-report="${o.id}" data-name="${h(o.name)}">I am here, report the queue</button>${o.lat != null ? `<a class="iconbtn" href="${h(placeHref({ lat: o.lat, lng: o.lng, name: o.name, sub: o.district || '' }))}" style="width:34px;height:34px" aria-label="Map">${icon('location-dot')}</a>` : ''}</div>
       </div>`).join('')}
       <div id="sheet"></div>
       <div class="small muted" style="line-height:1.5">The wait shown is the middle of today's reports, so one exaggeration cannot move it. Reports expire after 12 hours.</div>

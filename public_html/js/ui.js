@@ -72,6 +72,13 @@ export { icon };
 
 
 /* ---------- Attachments ---------- */
+/** A link to Buja's own map of a place (never Google Maps): its pin, where you are, the road there, how far. */
+export function placeHref({ lat, lng, name = '', sub = '', icon: ic = '', color = '', photo = '', walk = false }) {
+  const p = new URLSearchParams({ lat: (+lat).toFixed(6), lng: (+lng).toFixed(6) });
+  if (name) p.set('n', String(name).slice(0, 80)); if (sub) p.set('s', String(sub).slice(0, 80)); if (ic) p.set('i', ic); if (color) p.set('c', color);
+  if (photo && /^\/(uploads|api)\//.test(photo)) p.set('ph', photo); if (walk) p.set('w', '1');
+  return '#/place?' + p.toString();
+}
 export function attachmentHtml(a, opts = {}) {
   if (!a) return '';
   const w = opts.max || 260;
@@ -79,7 +86,7 @@ export function attachmentHtml(a, opts = {}) {
   if (a.kind === 'video') return `<video controls preload="metadata" playsinline src="${a.url}" style="width:100%;max-width:${w}px;border-radius:14px;display:block;background:#000"></video>`;
   if (a.kind === 'audio') return `<div class="row" style="gap:10px;padding:8px 10px;background:var(--surface);border-radius:14px;max-width:${w}px"><audio controls preload="metadata" src="${a.url}" style="width:100%;height:36px"></audio></div>`;
   if (a.kind === 'file') return `<a class="row" href="${a.url}" target="_blank" rel="noopener" style="gap:10px;padding:12px 14px;background:var(--surface);border-radius:14px;max-width:${w}px"><span style="width:34px;height:34px;border-radius:10px;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px">${icon('file-arrow-up')}</span><span class="grow" style="min-width:0"><span style="display:block;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${(a.name || 'Document').replace(/[<>&]/g, '')}</span><span class="small muted">${Math.max(1, Math.round((a.size || 0) / 1024))} KB</span></span></a>`;
-  if (a.kind === 'location') { const m = a.meta || {}; return `<a class="row" href="https://www.google.com/maps?q=${m.lat},${m.lng}" target="_blank" rel="noopener" style="gap:10px;padding:12px 14px;background:var(--green-tint);border-radius:14px;max-width:${w}px"><span style="color:var(--green-dark)">${icon('location-dot')}</span><span class="grow"><span style="display:block;font-size:13px;font-weight:600;color:var(--green-dark)">${(m.label || 'Shared location').replace(/[<>&]/g, '')}</span><span class="small muted">${(+m.lat).toFixed(4)}, ${(+m.lng).toFixed(4)} · open in maps</span></span></a>`; }
+  if (a.kind === 'location') { const m = a.meta || {}; return `<a class="row" href="${h(placeHref({ lat: m.lat, lng: m.lng, name: m.label || 'Shared location', color: '#2E7D1E' }))}" style="gap:10px;padding:12px 14px;background:var(--green-tint);border-radius:14px;max-width:${w}px"><span style="color:var(--green-dark)">${icon('location-dot')}</span><span class="grow"><span style="display:block;font-size:13px;font-weight:600;color:var(--green-dark)">${(m.label || 'Shared location').replace(/[<>&]/g, '')}</span><span class="small muted">${(+m.lat).toFixed(4)}, ${(+m.lng).toFixed(4)} · see it on the map</span></span></a>`; }
   return '';
 }
 

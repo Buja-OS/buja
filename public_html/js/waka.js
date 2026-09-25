@@ -1,7 +1,7 @@
 import { createMap, pinHtml, meHtml, bottomSheet } from './map.js';
 // Buja Waka: routes, fares, planner. Registered into the app router by app.js.
 export function registerWaka({ route, go, state, api, ui, failed }) {
-  const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon } = ui;
+  const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon , placeHref } = ui;
   const naira = (n) => n == null ? '₦?' : '₦' + Number(n).toLocaleString('en-NG');
   const modeIcon = { bus: 'bus', along: 'car', keke: 'car', taxi: 'car', train: 'route' };
   const q = () => new URLSearchParams(location.hash.split('?')[1] || '');
@@ -140,7 +140,7 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
         if (map) map.center(p.lng, p.lat, 15);
         sheet.body.innerHTML = `<div class="stack" style="gap:12px;padding-top:4px"><div><div style="font-size:18px;font-weight:800">${h(p.name)}</div><div class="small muted">${h(p.district || '')}${p.km != null ? ' · ' + (p.km < 1 ? Math.round(p.km * 1000) + ' m from you' : p.km.toFixed(1) + ' km from you') : ''}</div></div>
           <div class="row" style="gap:8px"><a class="btn btn-primary grow" href="#/waka?from=${p.id}">From here</a><a class="btn btn-ink grow" href="#/waka?to=${p.id}">To here</a></div>
-          <a class="btn btn-outline" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=walking" target="_blank" rel="noopener">${icon('route')} Walk there</a>
+          <a class="btn btn-outline" href="${h(placeHref({ lat: p.lat, lng: p.lng, name: p.name, sub: p.district || '', icon: 'bus', color: '#1F5FBF', walk: true }))}">${icon('route')} Walk there</a>
           <button class="btn btn-ghost small" id="back">Back</button></div>`;
         sheet.set('half'); sheet.body.querySelector('#back').addEventListener('click', listView);
       };

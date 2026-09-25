@@ -1,7 +1,7 @@
 import { createMap, carHtml } from './map.js';
 // Buja Trip Share: tell a friend where you are while you meet someone. Registered by app.js.
 export function registerSafety({ route, go, state, api, ui, failed }) {
-  const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon } = ui;
+  const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon , placeHref } = ui;
   const when = (iso) => new Date(iso.replace(' ', 'T') + 'Z').toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
   const left = (iso) => { const m = Math.round((new Date(iso.replace(' ', 'T') + 'Z') - Date.now()) / 60000); return m <= 0 ? 'overdue by ' + Math.abs(m) + ' min' : m < 60 ? m + ' min left' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min left'; };
 
@@ -113,7 +113,7 @@ export function registerSafety({ route, go, state, api, ui, failed }) {
         : t.status === 'safe' ? `<div style="padding:12px 14px;background:var(--green-tint);color:var(--green-dark);border-radius:12px;font-size:14px">They marked themselves home safe.</div>` : ''}
       </div>
       <div style="height:300px;border-radius:16px;overflow:hidden;background:#ECEEE8" id="map"></div>
-      ${t.last ? `<a class="btn btn-outline" href="https://www.google.com/maps?q=${t.last.lat},${t.last.lng}" target="_blank" rel="noopener">${icon('location-dot')} Open last position in maps</a><div class="small muted center">Last update ${when(t.last.at)}</div>` : `<div class="small muted center">No position shared yet.</div>`}
+      ${t.last ? `<a class="btn btn-outline" href="${h(placeHref({ lat: t.last.lat, lng: t.last.lng, name: t.person + ' was last here', sub: t.place || '', icon: 'user', color: '#D92D20' }))}">${icon('route')} Show the way to their last position</a><div class="small muted center">Last update ${when(t.last.at)}</div>` : `<div class="small muted center">No position shared yet.</div>`}
       <div class="small muted center" style="line-height:1.5;padding-bottom:10px">This page updates by itself. Buja shows only a first name and a position, nothing else about them.</div>
     </main>`;
   }, {

@@ -1,6 +1,6 @@
 // Buja city services: Meetup, Artisans, Citizen Report. Registered by app.js.
 export function registerCityServices({ route, go, state, api, ui, DISTRICTS, failed }) {
-  const { h, toast, topbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, linkify } = ui;
+  const { h, toast, topbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, linkify , placeHref } = ui;
   const q = () => new URLSearchParams(location.hash.split('?')[1] || '');
   const when = (iso) => new Date(iso.replace(' ', 'T') + 'Z').toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const day = (iso) => new Date(iso.replace(' ', 'T') + 'Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -80,7 +80,7 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
       <div><span class="tag" style="background:var(--surface);color:var(--ink-2)">${h(e.categoryLabel)}</span><div class="h-lg" style="font-size:24px;line-height:1.25;margin-top:8px">${h(e.title)}</div></div>
       <div class="card stack" style="padding:14px;gap:10px">
         <div class="row" style="gap:12px">${icon('calendar-days')}<div><div style="font-size:14px;font-weight:650">${when(e.startsAt)}</div>${e.endsAt ? `<div class="small muted">until ${new Date(e.endsAt.replace(' ', 'T') + 'Z').toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>` : ''}</div><span class="grow"></span><a class="btn btn-sm btn-outline" href="/api/events/${e.id}/ics" style="width:auto;height:32px;font-size:12px">Add to calendar</a></div>
-        <div class="row" style="gap:12px">${icon('location-dot')}<div><div style="font-size:14px;font-weight:650">${h(e.venue)}</div><div class="small muted">${h(e.district)}${e.lat ? ` · <a href="https://www.google.com/maps?q=${e.lat},${e.lng}" target="_blank" rel="noopener" style="color:var(--orange-dark)">map</a>` : ''}</div></div></div>
+        <div class="row" style="gap:12px">${icon('location-dot')}<div><div style="font-size:14px;font-weight:650">${h(e.venue)}</div><div class="small muted">${h(e.district)}${e.lat ? ` · <a href="${h(placeHref({ lat: e.lat, lng: e.lng, name: e.venue, sub: e.district, icon: 'calendar-days' }))}" style="color:var(--orange-dark)">map</a>` : ''}</div></div></div>
         ${e.onlineUrl ? `<div class="row" style="gap:12px">${icon('video')}<a href="${h(e.onlineUrl)}" target="_blank" rel="noopener" style="color:var(--orange-dark);font-weight:600;font-size:14px;word-break:break-all">Join online</a></div>` : e.online ? `<div class="row small muted" style="gap:12px">${icon('video')} Online. The link appears once you register.</div>` : ''}
         <div class="row" style="gap:12px">${icon('ticket')}<div style="font-size:14px;font-weight:650">${naira(e.price)}</div><span class="grow"></span><span class="small muted">${e.going} going${e.capacity ? ' of ' + e.capacity : ''}${e.waitlist ? ' · ' + e.waitlist + ' waiting' : ''}</span></div>
       </div>
@@ -191,7 +191,7 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
       <button class="btn btn-outline" id="msg">${icon('message')} Message</button>
       <div class="small muted" style="margin-top:-6px">Calls and messages go through Buja, so your number stays private.</div>
       ${a.about ? `<div><div class="section">ABOUT</div><p style="margin:8px 0 0;font-size:15px;line-height:1.6;color:var(--ink-2);white-space:pre-line">${h(a.about)}</p></div>` : ''}
-      ${a.lat ? `<a class="btn btn-outline" href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank" rel="noopener">${icon('location-dot')} Where the shop is</a>` : ''}
+      ${a.lat ? `<a class="btn btn-outline" href="${h(placeHref({ lat: a.lat, lng: a.lng, name: a.name, sub: [a.tradeLabel, a.district].filter(Boolean).join(' · '), icon: TRADEICON[a.trade] || 'screwdriver-wrench', color: '#1F5FBF', photo: a.photo || '' }))}">${icon('location-dot')} Where the shop is</a>` : ''}
       <div class="card stack" style="padding:14px;gap:6px"><div class="h-sm">Before you pay</div><div class="small muted" style="line-height:1.55">Agree the price before work starts. Pay when the job is done. If something goes wrong, rate them here so the next person knows. ${a.rating.count ? '' : 'Nobody has rated this person on Buja yet.'}</div></div>
       <div class="small muted">${a.jobs} people have contacted them through Buja.</div>
     </main>`;

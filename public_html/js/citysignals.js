@@ -1,7 +1,7 @@
 import { createMap, pinHtml, meHtml, bottomSheet } from './map.js';
 // Buja city signals: what the crowd knows right now. Registered by app.js.
 export function registerCitySignals({ route, go, state, api, ui, DISTRICTS, failed }) {
-  const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon, avatar } = ui;
+  const { h, toast, topbar, field, showErrors, clearOnInput, busy, icon, avatar , placeHref } = ui;
   const q = () => new URLSearchParams(location.hash.split('?')[1] || '');
   const ago = (iso) => { if (!iso) return ''; const d = (Date.now() - new Date(iso.replace(' ', 'T') + 'Z')) / 1000; return d < 60 ? 'just now' : d < 3600 ? Math.round(d / 60) + ' min ago' : d < 86400 ? Math.round(d / 3600) + ' h ago' : Math.round(d / 86400) + ' d ago'; };
   const naira = (n) => '₦' + Number(n).toLocaleString();
@@ -57,7 +57,7 @@ export function registerCitySignals({ route, go, state, api, ui, DISTRICTS, fail
       ${d.stations.length ? d.stations.map((s) => `<div class="card stack" style="padding:12px 14px;gap:8px">
         <div class="row" style="gap:10px"><div class="grow" style="min-width:0"><div style="font-size:15px;font-weight:700">${h(s.name)}</div><div class="small muted">${s.brand ? h(s.brand) + ' · ' : ''}${h(s.district)}${s.km != null ? ' · ' + s.km + ' km' : ''}</div></div>${s.report ? `<span class="tag" style="background:var(--surface);color:${QCOL[s.report.queue]};font-weight:700">${QLABEL[s.report.queue]}</span>` : ''}</div>
         ${s.report ? `<div class="row" style="gap:14px;font-size:14px">${s.report.petrol ? `<span><strong>${naira(s.report.petrol)}</strong> <span class="small muted">petrol</span></span>` : ''}${s.report.diesel ? `<span><strong>${naira(s.report.diesel)}</strong> <span class="small muted">diesel</span></span>` : ''}<span class="grow"></span><span class="small ${s.report.stale ? 'muted' : ''}" style="${s.report.stale ? '' : 'color:var(--green-dark)'}">${h(s.report.by)}, ${ago(s.report.at)}</span></div>` : `<div class="small muted">Nobody has reported here yet.</div>`}
-        <div class="row" style="gap:8px"><button class="btn btn-sm btn-outline grow" data-report="${s.id}" data-name="${h(s.name)}">I am here, update it</button><a class="iconbtn" href="https://www.google.com/maps?q=${s.lat},${s.lng}" target="_blank" rel="noopener" style="width:34px;height:34px" aria-label="Map">${icon('location-dot')}</a></div>
+        <div class="row" style="gap:8px"><button class="btn btn-sm btn-outline grow" data-report="${s.id}" data-name="${h(s.name)}">I am here, update it</button><a class="iconbtn" href="${h(placeHref({ lat: s.lat, lng: s.lng, name: s.name, sub: s.district || '' }))}" style="width:34px;height:34px" aria-label="Map">${icon('location-dot')}</a></div>
       </div>`).join('') : `<div class="placeholder" style="padding:50px 0"><div class="mi card">${icon('bolt')}</div><div class="h-md">No stations yet</div><div class="small muted" style="max-width:290px;line-height:1.55">An admin can pull every station in the FCT from OpenStreetMap in one tap, or add the one you are standing at.</div></div>`}
       <div id="sheet"></div>
     </main>`;
@@ -98,7 +98,7 @@ export function registerCitySignals({ route, go, state, api, ui, DISTRICTS, fail
         if (map) map.center(s.lng, s.lat, 15);
         sheet.body.innerHTML = `<div class="stack" style="gap:10px;padding-top:4px"><div><div style="font-size:18px;font-weight:800">${h(s.name)}</div><div class="small muted">${s.brand ? h(s.brand) + ' · ' : ''}${h(s.district)}${s.km != null ? ' · ' + s.km + ' km' : ''}</div></div>
           ${s.report ? `<div class="row" style="gap:14px;font-size:15px">${s.report.petrol ? `<span><strong>${naira(s.report.petrol)}</strong> <span class="small muted">petrol</span></span>` : ''}${s.report.diesel ? `<span><strong>${naira(s.report.diesel)}</strong> <span class="small muted">diesel</span></span>` : ''}<span class="tag">${QLABEL[s.report.queue]}</span></div><div class="small muted">${h(s.report.by)}, ${ago(s.report.at)}</div>` : '<div class="small muted">Nobody has reported here yet.</div>'}
-          <a class="btn btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}&travelmode=driving" target="_blank" rel="noopener">${icon('route')} Directions</a>
+          <a class="btn btn-primary" href="${h(placeHref({ lat: s.lat, lng: s.lng, name: s.name, sub: s.district || '', icon: 'gas-pump' }))}">${icon('route')} Directions</a>
           <a class="btn btn-outline" href="#/fuel">I am here, update it</a><button class="btn btn-ghost small" id="back">Back</button></div>`;
         sheet.set('half'); sheet.body.querySelector('#back').addEventListener('click', list);
       };
