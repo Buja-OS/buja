@@ -16,9 +16,13 @@ window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); wind
 
 /* ---------------- Radio player, global so it keeps playing as you move around ---------------- */
 export const radio = {
-  audio: null, station: null, list: [],
+  audio: null, station: null, list: [], sleepAt: 0, _sleepT: null, note: '',
+  get playing() { return !!(this.audio && !this.audio.paused); },
+  /** Stop playing after `min` minutes (0 cancels). */
+  sleep(min) { clearTimeout(this._sleepT); this.sleepAt = min ? Date.now() + min * 60000 : 0; if (min) this._sleepT = setTimeout(() => { this.sleepAt = 0; if (this.audio) this.audio.pause(); toast('Radio stopped (sleep timer)'); }, min * 60000); this.render(); },
   play(station, list) {
     if (list && list.length) this.list = list;
+    try { const r = JSON.parse(localStorage.getItem('buja_radio_recent') || '[]').filter((x) => x !== station.id); r.unshift(station.id); localStorage.setItem('buja_radio_recent', JSON.stringify(r.slice(0, 8))); } catch {}
     if (this.audio && this.station && this.station.id === station.id) { this.audio.paused ? this.audio.play().catch(() => {}) : this.audio.pause(); this.render(); return; }
     this.stop(false);
     this.audio = new Audio(station.stream); this.audio.preload = 'none'; this.station = station;
@@ -45,8 +49,10 @@ export const radio = {
   },
   stop(rerender = true) { if (this.audio) { this.audio.pause(); this.audio.src = ''; } this.audio = null; this.station = null; if (rerender) this.render(); },
   render(note) {
+    this.note = note || '';
+    try { window.dispatchEvent(new CustomEvent('buja-radio')); } catch {}   // the Radio screen follows along
     let bar = document.getElementById('radiobar');
-    if (!this.station) { bar?.remove(); return; }
+    if (!this.station || location.hash.startsWith('#/radio')) { bar?.remove(); return; }   // the Radio screen has its own big player
     if (!bar) { bar = document.createElement('div'); bar.id = 'radiobar'; document.body.appendChild(bar); }
     const playing = this.audio && !this.audio.paused;
     const sub = note || (playing ? 'Playing live' : 'Paused');
@@ -108,6 +114,7 @@ async function render() {
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', render);
+window.addEventListener('hashchange', () => radio.station && radio.render(radio.note)); // the mini player hides on the Radio screen and comes back elsewhere
 let lastKey = '';
 const stateKey = () => JSON.stringify([state.user && [state.user.id, state.user.kind, state.user.district, state.user.name, state.user.verified, state.user.plus, state.user.selfieVerified, state.user.avatar], state.theme]);
 subscribe(() => { const k = stateKey(); if (k === lastKey) return; lastKey = k; if (['/home', '/me', '/settings'].includes(current())) render(); });
@@ -458,6 +465,7 @@ const MODULES = {
   escrow:      () => import('./escrow.js').then((m) => m.registerEscrow(BASE)),
   tags:        () => import('./tags.js').then((m) => m.registerTags(BASE)),
   place:       () => import('./place.js').then((m) => m.registerPlace(BASE)),
+  status:      () => import('./status.js').then((m) => m.registerStatus(BASE)),
 };
 /** First path segment → the modules that own screens under it. Several share /admin and /report. */
 const LAZY = {
@@ -468,7 +476,7 @@ const LAZY = {
   artisans: ['services', 'jobs'], jobs: ['jobs'], breakdown: ['jobs'], meetup: ['services'], tickets: ['services'],
   blood: ['citysignals'], fuel: ['citysignals'], light: ['citysignals'], lostfound: ['citysignals'], plates: ['citysignals'], prices: ['citysignals'],
   cert: ['learn'], learn: ['learn'], queues: ['citymore'], 'rent-index': ['citymore'], rides: ['citymore'],
-  kart: ['kart'], tag: ['tags'], t: ['tags'], find: ['tags'], friends: ['tags'], place: ['place'],
+  kart: ['kart'], tag: ['tags'], t: ['tags'], find: ['tags'], friends: ['tags'], place: ['place'], status: ['status'],
 };
 const loaded = {};
 function need(name) { if (!loaded[name]) loaded[name] = MODULES[name]().catch((e) => { delete loaded[name]; throw e; }); return loaded[name]; }

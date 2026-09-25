@@ -39,7 +39,16 @@ final class MessagesController
             'preview' => $t['last_type'] === 'interview' ? 'Interview invitation' : ($t['last_type'] === 'inspection' ? 'Inspection request' : ($t['last_type'] === 'offer' ? 'Offer' : ($t['last_type'] === 'media' ? ($t['last_body'] ?: 'Attachment') : ($t['last_body'] ?? '')))),
             'jobId' => $t['job_id'] ? (int) $t['job_id'] : null,
         ], $st->fetchAll());
-        Http::json(['threads' => $rows, 'unread' => array_sum(array_column($rows, 'unread'))]);
+        // who is online right now: a green dot on their picture (hidden if they switched it off)
+        $ids = array_values(array_unique(array_column($rows, 'otherId')));
+        if ($ids) {
+            $seen = [];
+            foreach (Db::pdo()->query('SELECT * FROM users WHERE id IN (' . implode(',', array_map('intval', $ids)) . ')')->fetchAll() as $o)
+                $seen[(int) $o['id']] = Presence::shows($o) && $o['last_seen_at'] && strtotime($o['last_seen_at'] . ' UTC') > time() - Presence::ONLINE_SEC;
+            foreach ($rows as &$r) $r['online'] = $seen[$r['otherId']] ?? false;
+            unset($r);
+        }
+        Http::json(['threads' => $rows, 'unread' => array_sum(array_column($rows, 'unread')), 'showLastSeen' => Presence::shows($u)]);
     }
 
     /** GET /threads/{id}?after=<messageId> */
@@ -55,6 +64,11 @@ final class MessagesController
             else Db::run('INSERT INTO thread_reads (thread_id, user_id, last_read_id) VALUES (?,?,?)', [$id, $u['id'], $last]);
         }
         $out = ['id' => $id, 'messages' => $msgs];
+        // the other person: online, last seen, typing; and how far they have read (for the blue ticks)
+        Presence::touch($u);
+        $out['peer'] = Presence::of($this->other($t, $u), $u, $id);
+        $pr = Db::one('SELECT last_read_id FROM thread_reads WHERE thread_id = ? AND user_id = ?', [$id, $this->other($t, $u)]);
+        $out['peerRead'] = $pr ? (int) $pr['last_read_id'] : 0;
         if ($after === 0) {
             $o = Db::one('SELECT id, name, kind FROM users WHERE id = ?', [$this->other($t, $u)]);
             $ctx = null;
@@ -92,7 +106,7 @@ final class MessagesController
         if ($body === '' && !$upload) Http::json(['error' => 'validation', 'fields' => ['body' => 'Write something or attach a file.']], 422);
         if (mb_strlen($body) > 2000) Http::json(['error' => 'validation', 'fields' => ['body' => 'Up to 2000 characters.']], 422);
         Db::run('INSERT INTO messages (thread_id, sender_id, type, body, upload_id, created_at) VALUES (?,?,?,?,?,?)', [$id, $u['id'], $upload ? 'media' : 'text', $body, $upload, Db::now()]);
-        $mid = Db::lastId(); Track::hit($u, 'inbox', 'message');
+        $mid = Db::lastId(); Track::hit($u, 'inbox', 'message'); Presence::stopTyping($id, (int) $u['id']);
         Db::run('UPDATE threads SET last_message_at = ? WHERE id = ?', [Db::now(), $id]);
         $preview = $body !== '' ? mb_substr($body, 0, 120) : 'Sent an attachment';
         Notify::user($o, $t['kind'] === 'friend' ? 'social' : ($t['kind'] === 'match' ? 'match' : 'work'), in_array($t['kind'], ['match', 'friend'], true) ? explode(' ', $u['name'])[0] . ' sent you a message' : ($u['kind'] === 'company' ? ($this->companyName($u) . ' sent you a message') : $u['name'] . ' sent you a message'), $preview, '/#/inbox/' . $id);

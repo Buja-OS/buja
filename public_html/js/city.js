@@ -58,25 +58,30 @@ export function registerCity({ route, go, state, api, ui, DISTRICTS, failed, rad
     });
   }
 
+  // A little colour per paper, so the eye learns the sources
+  const SRCOL = { 'Punch': '#C0392B', 'Premium Times': '#1F4E9C', 'Daily Trust': '#0E7C86', 'Vanguard': '#B7791F', 'Guardian': '#1B1B1F', 'Channels': '#2E7D1E', 'Leadership': '#7A3E96', 'TheCable': '#E8620E' };
+  const srcTag = (src) => { const c = SRCOL[src] || '#55555F'; return `<span class="nw-src" style="--c:${c}"><i>${h((src || '?').replace(/^The/, '').trim()[0] || '?')}</i>${h(src)}</span>`; };
+  const dayOf = (iso) => { const d = new Date(iso.replace(' ', 'T') + 'Z'), n = new Date(); const y = new Date(n); y.setDate(n.getDate() - 1); return d.toDateString() === n.toDateString() ? 'Today' : d.toDateString() === y.toDateString() ? 'Yesterday' : d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }); };
+  const img = (src, cls, fallbackIcon) => src ? `<img class="${cls}" src="${h(src)}" alt="" loading="lazy" onerror="this.outerHTML='<span class=&quot;${cls} nw-noimg&quot;></span>'">` : `<span class="${cls} nw-noimg">${icon(fallbackIcon)}</span>`;
   route('/news', { auth: true, tabs: '' }, async () => {
     const cat = q().get('category') || 'all';
     const { news, categories } = await api.news(cat);
-    const top = news.filter((n) => n.priority >= 3).slice(0, 1)[0];
-    const rest = news.filter((n) => n !== top);
-    return `${topbar('Abuja news', '/home', `<button class="iconbtn" id="refresh" aria-label="Refresh">${icon('route')}</button>`)}
-    <div class="row" style="gap:8px;padding:4px 16px 0;overflow-x:auto;scrollbar-width:none">${categories.map((c) => `<a class="chip ${cat === c ? 'on' : ''}" href="#/news?category=${c}">${c === 'all' ? 'All' : c[0].toUpperCase() + c.slice(1)}</a>`).join('')}</div>
-    <main class="pad stack" style="gap:12px;padding-top:12px">
-      ${top ? `<a class="card dark stack" href="#/news/${top.id}" style="padding:0;gap:0;overflow:hidden">
-        ${top.image ? `<img src="${h(top.image)}" alt="" loading="lazy" style="width:100%;height:170px;object-fit:cover;display:block" onerror="this.remove()">` : ''}
-        <span class="stack" style="padding:16px;gap:8px">
-        <div class="row" style="gap:8px"><span class="tag" style="background:var(--orange);color:#fff">${icon('triangle-exclamation')} Worth knowing</span><span class="small" style="color:#B5B5BC">${h(top.source)} · ${ago(top.at)}</span></div>
-        <div style="font-size:18px;font-weight:700;line-height:1.35">${h(top.title)}</div>
-        ${top.summary ? `<div class="small" style="color:#B5B5BC;line-height:1.5">${h(top.summary.slice(0, 180))}</div>` : ''}</span></a>` : ''}
-      ${rest.length ? rest.map((n) => `<a class="card row" href="#/news/${n.id}" style="padding:12px;gap:12px;align-items:flex-start">
-        ${n.image ? `<img src="${h(n.image)}" alt="" loading="lazy" style="width:84px;height:64px;border-radius:12px;object-fit:cover;flex-shrink:0;background:var(--surface)" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'mi',style:'width:84px;height:64px;border-radius:12px;background:var(--surface)'}))">` : `<div style="width:84px;height:64px;border-radius:12px;background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--ink-3);flex-shrink:0">${icon(CATICON[n.category] || 'circle-info')}</div>`}
-        <div class="grow" style="min-width:0"><div style="font-size:14px;font-weight:650;line-height:1.4">${h(n.title)}</div><div class="small muted" style="margin-top:4px">${h(n.source)} · ${ago(n.at)}${n.category !== 'general' ? ' · ' + n.category : ''}</div></div></a>`).join('')
-      : `<div class="placeholder" style="padding:50px 0"><div class="mi card">${icon('circle-info')}</div><div class="h-md">No Abuja stories yet</div><div class="small muted" style="max-width:280px;line-height:1.5">Buja reads the Nigerian papers every half hour and keeps what is about Abuja. Pull to refresh in a moment.</div></div>`}
-      <div class="small muted" style="line-height:1.5;padding-bottom:6px">Headlines from Punch, Premium Times, Daily Trust, Vanguard, Guardian, Channels, Leadership and TheCable, filtered to Abuja and the FCT. Only urgent stories send a notification, at most three a day.</div>
+    const lead = news.find((n) => n.priority >= 3 && n.image) || news.find((n) => n.image) || news[0];
+    const rest = news.filter((n) => n !== lead);
+    const top = rest.filter((n) => n.image).slice(0, 6), list = rest.filter((n) => !top.includes(n));
+    let lastDay = '';
+    const row = (n) => { const d = dayOf(n.at); const head = d !== lastDay ? `<div class="section nw-day">${d.toUpperCase()}</div>` : ''; lastDay = d;
+      return `${head}<a class="nw-row" href="#/news/${n.id}"><span class="grow" style="min-width:0">${srcTag(n.source)}<span class="nw-rtitle">${h(n.title)}</span><span class="nw-meta">${ago(n.at)}${n.category !== 'general' ? ' · ' + h(n.category) : ''}${n.hasBody ? ' · read in Buja' : ''}</span></span>${img(n.image, 'nw-thumb', CATICON[n.category] || 'newspaper')}</a>`; };
+    return `${topbar('Abuja news', '/home', `<button class="iconbtn" id="refresh" aria-label="Check for new stories">${icon('arrows-rotate')}</button>`)}
+    <div class="nw-chips">${categories.map((c) => `<a class="chip ${cat === c ? 'on' : ''}" href="#/news?category=${c}">${c === 'all' ? 'All' : `${icon(CATICON[c] || 'newspaper')} ${c[0].toUpperCase() + c.slice(1)}`}</a>`).join('')}</div>
+    <main class="pad stack" style="gap:14px;padding-top:12px">
+      ${lead ? `<a class="nw-lead" href="#/news/${lead.id}">${img(lead.image, 'nw-leadimg', CATICON[lead.category] || 'newspaper')}<span class="nw-leadtxt">
+        ${lead.priority >= 3 ? `<span class="nw-flag">${icon('triangle-exclamation')} Worth knowing</span>` : ''}
+        <span class="nw-leadtitle">${h(lead.title)}</span><span class="nw-leadmeta">${h(lead.source)} · ${ago(lead.at)}</span></span></a>` : ''}
+      ${top.length ? `<div><div class="section" style="margin:2px 0 8px">TOP STORIES</div><div class="nw-strip">${top.map((n) => `<a class="nw-card" href="#/news/${n.id}">${img(n.image, 'nw-cardimg', CATICON[n.category] || 'newspaper')}<span class="nw-cardbody">${srcTag(n.source)}<span class="nw-cardtitle">${h(n.title)}</span><span class="nw-meta">${ago(n.at)}</span></span></a>`).join('')}</div></div>` : ''}
+      ${list.length ? `<div class="nw-list">${list.map(row).join('')}</div>` : ''}
+      ${!news.length ? `<div class="placeholder" style="padding:50px 0"><div class="mi card">${icon('newspaper')}</div><div class="h-md">No Abuja stories ${cat === 'all' ? 'yet' : 'in ' + h(cat)}</div><div class="small muted" style="max-width:280px;line-height:1.5">Buja reads the Nigerian papers every half hour and keeps what is about Abuja. Tap refresh to check now.</div></div>` : ''}
+      <div class="small muted" style="line-height:1.5;padding-bottom:6px">From Punch, Premium Times, Daily Trust, Vanguard, Guardian, Channels, Leadership and TheCable, filtered to Abuja and the FCT. Only urgent stories send a notification, at most three a day.</div>
     </main>`;
   }, { mount(el) { el.querySelector('#refresh')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { const r = await api.refreshNews(); toast(r.added ? r.added + ' new stor' + (r.added === 1 ? 'y' : 'ies') : 'Nothing new yet'); location.reload(); } catch (err) { busy(e.currentTarget, false); failed(el, err); } }); } });
 
@@ -172,23 +177,46 @@ export function registerCity({ route, go, state, api, ui, DISTRICTS, failed, rad
   });
 
   /* ---------------- Radio ---------------- */
-  /* ---------- Reading a story inside Buja ---------- */
+  /* ---------- Reading a story inside Buja: text size, read aloud, reading progress ---------- */
   route('/news/:id', { auth: true, tabs: '' }, async ({ id }) => {
-    let d; try { d = await api.newsItem(id); } catch (err) { return `${topbar('Story', '/news')}<div class="placeholder" style="padding:60px 20px"><div class="mi card">${icon('circle-info')}</div><div class="h-md">${h((err && err.message) || 'This story is gone')}</div><a class="btn btn-ink" href="#/news" style="width:auto">Back to the news</a></div>`; }
+    let d; try { d = await api.newsItem(id); } catch (err) { return `${topbar('Story', '/news')}<div class="placeholder" style="padding:60px 20px"><div class="mi card">${icon('newspaper')}</div><div class="h-md">${h((err && err.message) || 'This story is gone')}</div><a class="btn btn-ink" href="#/news" style="width:auto">Back to the news</a></div>`; }
     const n = d.item;
-    return `${topbar('', '/news', `<button class="iconbtn" id="share" aria-label="Share">${icon('paper-plane')}</button>`)}
+    return `<div class="nw-progress" id="prog"></div>${topbar('', '/news', `${n.body && 'speechSynthesis' in window ? `<button class="iconbtn" id="listen" aria-label="Read it aloud">${icon('volume-high')}</button>` : ''}<button class="iconbtn" id="size" aria-label="Text size" style="font-weight:800;font-size:14px">Aa</button><button class="iconbtn" id="share" aria-label="Share">${icon('share-nodes')}</button>`)}
     <main class="pad stack" style="gap:14px">
-      ${n.image ? `<img src="${h(n.image)}" alt="" style="width:100%;border-radius:16px;max-height:230px;object-fit:cover" onerror="this.remove()">` : ''}
-      <div><div class="row small muted" style="gap:8px"><strong style="color:var(--orange-dark)">${h(n.source)}</strong><span>${ago(n.at)}</span>${n.minutes ? `<span>· ${n.minutes} min read</span>` : ''}</div>
-        <h1 style="font-size:24px;line-height:1.3;margin:8px 0 0">${h(n.title)}</h1></div>
-      ${n.body ? `<article style="font-size:16px;line-height:1.7;color:var(--ink-2)">${n.body.split('\n\n').map((p) => `<p style="margin:0 0 14px">${h(p)}</p>`).join('')}</article>`
+      ${n.image ? `<img src="${h(n.image)}" alt="" class="nw-hero" onerror="this.remove()">` : ''}
+      <div>${srcTag(n.source)}<h1 class="nw-h1">${h(n.title)}</h1>
+        <div class="nw-meta">${ago(n.at)}${n.minutes ? ` · ${n.minutes} min read` : ''}${n.category && n.category !== 'general' ? ' · ' + h(n.category) : ''}</div></div>
+      ${n.body ? `<article class="nw-body" id="body">${n.body.split('\n\n').map((p) => `<p>${h(p)}</p>`).join('')}</article>`
         : `<div class="card stack" style="padding:16px;gap:10px"><div class="small" style="line-height:1.6;color:var(--ink-2)">${h(n.summary || 'This publisher does not allow Buja to show the full story.')}</div><a class="btn btn-primary" href="${h(n.url)}" target="_blank" rel="noopener">Read it on ${h(n.source)}</a></div>`}
       <div class="card row" style="padding:12px 14px;gap:10px;background:var(--surface);border:none"><div class="grow small muted" style="line-height:1.5">Reported by <strong>${h(n.source)}</strong>. Buja shows it here so you do not lose your place, and sends no data to the publisher until you open the original.</div></div>
-      <a class="btn btn-outline" href="${h(n.url)}" target="_blank" rel="noopener">${icon('arrow-right')} Open the original</a>
-      ${d.more && d.more.length ? `<div class="section">MORE LIKE THIS</div>${d.more.map((m) => `<a class="card row" href="#/news/${m.id}" style="padding:10px 12px;gap:10px;align-items:flex-start">${m.image ? `<img src="${h(m.image)}" alt="" loading="lazy" style="width:64px;height:48px;border-radius:10px;object-fit:cover;flex-shrink:0" onerror="this.remove()">` : ''}<span class="grow" style="min-width:0"><span style="display:block;font-size:13px;font-weight:650;line-height:1.4">${h(m.title)}</span><span class="small muted">${h(m.source)} · ${ago(m.at)}</span></span></a>`).join('')}` : ''}
+      <a class="btn btn-outline" href="${h(n.url)}" target="_blank" rel="noopener">${icon('arrow-up-right-from-square')} Open the original on ${h(n.source)}</a>
+      ${d.more && d.more.length ? `<div class="section">MORE LIKE THIS</div><div class="nw-list">${d.more.map((m) => `<a class="nw-row" href="#/news/${m.id}"><span class="grow" style="min-width:0">${srcTag(m.source)}<span class="nw-rtitle">${h(m.title)}</span><span class="nw-meta">${ago(m.at)}</span></span>${img(m.image, 'nw-thumb', 'newspaper')}</a>`).join('')}</div>` : ''}
     </main>`;
   }, {
     mount(el, { id }) {
+      const body = el.querySelector('#body');
+      // text size: three steps, remembered on this phone
+      const SIZES = [16, 18, 20]; let sz = (() => { try { return +localStorage.getItem('buja_news_size') || 0; } catch { return 0; } })();
+      const apply = () => { if (body) body.style.fontSize = SIZES[sz] + 'px'; };
+      apply();
+      el.querySelector('#size')?.addEventListener('click', () => { sz = (sz + 1) % SIZES.length; apply(); try { localStorage.setItem('buja_news_size', String(sz)); } catch {} toast(['Normal text', 'Larger text', 'Largest text'][sz]); });
+      // read aloud with the phone's own voice
+      const listen = el.querySelector('#listen');
+      if (listen) {
+        const stopTalk = () => { try { speechSynthesis.cancel(); } catch {} listen.classList.remove('on'); listen.innerHTML = icon('volume-high'); };
+        listen.addEventListener('click', () => {
+          if (speechSynthesis.speaking) { stopTalk(); return; }
+          const u = new SpeechSynthesisUtterance((el.querySelector('.nw-h1')?.textContent || '') + '. ' + body.innerText);
+          const v = speechSynthesis.getVoices().find((x) => /en-NG/i.test(x.lang)) || speechSynthesis.getVoices().find((x) => /^en/i.test(x.lang)); if (v) u.voice = v;
+          u.rate = 1; u.onend = stopTalk; u.onerror = stopTalk;
+          speechSynthesis.speak(u); listen.classList.add('on'); listen.innerHTML = icon('pause'); toast('Reading the story aloud');
+        });
+        window.addEventListener('hashchange', stopTalk, { once: true });
+      }
+      // reading progress along the top
+      const prog = el.querySelector('#prog');
+      const onScroll = () => { if (!document.body.contains(el)) { window.removeEventListener('scroll', onScroll); return; } const max = document.documentElement.scrollHeight - innerHeight; prog.style.width = (max > 0 ? Math.min(100, scrollY / max * 100) : 0) + '%'; };
+      window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
       el.querySelector('#share')?.addEventListener('click', async () => {
         const t = el.querySelector('h1')?.textContent || 'A story on Buja';
         const url = location.origin + '/#/news/' + id;
@@ -198,19 +226,80 @@ export function registerCity({ route, go, state, api, ui, DISTRICTS, failed, rad
     }
   });
 
+  /* Radio: a big "now playing" player on top, filters, favourites and recently played, then every station as a card.
+     Favourites and recents live on this phone only (they are a personal shortcut, not shared with anyone). */
+  const RGROUPS = [['all', 'All'], ['fav', 'Favourites'], ['news', 'News & talk'], ['music', 'Music'], ['local', 'Hausa, Igbo, Pidgin'], ['sport', 'Sport']];
+  const inGroup = (s, g) => { const t = (s.genre || '').toLowerCase() + ' ' + s.name.toLowerCase();
+    return g === 'news' ? /news|talk|current affairs|advocacy|complaint|traffic|frcn/.test(t) : g === 'music' ? /music|afro|pop|hip-hop|urban|hits|classic/.test(t) : g === 'local' ? /hausa|igbo|pidgin|yoruba|wazobia|oganiru/.test(t) : g === 'sport' ? /sport|brila/.test(t) : true; };
+  const store = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? d; } catch { return d; } };
+  const keep = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
   route('/radio', { auth: true, tabs: '' }, async () => {
     const { stations } = await api.radio();
-    const live = stations.filter((s) => s.stream), off = stations.filter((s) => !s.stream);
-    const row = (s) => `<div class="item" style="gap:12px">
-      <div style="width:52px;height:44px;border-radius:12px;background:${s.stream ? 'var(--night)' : 'var(--surface)'};color:${s.stream ? '#7ED957' : 'var(--ink-3)'};display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:14px;font-weight:700;line-height:1">${h(s.frequency)}</span><span style="font-size:8px;letter-spacing:1px;opacity:.7">FM</span></div>
-      <div class="grow" style="min-width:0"><div class="t">${h(s.name)}</div><div class="s">${h(s.genre || '')}</div></div>
-      ${s.stream ? `<button class="iconbtn" data-station='${JSON.stringify({ id: s.id, name: s.name, frequency: s.frequency, stream: s.stream }).replace(/'/g, '&#39;')}' aria-label="Play ${h(s.name)}" style="background:var(--orange);border-color:var(--orange);color:#fff;width:40px;height:40px">${icon('play')}</button>`
-      : s.website ? `<a class="btn btn-sm btn-outline" href="${h(s.website)}" target="_blank" rel="noopener" style="width:auto;height:34px;font-size:12px">Site</a>` : `<span class="small muted">FM only</span>`}</div>`;
     return `${topbar('Abuja radio', '/home')}
-    <main class="pad stack" style="gap:12px">
-      <div class="small muted">${live.length} stations play right here in Buja. Start one and it keeps playing while you use the rest of the app.</div>
-      <div class="card list">${live.map(row).join('')}</div>
-      ${off.length ? `<div class="section">NO STREAM YET</div><div class="card list">${off.map(row).join('')}</div><div class="small muted" style="line-height:1.5">These broadcast on FM but do not publish an online stream. If you find one that works, send it and it goes in.</div>` : ''}
+    <main class="pad stack" style="gap:14px" id="radio" data-st='${JSON.stringify(stations.map((s) => ({ id: s.id, name: s.name, frequency: s.frequency, genre: s.genre || '', stream: s.stream || '', website: s.website || '' }))).replace(/'/g, '&#39;')}'>
+      <section class="rp-hero" id="hero"></section>
+      <div class="row rp-chips" id="chips">${RGROUPS.map(([k, t]) => `<button class="chip" data-g="${k}">${t}</button>`).join('')}</div>
+      <div id="recent"></div>
+      <div class="rp-grid" id="grid"></div>
+      <div id="offair"></div>
     </main>`;
-  }, { mount(el) { const all = [...el.querySelectorAll('[data-station]')].map((b) => JSON.parse(b.dataset.station)); el.querySelectorAll('[data-station]').forEach((b) => b.addEventListener('click', () => radio.play(JSON.parse(b.dataset.station), all))); } });
+  }, {
+    mount(el) {
+      const fnum = (s) => { const f = parseFloat(s.frequency); return isFinite(f) ? f : 999; };
+      const all = JSON.parse(el.querySelector('#radio').dataset.st).sort((a, b) => fnum(a) - fnum(b));   // FM by frequency, online-only last
+      const live = all.filter((s) => s.stream), off = all.filter((s) => !s.stream);
+      let group = store('buja_radio_group', 'all'), favs = store('buja_radio_favs', []);
+      const freq = (s) => s.frequency && s.frequency !== '—' ? `<b>${h(s.frequency)}</b><i>FM</i>` : '<b style="font-size:13px">WEB</b><i>ONLINE</i>';
+      const eq = '<span class="rp-eq"><i></i><i></i><i></i><i></i></span>';
+      const hero = () => {
+        const st = radio.station, playing = radio.playing, note = radio.note;
+        const recent0 = store('buja_radio_recent', [])[0];
+        const pick = st || live.find((s) => s.id === recent0) || live.find((s) => favs.includes(s.id)) || live.find((s) => /cool fm/i.test(s.name)) || live[0];
+        if (!pick) { el.querySelector('#hero').innerHTML = '<div class="small" style="color:#AEB4BE">No station has a stream yet.</div>'; return; }
+        const sleepLeft = radio.sleepAt ? Math.max(1, Math.round((radio.sleepAt - Date.now()) / 60000)) : 0;
+        el.querySelector('#hero').innerHTML = `
+          <div class="row" style="gap:14px;align-items:center">
+            <div class="rp-dial${playing ? ' on' : ''}">${freq(pick)}</div>
+            <div class="grow" style="min-width:0">
+              <div class="rp-kicker">${st ? (playing ? `${eq} LIVE NOW` : note ? h(note).toUpperCase() : 'PAUSED') : 'TAP PLAY TO LISTEN'}</div>
+              <div class="rp-name">${h(pick.name)}</div>
+              <div class="rp-genre">${h(pick.genre || 'Abuja radio')}</div>
+            </div>
+            <button class="rp-fav${favs.includes(pick.id) ? ' on' : ''}" data-fav="${pick.id}" aria-label="${favs.includes(pick.id) ? 'Remove from favourites' : 'Add to favourites'}">${icon('star')}</button>
+          </div>
+          <div class="row rp-ctl">
+            <button class="rp-b" id="hprev" aria-label="Previous station">${icon('backward-step')}</button>
+            <button class="rp-play" id="hplay" aria-label="${playing ? 'Pause' : 'Play'}">${icon(playing ? 'pause' : 'play')}</button>
+            <button class="rp-b" id="hnext" aria-label="Next station">${icon('forward-step')}</button>
+          </div>
+          <div class="row rp-sleep"><span>${icon('moon')} ${sleepLeft ? `Sleep in ${sleepLeft} min` : 'Sleep timer'}</span>${[15, 30, 60].map((m) => `<button data-sleep="${m}">${m} min</button>`).join('')}${sleepLeft ? '<button data-sleep="0">Off</button>' : ''}</div>`;
+        el.querySelector('#hplay').onclick = () => { if (radio.station) radio.play(radio.station, live); else radio.play(pick, live); };
+        el.querySelector('#hprev').onclick = () => { if (!radio.station) radio.play(pick, live); radio.step(-1); };
+        el.querySelector('#hnext').onclick = () => { if (!radio.station) radio.play(pick, live); radio.step(1); };
+        el.querySelectorAll('#hero [data-sleep]').forEach((b) => { b.onclick = () => { if (!radio.station && +b.dataset.sleep) { toast('Start a station first'); return; } radio.sleep(+b.dataset.sleep); toast(+b.dataset.sleep ? `Radio stops in ${b.dataset.sleep} minutes` : 'Sleep timer off'); }; });
+      };
+      const card = (s) => { const on = radio.station && radio.station.id === s.id; return `<button class="rp-card${on ? ' on' : ''}" data-play="${s.id}" aria-label="${on && radio.playing ? 'Pause' : 'Play'} ${h(s.name)}">
+          <span class="rp-freq">${freq(s)}</span>
+          <span class="rp-cname">${h(s.name)}${favs.includes(s.id) ? ` <span class="rp-cfav">${icon('star')}</span>` : ''}</span><span class="rp-cgenre">${h(s.genre)}</span>
+          <span class="rp-cplay">${on && radio.playing ? eq : icon('play')}</span></button>`; };
+      const grid = () => {
+        el.querySelectorAll('#chips [data-g]').forEach((b) => b.classList.toggle('on', b.dataset.g === group));
+        const list = live.filter((s) => group === 'fav' ? favs.includes(s.id) : inGroup(s, group));
+        el.querySelector('#grid').innerHTML = list.length ? list.map(card).join('') : `<div class="small muted" style="grid-column:1/-1;padding:14px 2px;line-height:1.5">${group === 'fav' ? 'Tap the star on a station to keep it here.' : 'No station in this group plays online yet.'}</div>`;
+        const recent = store('buja_radio_recent', []).map((id) => live.find((s) => s.id === id)).filter(Boolean).slice(0, 6);
+        el.querySelector('#recent').innerHTML = recent.length > 1 && group === 'all' ? `<div class="section" style="margin:0 0 8px">RECENTLY PLAYED</div><div class="row rp-recent">${recent.map((s) => `<button class="rp-mini${radio.station && radio.station.id === s.id ? ' on' : ''}" data-play="${s.id}"><span>${h(s.frequency !== '—' ? s.frequency : 'WEB')}</span>${h(s.name)}</button>`).join('')}</div>` : '';
+      };
+      const offair = () => { el.querySelector('#offair').innerHTML = off.length ? `<details class="card" style="padding:12px 14px"><summary style="font-weight:650;font-size:14px;cursor:pointer">${off.length} more stations on FM only</summary><div class="small muted" style="line-height:1.5;margin:8px 0">These broadcast on FM in Abuja but do not publish an online stream Buja can play.</div>${off.map((s) => `<div class="row" style="gap:10px;padding:8px 0;border-top:1px solid var(--line)"><span style="font-weight:700;width:52px">${h(s.frequency)}</span><span class="grow" style="min-width:0"><span style="display:block;font-size:14px;font-weight:600">${h(s.name)}</span><span class="small muted">${h(s.genre)}</span></span></div>`).join('')}</details>` : ''; };
+      const draw = () => { hero(); grid(); };
+      el.addEventListener('click', (e) => {
+        const f = e.target.closest('[data-fav]'); if (f) { const id = +f.dataset.fav; favs = favs.includes(id) ? favs.filter((x) => x !== id) : [...favs, id]; keep('buja_radio_favs', favs); draw(); return; }
+        const g = e.target.closest('[data-g]'); if (g) { group = g.dataset.g; keep('buja_radio_group', group); grid(); return; }
+        const p = e.target.closest('[data-play]'); if (p) { const s = live.find((x) => x.id === +p.dataset.play); if (s) radio.play(s, live); }
+      });
+      const onRadio = () => { if (document.body.contains(el)) draw(); else window.removeEventListener('buja-radio', onRadio); };
+      window.addEventListener('buja-radio', onRadio);
+      const tick = setInterval(() => { if (!document.body.contains(el)) { clearInterval(tick); return; } if (radio.sleepAt) hero(); }, 30000);
+      draw(); offair();
+    },
+  });
 }

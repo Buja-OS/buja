@@ -2,8 +2,8 @@
 declare(strict_types=1);
 
 /**
- * Video and audio calls, held inside Buja. Rooms run on Jitsi, embedded in a Buja screen so nobody is sent
- * off to another app. Room names are long random strings, so a room cannot be guessed or wandered into.
+ * Video and audio calls, held inside Buja, phone to phone (WebRTC), signalled through this API.
+ * Room names are long random strings, so a room cannot be guessed or wandered into.
  */
 final class CallController
 {
@@ -24,15 +24,54 @@ final class CallController
     }
 
     /**
-     * Where the two phones should meet. STUN is free and public; TURN is the relay used when a network will
-     * not allow a direct connection, which is common on Nigerian mobile data. Set TURN_URL to add one.
+     * Where the two phones should meet. STUN finds a direct path when one exists; TURN is the relay that carries the
+     * call when the networks will not allow a direct path, which is normal on Nigerian mobile data (MTN, Airtel, Glo
+     * put phones behind carrier firewalls). Without a working relay, calls sit on "Connecting" and never connect.
+     *
+     * Relay, in order of preference:
+     *  1. Cloudflare Realtime TURN (CF_TURN_KEY_ID + CF_TURN_API_TOKEN): short-lived logins made here, 1,000 GB free a month.
+     *  2. Any TURN server you run or rent (TURN_URL, TURN_USER, TURN_PASS).
      */
-    private function iceServers(): array
+    public static function iceServers(): array
     {
-        $ice = [['urls' => ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']]];
-        $turn = (string) Http::config('turn_url', '');
-        if ($turn !== '') $ice[] = ['urls' => array_map('trim', explode(',', $turn)), 'username' => (string) Http::config('turn_user', ''), 'credential' => (string) Http::config('turn_pass', '')];
+        $ice = [['urls' => ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302']]];
+        $cf = self::cloudflareIce();
+        if ($cf) return array_merge($ice, $cf);
+        $turn = trim((string) Http::config('turn_url', ''));
+        if ($turn !== '') $ice[] = ['urls' => array_values(array_filter(array_map('trim', explode(',', $turn)))), 'username' => (string) Http::config('turn_user', ''), 'credential' => (string) Http::config('turn_pass', '')];
         return $ice;
+    }
+
+    /** True when a relay is configured, so the app can explain a failed call honestly. */
+    public static function hasRelay(): bool
+    {
+        foreach (self::iceServers() as $s) foreach ((array) ($s['urls'] ?? []) as $u) if (str_starts_with((string) $u, 'turn')) return true;
+        return false;
+    }
+
+    /** Cloudflare TURN logins, cached on this server for 12 hours (they are valid for 24). */
+    private static function cloudflareIce(): ?array
+    {
+        $key = trim((string) Http::config('cf_turn_key_id', '')); $token = trim((string) Http::config('cf_turn_token', ''));
+        if ($key === '' || $token === '') return null;
+        $file = sys_get_temp_dir() . '/buja-cfturn-' . substr(hash('sha256', $key . $token), 0, 16) . '.json';
+        $hit = @json_decode((string) @file_get_contents($file), true);
+        if (is_array($hit) && ($hit['at'] ?? 0) > time() - 12 * 3600 && !empty($hit['ice'])) return $hit['ice'];
+        $ch = curl_init('https://rtc.live.cloudflare.com/v1/turn/keys/' . rawurlencode($key) . '/credentials/generate-ice-servers');
+        curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 6, CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $token, 'Content-Type: application/json'], CURLOPT_POSTFIELDS => json_encode(['ttl' => 86400])]);
+        $raw = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+        $j = $code >= 200 && $code < 300 ? json_decode((string) $raw, true) : null;
+        $out = [];
+        foreach ((array) ($j['iceServers'] ?? []) as $s) {
+            if (empty($s['username'])) continue;   // the STUN entry is already in the list
+            // port 53 is blocked by browsers and only makes the phone wait, so it is left out
+            $urls = array_values(array_filter((array) ($s['urls'] ?? []), fn($u) => !preg_match('/:53(\?|$)/', (string) $u)));
+            if ($urls) $out[] = ['urls' => $urls, 'username' => (string) $s['username'], 'credential' => (string) ($s['credential'] ?? '')];
+        }
+        if (!$out) { error_log('[buja calls] Cloudflare TURN answered ' . $code); return is_array($hit) && !empty($hit['ice']) ? $hit['ice'] : null; }
+        @file_put_contents($file, json_encode(['at' => time(), 'ice' => $out]));
+        return $out;
     }
 
     /** POST /threads/{id}/call { mode: video|audio, startsAt } : ring now, or book a time */
@@ -76,7 +115,7 @@ final class CallController
         $o = Db::one('SELECT name FROM users WHERE id = ?', [$this->other($t, $u)]);
         Http::json(['call' => self::shape($c) + ['threadId' => (int) $c['thread_id'], 'withAvatar' => Auth::picture($this->other($t, $u)), 'with' => explode(' ', trim((string) ($o['name'] ?? 'Someone')))[0],
             'me' => explode(' ', trim((string) $u['name']))[0], 'domain' => (string) Http::config('jitsi_domain', 'meet.jit.si'),
-            'caller' => (int) $c['created_by'] === (int) $u['id'], 'ice' => $this->iceServers()]]);
+            'caller' => (int) $c['created_by'] === (int) $u['id'], 'ice' => self::iceServers(), 'relay' => self::hasRelay()]]);
     }
 
     /** POST /call/{room}/signal { kind, payload } : one step of the handshake, passed to the other phone. */
@@ -111,11 +150,17 @@ final class CallController
     public function incoming(): void
     {
         $u = Auth::require();
+        Http::json(['call' => self::ringing($u)]);
+    }
+
+    /** The call ringing for this person right now, or null. Shared with /pulse. */
+    public static function ringing(array $u): ?array
+    {
         $c = Db::one("SELECT c.*, u.name FROM calls c JOIN users u ON u.id = c.created_by
                       WHERE c.callee = ? AND c.status = 'ringing' AND c.ended_at IS NULL AND c.starts_at IS NULL AND c.created_at > ?
                       ORDER BY c.id DESC LIMIT 1", [$u['id'], gmdate('Y-m-d H:i:s', time() - 45)]);
-        if (!$c) Http::json(['call' => null]);
-        Http::json(['call' => self::shape($c) + ['from' => explode(' ', trim((string) $c['name']))[0], 'fromAvatar' => Auth::picture((int) $c['created_by']), 'threadId' => (int) $c['thread_id']]]);
+        if (!$c) return null;
+        return self::shape($c) + ['from' => explode(' ', trim((string) $c['name']))[0], 'fromAvatar' => Auth::picture((int) $c['created_by']), 'threadId' => (int) $c['thread_id']];
     }
 
     /** POST /call/{room}/decline */

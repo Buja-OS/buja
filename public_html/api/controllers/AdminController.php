@@ -279,7 +279,7 @@ final class AdminController
         $this->staff();
         set_time_limit(60);
         $cat = (string) (Http::body()['category'] ?? '');
-        $r = Osm::importCategory($cat, 400);
+        $r = Osm::importCategory($cat);
         $total = (int) (Db::one('SELECT COUNT(*) AS n FROM spots WHERE active = 1')['n'] ?? 0);
         Http::json(['result' => $r, 'category' => $cat, 'total' => $total]);
     }

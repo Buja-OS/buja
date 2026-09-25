@@ -146,7 +146,7 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
   });
 
   /* =============================== ARTISANS =============================== */
-  const TRADEICON = { mechanic: 'car', vulcanizer: 'car', towing: 'car', electrician: 'bolt', plumber: 'house-chimney', mason: 'house-chimney', carpenter: 'screwdriver-wrench', painter: 'screwdriver-wrench', tiler: 'house-chimney', welder: 'screwdriver-wrench', ac: 'bolt', generator: 'bolt', solar: 'bolt', cctv: 'camera', dstv: 'camera', phone: 'phone', laptop: 'display', carwash: 'car', laundry: 'tags', cleaning: 'house-chimney', errand: 'route', cook: 'tags', hair: 'user', tailor: 'tags', gardener: 'house-chimney', pest: 'house-chimney', locksmith: 'shield-halved', movers: 'bus' };
+  const TRADEICON = { restaurant: 'utensils', suya: 'fire-flame-simple', bakery: 'bowl-food', drinks: 'martini-glass', grocery: 'basket-shopping', water: 'faucet-drip', gas: 'fire-flame-simple', events: 'star', printing: 'paint-roller', photography: 'camera', mechanic: 'car', vulcanizer: 'car', towing: 'car', electrician: 'bolt', plumber: 'house-chimney', mason: 'house-chimney', carpenter: 'screwdriver-wrench', painter: 'screwdriver-wrench', tiler: 'house-chimney', welder: 'screwdriver-wrench', ac: 'bolt', generator: 'bolt', solar: 'bolt', cctv: 'camera', dstv: 'camera', phone: 'phone', laptop: 'display', carwash: 'car', laundry: 'tags', cleaning: 'house-chimney', errand: 'route', cook: 'tags', hair: 'user', tailor: 'tags', gardener: 'house-chimney', pest: 'house-chimney', locksmith: 'shield-halved', movers: 'bus' };
   function artisanCard(a) {
     return `<a class="card row" href="#/artisans/${a.id}" style="padding:12px;gap:12px;align-items:flex-start">
       ${a.photo ? `<img src="${a.photo}" alt="" style="width:56px;height:56px;border-radius:14px;object-fit:cover;flex-shrink:0">` : `<div style="width:56px;height:56px;border-radius:14px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20px">${icon(TRADEICON[a.trade] || 'screwdriver-wrench')}</div>`}
@@ -154,6 +154,7 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
         <div class="row" style="gap:6px"><span style="font-size:15px;font-weight:700">${h(a.name)}</span>${a.bujaVerified ? `<span class="tag green" style="font-size:10px;padding:2px 6px">Buja verified</span>` : a.verified ? icon('circle-check') : ''}</div>
         <div class="small muted">${h(a.tradeLabel)} · ${h(a.district)}${a.years ? ' · ' + a.years + ' yrs' : ''}</div>
         <div class="row small" style="gap:8px;margin-top:4px">${rating(a.rating)}${a.km != null ? `<strong style="color:var(--green-dark)">${a.km < 1 ? 'under 1 km' : a.km + ' km'} away</strong>` : ''}</div>
+        <div class="row" style="gap:6px;margin-top:5px;flex-wrap:wrap">${a.onDuty ? '<span class="tag green" style="font-size:11px">Open now</span>' : '<span class="tag" style="font-size:11px;background:var(--surface)">Closed now</span>'}${a.online ? '<span class="tag" style="font-size:11px;background:var(--green-tint);color:var(--green-dark)">● Active now</span>' : ''}${a.orderable ? '<span class="tag" style="font-size:11px;background:var(--orange-tint);color:var(--orange-dark)">' + icon('bag-shopping') + ' Order in app</span>' : ''}</div>
       </div>
       <div class="stack" style="gap:6px"><button type="button" class="iconbtn" data-icall="${a.id}" aria-label="Call in Buja" style="background:var(--green);border-color:var(--green);color:#101014;width:38px;height:38px">${icon('phone')}</button><button type="button" class="iconbtn" data-imsg="${a.id}" aria-label="Message in Buja" style="width:38px;height:38px">${icon('message')}</button></div></a>`;
   }
@@ -165,7 +166,7 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
     <form id="af" class="pad" style="padding-bottom:0"><div class="card row" style="height:48px;padding:0 16px;gap:10px">${icon('magnifying-glass')}<input id="aq" name="q" type="search" value="${h(f.q || '')}" placeholder="Mechanic, plumber, DStv installer" style="flex:1;border:none;background:transparent;outline:none;font-size:15px;color:var(--ink)"></div></form>
     <div class="row" style="gap:8px;padding:10px 16px 0;overflow-x:auto;scrollbar-width:none"><a class="chip ${!f.trade ? 'on' : ''}" href="#/artisans?${new URLSearchParams({ ...f, trade: '' })}">All</a>${Object.entries(trades).map(([k, l]) => `<a class="chip ${f.trade === k ? 'on' : ''}" href="#/artisans?${new URLSearchParams({ ...f, trade: k })}">${h(l)}</a>`).join('')}</div>
     <main class="pad stack" style="gap:10px;padding-top:12px">
-      <div class="small muted row" style="gap:6px">${icon('location-dot')} ${at ? 'Nearest to where you are now' : 'Turn on location to sort by distance'}</div>
+      <div class="row" style="gap:6px;align-items:center;flex-wrap:wrap"><span class="small muted row" style="gap:6px;flex-basis:100%">${icon('location-dot')} ${f.sort === 'rating' ? 'Best rated first' : f.sort === 'open' ? 'Open now first' : at ? 'Nearest to where you are now' : 'Turn on location to sort by distance'}</span>${[['', 'Nearest'], ['open', 'Open'], ['rating', 'Top rated']].map(([k, l]) => `<a class="chip ${(f.sort || '') === k ? 'on' : ''}" href="#/artisans?${new URLSearchParams({ ...f, sort: k })}" style="height:32px;font-size:13px">${l}</a>`).join('')}</div>
       ${artisans.length ? artisans.map(artisanCard).join('') : `<div class="placeholder" style="padding:50px 0"><div class="mi card">${icon('screwdriver-wrench')}</div><div class="h-md">No one listed for that yet</div><div class="small muted" style="max-width:290px;line-height:1.55">Mechanics, plumbers, electricians, installers, laundries and errand people list themselves here so you can find the nearest one when you are stuck. Know a good one? Tell them to register.</div><a class="btn btn-ink" href="#/artisans/register" style="width:auto">List yourself</a></div>`}
     </main>`;
   }, { mount(el) {
@@ -179,22 +180,41 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
   route('/artisans/:id', { auth: true, tabs: '' }, async ({ id }) => {
     if (id === 'register') return '';
     const { artisan: a } = await api.artisan(id);
+    window.__bujaBiz = a;
+    const nn = (n) => '₦' + Number(n || 0).toLocaleString();
+    const menu = a.menu || [];
+    const sections = [];
+    menu.forEach((m) => { const k = m.section || 'Menu'; let g = sections.find((x) => x[0] === k); if (!g) { g = [k, []]; sections.push(g); } g[1].push(m); });
+    const menuHtml = !a.orderable ? '' : menu.length ? `<div id="menu" class="stack" style="gap:10px">
+        <div class="row" style="align-items:flex-end"><div class="grow"><div class="section" style="margin:0">MENU</div><div class="small muted">${menu.length} item${menu.length === 1 ? '' : 's'} · delivery ${a.deliveryFee ? nn(a.deliveryFee) : 'included'}${a.minOrder ? ' · smallest order ' + nn(a.minOrder) : ''}</div></div></div>
+        ${sections.length > 1 ? `<div class="row ord-tabs" style="gap:6px;overflow-x:auto;padding-bottom:2px">${sections.map(([k], i) => `<button class="chip" data-sec="${i}">${h(k)}</button>`).join('')}</div>` : ''}
+        ${sections.map(([k, items], i) => `<div class="stack" style="gap:8px" id="sec${i}">${sections.length > 1 ? `<div style="font-size:15px;font-weight:800;margin-top:4px">${h(k)}</div>` : ''}
+          ${items.map((m) => `<div class="card row ord-item" data-item="${m.id}" style="padding:10px;gap:12px;align-items:center">
+            ${m.photo ? `<img src="${h(m.photo)}" alt="" loading="lazy" data-zoom="${h(m.photo)}" style="width:64px;height:64px;border-radius:12px;object-fit:cover;flex-shrink:0">` : ''}
+            <div class="grow" style="min-width:0"><div style="font-size:15px;font-weight:700">${h(m.name)}</div>${m.description ? `<div class="small muted" style="line-height:1.4">${h(m.description)}</div>` : ''}<div style="font-weight:800;margin-top:2px">${nn(m.price)}</div></div>
+            <div class="ord-step" data-step="${m.id}"><button class="ord-minus" data-minus="${m.id}" aria-label="One less">${icon('minus')}</button><span class="ord-q" data-q="${m.id}">0</span><button class="ord-plus" data-plus="${m.id}" aria-label="Add one">${icon('plus')}</button></div>
+          </div>`).join('')}</div>`).join('')}
+      </div>`
+      : `<div id="menu" class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Order from ${h(a.name)}</div><div class="small muted" style="line-height:1.5">They have not put their menu on Buja yet. Write what you want; they accept and send you the price before they start.</div><button class="btn btn-primary" id="freeorder" ${a.available ? '' : 'disabled'}>${icon('bag-shopping')} ${a.available ? 'Write my order' : 'Not taking orders right now'}</button></div>`;
     return `${topbar(a.tradeLabel, '/artisans')}
-    <main class="pad stack" style="gap:14px">
+    <main class="pad stack" style="gap:14px;${a.orderable ? 'padding-bottom:110px' : ''}">
       <div class="card row" style="padding:16px;gap:14px">${a.photo ? `<img src="${a.photo}" alt="" data-zoom="${a.photo}" style="width:72px;height:72px;border-radius:18px;object-fit:cover">` : `<div style="width:72px;height:72px;border-radius:18px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center;font-size:26px">${icon(TRADEICON[a.trade] || 'screwdriver-wrench')}</div>`}
         <div class="grow"><div class="row" style="gap:6px"><span class="h-md">${h(a.name)}</span>${a.verified ? `<span class="tag green">${icon('circle-check')} Verified</span>` : ''}</div><div class="small muted">${a.person && a.person !== a.name ? h(a.person) + ' · ' : ''}${h(a.district)} · travels up to ${a.radiusKm} km${a.years ? ' · ' + a.years + ' years' : ''}</div><div class="small" style="margin-top:4px"><a href="#/people/${a.id}">${rating(a.rating)}</a>${a.km != null ? ` · <strong style="color:var(--green-dark)">${a.km < 1 ? 'under 1 km' : a.km + ' km'} from you</strong>` : ''}</div></div></div>
-      ${!a.available ? `<div style="padding:10px 14px;background:var(--surface);border-radius:12px;font-size:13px;color:var(--ink-2)">Marked as not available right now. You can still call.</div>` : ''}
+      ${!a.available ? `<div style="padding:10px 14px;background:var(--surface);border-radius:12px;font-size:13px;color:var(--ink-2)">${a.orderable ? 'Not taking orders right now. You can still call or message.' : 'Marked as not available right now. You can still call.'}</div>` : ''}
+      ${a.orderable ? menuHtml : ''}
       <div class="row" style="gap:8px">
-        <button class="btn btn-primary grow" id="bcall" style="background:var(--green);color:#101014">${icon('phone')} Call</button>
+        <button class="btn ${a.orderable ? 'btn-outline' : 'btn-primary'} grow" id="bcall" ${a.orderable ? '' : 'style="background:var(--green);color:#101014"'}>${icon('phone')} Call</button>
         <button class="btn btn-outline grow" id="vcall">${icon('video')} Video call</button>
       </div>
       <button class="btn btn-outline" id="msg">${icon('message')} Message</button>
       <div class="small muted" style="margin-top:-6px">Calls and messages go through Buja, so your number stays private.</div>
       ${a.about ? `<div><div class="section">ABOUT</div><p style="margin:8px 0 0;font-size:15px;line-height:1.6;color:var(--ink-2);white-space:pre-line">${h(a.about)}</p></div>` : ''}
       ${a.lat ? `<a class="btn btn-outline" href="${h(placeHref({ lat: a.lat, lng: a.lng, name: a.name, sub: [a.tradeLabel, a.district].filter(Boolean).join(' · '), icon: TRADEICON[a.trade] || 'screwdriver-wrench', color: '#1F5FBF', photo: a.photo || '' }))}">${icon('location-dot')} Where the shop is</a>` : ''}
-      <div class="card stack" style="padding:14px;gap:6px"><div class="h-sm">Before you pay</div><div class="small muted" style="line-height:1.55">Agree the price before work starts. Pay when the job is done. If something goes wrong, rate them here so the next person knows. ${a.rating.count ? '' : 'Nobody has rated this person on Buja yet.'}</div></div>
+      <div class="card stack" style="padding:14px;gap:6px"><div class="h-sm">Before you pay</div><div class="small muted" style="line-height:1.55">${a.orderable ? 'Menu prices are set by the business and checked by Buja when you order. Pay when your order reaches you. ' : 'Agree the price before work starts. Pay when the job is done. '}If something goes wrong, rate them here so the next person knows. ${a.rating.count ? '' : 'Nobody has rated them on Buja yet.'}</div></div>
       <div class="small muted">${a.jobs} people have contacted them through Buja.</div>
-    </main>`;
+    </main>
+    ${a.orderable ? `<div class="ord-bar" id="obar" hidden><button class="btn btn-primary" id="ocheck"><span class="ord-n" id="on">0</span><span class="grow" style="text-align:left">View order</span><strong id="otot">₦0</strong></button></div>
+    <div class="ord-ov" id="ov" hidden><div class="ord-sheet" id="osheet"></div></div>` : ''}`;
   }, {
     mount(el, { id }) {
       if (id === 'register') return;
@@ -203,6 +223,63 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
       const ring = async (b, mode) => { busy(b, true); try { const t = await open(); const r = await api.startCall(t, mode); go('/rtc/' + r.call.room); } catch (err) { busy(b, false); failed(el, err); } };
       el.querySelector('#bcall')?.addEventListener('click', (e) => ring(e.currentTarget, 'audio'));
       el.querySelector('#vcall')?.addEventListener('click', (e) => ring(e.currentTarget, 'video'));
+      const a = window.__bujaBiz; if (!a || !a.orderable) return;
+      const nn = (n) => '₦' + Number(n || 0).toLocaleString();
+      const menu = a.menu || []; const byId = new Map(menu.map((m) => [String(m.id), m]));
+      const KEY = 'buja_cart_' + a.id;
+      let cart = {}; try { cart = JSON.parse(sessionStorage.getItem(KEY) || '{}') || {}; } catch (e) { cart = {}; }
+      Object.keys(cart).forEach((k) => { if (!byId.has(k)) delete cart[k]; });
+      const save = () => { try { sessionStorage.setItem(KEY, JSON.stringify(cart)); } catch (e) {} };
+      const count = () => Object.values(cart).reduce((s, n) => s + n, 0);
+      const sub = () => Object.entries(cart).reduce((s, [k, n]) => s + (byId.get(k)?.price || 0) * n, 0);
+      const fee = a.deliveryFee || 0;
+      const paint = () => {
+        el.querySelectorAll('[data-q]').forEach((x) => { const n = cart[x.dataset.q] || 0; x.textContent = n; x.closest('.ord-step').classList.toggle('on', n > 0); });
+        const n = count(), bar = el.querySelector('#obar'); if (!bar) return;
+        bar.hidden = n === 0; el.querySelector('#on').textContent = n; el.querySelector('#otot').textContent = nn(sub() + fee);
+      };
+      el.querySelectorAll('[data-plus]').forEach((b) => b.addEventListener('click', () => { if (!a.available) { toast('They are not taking orders right now'); return; } const k = b.dataset.plus; cart[k] = Math.min(50, (cart[k] || 0) + 1); save(); paint(); }));
+      el.querySelectorAll('[data-minus]').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.minus; if (!cart[k]) return; cart[k]--; if (!cart[k]) delete cart[k]; save(); paint(); }));
+      el.querySelectorAll('[data-sec]').forEach((b) => b.addEventListener('click', () => el.querySelector('#sec' + b.dataset.sec)?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
+      if (q().get('menu') === '1') setTimeout(() => el.querySelector('#menu')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+      paint();
+      const ov = el.querySelector('#ov'), sh = el.querySelector('#osheet');
+      const close = () => { ov.hidden = true; document.body.style.overflow = ''; };
+      ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+      let pos = null;
+      const checkout = (free) => {
+        const lines = Object.entries(cart).map(([k, n]) => [byId.get(k), n]).filter(([m]) => m);
+        const s = sub(), short = !free && a.minOrder && s < a.minOrder;
+        sh.innerHTML = `<div class="ord-grab"></div>
+          <div class="row" style="align-items:center"><div class="grow h-md">${free ? 'Your order' : 'Check your order'}</div><button class="iconbtn" id="oclose" aria-label="Close">${icon('xmark')}</button></div>
+          <div class="small muted" style="margin-top:-6px">${h(a.name)}</div>
+          ${free ? `<div class="field" style="margin:0"><label for="oprob">What would you like?</label><textarea class="input" id="oprob" maxlength="400" placeholder="1 plate of jollof rice with chicken, 1 bottle of water" style="height:96px;padding:12px 14px;resize:none"></textarea><div class="error" data-error="problem"></div></div>`
+          : `<div class="stack" style="gap:8px">${lines.map(([m, n]) => `<div class="row" style="gap:10px;align-items:center"><span class="ord-qty">${n}×</span><span class="grow">${h(m.name)}</span><strong>${nn(m.price * n)}</strong></div>`).join('')}
+            <div class="ord-sum"><div class="row"><span class="grow muted">Items</span><span>${nn(s)}</span></div><div class="row"><span class="grow muted">Delivery</span><span>${fee ? nn(fee) : 'Included'}</span></div><div class="row" style="font-size:18px;font-weight:900"><span class="grow">Total</span><span>${nn(s + fee)}</span></div></div>
+            ${short ? `<div class="small" style="color:#B42318">The smallest order here is ${nn(a.minOrder)}. Add ${nn(a.minOrder - s)} more.</div>` : ''}</div>`}
+          <div class="field" style="margin:0"><label>Deliver to</label><button class="btn btn-outline" id="opin" type="button" style="justify-content:flex-start">${icon('location-crosshairs')} <span id="opintx">${pos ? 'Your location is set' : 'Finding where you are…'}</span></button></div>
+          <div class="field" style="margin:0"><label for="olm">A landmark so the rider finds you</label><input class="input" id="olm" maxlength="160" placeholder="Blue gate beside the pharmacy, Flat 4"></div>
+          ${free ? '' : `<div class="field" style="margin:0"><label for="onote">Note for the kitchen (optional)</label><input class="input" id="onote" maxlength="160" placeholder="Extra pepper, no onions"></div>`}
+          <div class="small muted" style="line-height:1.5">${free ? 'They accept, send you a price to agree in the app, then you watch the delivery come to you on the map.' : 'You pay on delivery. They accept, tell you when it will be ready, then you watch the rider come to you on the map.'}</div>
+          <button class="btn btn-primary" id="oplace" ${short ? 'disabled' : ''}>${icon('bag-shopping')} ${free ? 'Send order' : 'Place order · ' + nn(s + fee)}</button>`;
+        ov.hidden = false; document.body.style.overflow = 'hidden';
+        sh.querySelector('#oclose').addEventListener('click', close);
+        const locate = async () => { const t = sh.querySelector('#opintx'); if (t) t.textContent = 'Finding where you are…'; const p = await here(10000); if (p) pos = p; const t2 = sh.querySelector('#opintx'); if (t2) t2.textContent = pos ? 'Here, where you are now (GPS)' : 'Tap to try again. Turn on location'; sh.querySelector('#opin')?.classList.toggle('btn-ink', !!pos); };
+        sh.querySelector('#opin').addEventListener('click', locate);
+        if (!pos) locate(); else { sh.querySelector('#opintx').textContent = 'Here, where you are now (GPS)'; sh.querySelector('#opin').classList.add('btn-ink'); }
+        sh.querySelector('#oplace').addEventListener('click', async (e) => {
+          const b = e.currentTarget; busy(b, true);
+          if (!pos) pos = await here(10000);
+          if (!pos) { busy(b, false); toast('Turn on location so they can bring it to you'); return; }
+          const body = { artisanId: a.id, lat: pos.lat, lng: pos.lng, landmark: sh.querySelector('#olm').value, kind: 'order' };
+          if (free) body.problem = sh.querySelector('#oprob').value;
+          else { body.items = Object.entries(cart).map(([k, n]) => ({ id: +k, qty: n })); body.problem = sh.querySelector('#onote').value; }
+          try { const r = await api.jobCreate(body); cart = {}; save(); close(); toast('Order sent to ' + a.name); go('/jobs/' + r.id); }
+          catch (err) { busy(b, false); if (err && err.fields) showErrors(sh, err.fields); failed(el, err); }
+        });
+      };
+      el.querySelector('#ocheck')?.addEventListener('click', () => checkout(false));
+      el.querySelector('#freeorder')?.addEventListener('click', () => checkout(true));
     }
   });
 

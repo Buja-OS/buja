@@ -11,11 +11,11 @@ final class Osm
     private const ENDPOINTS = ['https://overpass.kumi.systems/api/interpreter', 'https://overpass-api.de/api/interpreter'];
     private const UA = 'BujaApp/1.0 (Abuja city app; contact hello@buja.ng)';
     /** Plain words to search Nominatim with, when Overpass is unavailable. */
-    private const WORDS = ['food' => 'restaurant', 'lounge' => 'bar', 'nightlife' => 'nightclub', 'relax' => 'park', 'shopping' => 'supermarket', 'kids' => 'playground', 'worship' => 'church', 'hotel' => 'hotel', 'culture' => 'museum', 'services' => 'pharmacy'];
+    private const WORDS = ['food' => 'restaurant', 'lounge' => 'bar', 'nightlife' => 'nightclub', 'relax' => 'park', 'shopping' => 'supermarket', 'kids' => 'playground', 'worship' => 'church', 'hotel' => 'hotel', 'culture' => 'museum', 'services' => 'bank', 'health' => 'hospital'];
     /** Which OSM tags to ask for, per Buja category. */
     private const TAGS = [
-        'food' => ['amenity' => ['restaurant', 'fast_food', 'cafe', 'food_court']],
-        'lounge' => ['amenity' => ['bar', 'pub', 'biergarten']],
+        'food' => ['amenity' => ['restaurant', 'fast_food', 'cafe', 'food_court', 'ice_cream'], 'shop' => ['bakery']],
+        'lounge' => ['amenity' => ['bar', 'pub', 'biergarten']],   // plus anything with "lounge" in its name (see LOUNGE_NAMES)
         'nightlife' => ['amenity' => ['nightclub']],
         'relax' => ['leisure' => ['park', 'garden', 'nature_reserve'], 'tourism' => ['viewpoint', 'picnic_site']],
         'shopping' => ['shop' => ['mall', 'supermarket', 'department_store'], 'amenity' => ['marketplace']],
@@ -23,18 +23,73 @@ final class Osm
         'worship' => ['amenity' => ['place_of_worship']],
         'hotel' => ['tourism' => ['hotel', 'guest_house']],
         'culture' => ['tourism' => ['museum', 'gallery', 'attraction'], 'historic' => ['monument', 'memorial']],
-        'services' => ['shop' => ['hairdresser', 'laundry', 'car_repair', 'mobile_phone'], 'amenity' => ['pharmacy', 'bank', 'hospital', 'fuel']],
+        'services' => ['shop' => ['hairdresser', 'beauty', 'laundry', 'dry_cleaning', 'car_repair', 'mobile_phone', 'tailor'], 'amenity' => ['bank', 'fuel', 'car_wash']],
+        'health' => ['amenity' => ['hospital', 'clinic', 'doctors', 'pharmacy', 'dentist'], 'healthcare' => ['hospital', 'clinic', 'laboratory']],
     ];
+    /** Every category the city-wide import walks through, one per run. */
+    public const IMPORT_ORDER = ['food', 'lounge', 'worship', 'health', 'hotel', 'shopping', 'relax', 'nightlife', 'culture', 'kids', 'services'];
+
+    /** The finer kind of place, from its OSM tags: church or mosque, hospital or pharmacy, restaurant or fast food. */
+    public static function subtype(array $t): ?string
+    {
+        if (($t['amenity'] ?? '') === 'place_of_worship') { $r = strtolower((string) ($t['religion'] ?? '')); return $r === 'christian' ? 'church' : ($r === 'muslim' ? 'mosque' : 'worship'); }
+        if (preg_match('/lounge/i', (string) ($t['name'] ?? '')) && in_array($t['amenity'] ?? '', ['bar', 'pub', 'restaurant', 'nightclub', 'cafe', 'biergarten'], true)) return 'lounge';
+        foreach (['amenity', 'healthcare', 'shop', 'tourism', 'leisure', 'historic'] as $k) if (!empty($t[$k])) return mb_substr((string) $t[$k], 0, 30);
+        return null;
+    }
+
+    /**
+     * Saves one OSM element as a place, or fills in details an older copy lacked (phone, website, photo links).
+     * Returns [row, isNew] or null when it has no name or position.
+     */
+    public static function save(array $e, string $category): ?array
+    {
+        $t = $e['tags'] ?? [];
+        $name = trim((string) ($t['name'] ?? '')); if ($name === '' || mb_strlen($name) > 70) return null;
+        $plat = (float) ($e['lat'] ?? $e['center']['lat'] ?? 0); $plng = (float) ($e['lon'] ?? $e['lng'] ?? $e['center']['lon'] ?? 0);
+        if (!$plat || !$plng) return null;
+        $osmId = ($e['type'] ?? 'node') . '/' . ($e['id'] ?? '');
+        $district = self::districtFor($plat, $plng);
+        $phone = $t['phone'] ?? $t['contact:phone'] ?? null; $web = $t['website'] ?? $t['contact:website'] ?? null;
+        $wd = isset($t['wikidata']) && preg_match('/^Q\d{1,12}$/', (string) $t['wikidata']) ? (string) $t['wikidata'] : null;
+        $commons = isset($t['wikimedia_commons']) && str_starts_with((string) $t['wikimedia_commons'], 'File:') ? mb_substr((string) $t['wikimedia_commons'], 0, 200) : null;
+        $notable = $wd || !empty($t['wikipedia']) ? 1 : 0;
+        $extra = ['subtype' => self::subtype($t), 'religion' => isset($t['religion']) ? mb_substr((string) $t['religion'], 0, 20) : null, 'phone' => $phone ? mb_substr((string) $phone, 0, 40) : null,
+            'website' => $web && preg_match('#^https?://#i', (string) $web) ? mb_substr((string) $web, 0, 200) : null, 'wikidata' => $wd, 'commons' => $commons, 'notable' => $notable];
+        $existing = Db::one('SELECT * FROM spots WHERE osm_id = ? OR (name = ? AND district = ?)', [$osmId, $name, $district]);
+        if ($existing) {
+            // fill only what is missing; never overwrite what a moderator or resident corrected
+            $sets = []; $p = [];
+            foreach ($extra as $col => $v) if ($v !== null && $v !== 0 && array_key_exists($col, $existing) && ($existing[$col] === null || $existing[$col] === '' || ($col === 'notable' && !(int) $existing[$col]))) { $sets[] = "$col = ?"; $p[] = $v; }
+            if ($sets) { try { $p[] = $existing['id']; Db::run('UPDATE spots SET ' . implode(', ', $sets) . ' WHERE id = ?', $p); } catch (Throwable $ex) {} }
+            return [$existing, false];
+        }
+        $cuisine = isset($t['cuisine']) ? str_replace([';', '_'], [', ', ' '], (string) $t['cuisine']) : null;
+        $desc = trim(implode('. ', array_filter([$cuisine ? 'Serves ' . $cuisine : null, $t['addr:street'] ?? null, isset($t['denomination']) ? ucfirst(str_replace('_', ' ', (string) $t['denomination'])) : null])));
+        $tags = array_values(array_unique(array_filter([$t['cuisine'] ?? null, $extra['subtype'], $t['amenity'] ?? $t['shop'] ?? $t['leisure'] ?? $t['tourism'] ?? null])));
+        $cols = ['name' => $name, 'category' => $category, 'district' => $district, 'area' => $t['addr:street'] ?? ($t['addr:suburb'] ?? null), 'tags' => json_encode($tags), 'price_level' => 2,
+            'description' => mb_substr($desc !== '' ? $desc . '. Listed on OpenStreetMap; not yet reviewed on Buja.' : 'Listed on OpenStreetMap; not yet reviewed on Buja.', 0, 400),
+            'hours' => isset($t['opening_hours']) ? mb_substr((string) $t['opening_hours'], 0, 60) : null, 'lat' => $plat, 'lng' => $plng, 'source' => 'osm', 'osm_id' => $osmId, 'active' => 1, 'created_at' => Db::now()];
+        try { $all = $cols + $extra; Db::run('INSERT INTO spots (' . implode(', ', array_keys($all)) . ') VALUES (' . implode(',', array_fill(0, count($all), '?')) . ')', array_values($all)); }
+        catch (Throwable $ex) { Db::run('INSERT INTO spots (' . implode(', ', array_keys($cols)) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')', array_values($cols)); }   // before migration 043
+        $row = Db::one('SELECT * FROM spots WHERE id = ?', [Db::lastId()]);
+        return $row ? [$row, true] : null;
+    }
+
+    /** Overpass clauses for a category, around a point or inside a box. */
+    private static function clauses(string $category, string $area): string
+    {
+        $c = '';
+        foreach (self::TAGS[$category] as $key => $values) { $v = implode('|', $values); foreach (['node', 'way'] as $type) $c .= sprintf('%s["%s"~"^(%s)$"]["name"](%s);', $type, $key, $v, $area); }
+        if ($category === 'lounge') foreach (['node', 'way'] as $type) $c .= sprintf('%s["name"~"lounge",i]["amenity"~"^(restaurant|bar|pub|nightclub|cafe)$"](%s);', $type, $area);
+        return $c;
+    }
 
     /** Finds up to $limit real places of a category near a point. Returns rows already saved to spots. */
     public static function nearby(string $category, float $lat, float $lng, int $radiusM = 6000, int $limit = 12): array
     {
         if (!isset(self::TAGS[$category])) return [];
-        $clauses = '';
-        foreach (self::TAGS[$category] as $key => $values) {
-            $v = implode('|', $values);
-            foreach (['node', 'way'] as $type) $clauses .= sprintf('%s["%s"~"^(%s)$"]["name"](around:%d,%F,%F);', $type, $key, $v, $radiusM, $lat, $lng);
-        }
+        $clauses = self::clauses($category, sprintf('around:%d,%F,%F', $radiusM, $lat, $lng));
         // Nobody should wait on a slow map server. Short timeouts, one retry, then a different source.
         $query = '[out:json][timeout:5];(' . $clauses . ');out center ' . ($limit * 3) . ';';
         $raw = null;
@@ -49,24 +104,8 @@ final class Osm
         if (!$els) return [];
         $out = [];
         foreach ($els as $e) {
-            $name = trim((string) ($e['tags']['name'] ?? '')); if ($name === '' || mb_strlen($name) > 70) continue;
-            $plat = (float) ($e['lat'] ?? $e['center']['lat'] ?? 0); $plng = (float) ($e['lng'] ?? $e['lon'] ?? $e['center']['lon'] ?? 0);
-            if (!$plat || !$plng) continue;
-            $osmId = ($e['type'] ?? 'node') . '/' . ($e['id'] ?? '');
-            $district = self::districtFor($plat, $plng);
-            $existing = Db::one('SELECT * FROM spots WHERE osm_id = ? OR (name = ? AND district = ?)', [$osmId, $name, $district]);
-            if ($existing) { if ((int) $existing['active']) $out[] = $existing; continue; }
-            $t = $e['tags'];
-            $desc = trim(implode(' · ', array_filter([
-                $t['cuisine'] ?? null ? 'Serves ' . str_replace(';', ', ', $t['cuisine']) : null,
-                $t['opening_hours'] ?? null ? null : null,
-                $t['addr:street'] ?? null ? 'On ' . $t['addr:street'] : null,
-                'Listed on OpenStreetMap, not yet reviewed by anyone on Buja.',
-            ])));
-            Db::run('INSERT INTO spots (name, category, district, area, tags, price_level, description, hours, lat, lng, source, osm_id, active, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?)',
-                [$name, $category, $district, $t['addr:suburb'] ?? null, json_encode(array_values(array_filter([$t['cuisine'] ?? null, $t['amenity'] ?? null, $t['shop'] ?? null]))), 2, $desc, mb_substr((string) ($t['opening_hours'] ?? ''), 0, 60) ?: null, $plat, $plng, 'osm', $osmId, Db::now()]);
-            $row = Db::one('SELECT * FROM spots WHERE id = ?', [Db::lastId()]);
-            if ($row) $out[] = $row;
+            $r = self::save($e, $category); if (!$r) continue;
+            if ((int) $r[0]['active']) $out[] = $r[0];
             if (count($out) >= $limit) break;
         }
         return $out;
@@ -94,19 +133,12 @@ final class Osm
         return $out;
     }
 
-    /**
-     * Which district a point is in. Buja's Waka stops are real surveyed points, so the nearest one is a
-     * better answer than a district centroid; the centroids are only a fallback.
-     */
     /** Imports every named place of a category across the city in one pass. Returns how many were new. */
-    public static function importCategory(string $category, int $limit = 400): array
+    public static function importCategory(string $category, int $limit = 3000): array
     {
         if (!isset(self::TAGS[$category])) return ['added' => 0, 'seen' => 0, 'error' => 'unknown category'];
         // The FCT's built-up area, roughly: Bwari and Kubwa in the north to Kuje and the airport in the south.
-        $bbox = '8.85,7.15,9.25,7.65';
-        $clauses = '';
-        foreach (self::TAGS[$category] as $key => $values) { $v = implode('|', $values); foreach (['node', 'way'] as $type) $clauses .= sprintf('%s["%s"~"^(%s)$"]["name"](%s);', $type, $key, $v, $bbox); }
-        $query = '[out:json][timeout:25];(' . $clauses . ');out center ' . $limit . ';';
+        $query = '[out:json][timeout:25];(' . self::clauses($category, '8.85,7.15,9.25,7.65') . ');out center ' . $limit . ';';
         $raw = null; $err = '';
         foreach (self::ENDPOINTS as $url) {
             $ch = curl_init($url);
@@ -116,23 +148,14 @@ final class Osm
             $err = 'overpass ' . parse_url($url, PHP_URL_HOST) . ' returned ' . $code;
         }
         if ($raw === null) return ['added' => 0, 'seen' => 0, 'error' => $err ?: 'no map server answered'];
-        $els = json_decode($raw, true)['elements'] ?? [];
+        return self::saveAll(json_decode($raw, true)['elements'] ?? [], $category);
+    }
+
+    /** Saves a batch of OSM elements; returns counts. Split out so it can be tested without a network. */
+    public static function saveAll(array $els, string $category): array
+    {
         $added = 0; $seen = 0;
-        foreach ($els as $e) {
-            $name = trim((string) ($e['tags']['name'] ?? '')); if ($name === '' || mb_strlen($name) > 70) continue;
-            $plat = (float) ($e['lat'] ?? $e['center']['lat'] ?? 0); $plng = (float) ($e['lon'] ?? $e['center']['lon'] ?? 0);
-            if (!$plat || !$plng) continue;
-            $seen++;
-            $osmId = ($e['type'] ?? 'node') . '/' . ($e['id'] ?? '');
-            $district = self::districtFor($plat, $plng);
-            if (Db::one('SELECT id FROM spots WHERE osm_id = ? OR (name = ? AND district = ?)', [$osmId, $name, $district])) continue;
-            $t = $e['tags'];
-            $desc = trim(implode('. ', array_filter([$t['cuisine'] ? 'Serves ' . str_replace([';', '_'], [', ', ' '], (string) $t['cuisine']) : null, $t['addr:street'] ?? null, $t['phone'] ?? $t['contact:phone'] ?? null])));
-            Db::run('INSERT INTO spots (name, category, district, area, tags, price_level, description, hours, lat, lng, source, osm_id, active, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?)',
-                [$name, $category, $district, $t['addr:street'] ?? null, json_encode(array_values(array_filter([$t['cuisine'] ?? null, $t['amenity'] ?? $t['shop'] ?? $t['leisure'] ?? $t['tourism'] ?? null]))), 2,
-                 mb_substr($desc !== '' ? $desc : 'Found on OpenStreetMap. Nobody on Buja has reviewed it yet.', 0, 400), isset($t['opening_hours']) ? mb_substr((string) $t['opening_hours'], 0, 60) : null, $plat, $plng, 'osm', $osmId, Db::now()]);
-            $added++;
-        }
+        foreach ($els as $e) { $r = self::save($e, $category); if (!$r) continue; $seen++; if ($r[1]) $added++; }
         return ['added' => $added, 'seen' => $seen, 'error' => null];
     }
 
@@ -162,10 +185,16 @@ final class Osm
         return ['added' => $added, 'seen' => $seen, 'error' => null];
     }
 
+    /**
+     * Which district a point is in. Buja's Waka stops are real surveyed points, so the nearest one is a
+     * better answer than a district centroid; the centroids are only a fallback.
+     */
     public static function districtFor(float $lat, float $lng): string
     {
+        static $stops = null;
+        if ($stops === null) $stops = Db::pdo()->query('SELECT district, lat, lng FROM places WHERE active = 1')->fetchAll();
         $best = null; $bestKm = 1e9;
-        foreach (Db::pdo()->query('SELECT district, lat, lng FROM places WHERE active = 1')->fetchAll() as $p) {
+        foreach ($stops as $p) {
             $km = WakaRules::km($lat, $lng, (float) $p['lat'], (float) $p['lng']);
             if ($km < $bestKm) { $bestKm = $km; $best = $p['district']; }
         }

@@ -199,6 +199,14 @@ $router->post('/call/{room}/signal',         [CallController::class, 'signal']);
 $router->get('/call/{room}/signals',         [CallController::class, 'signals']);
 $router->post('/call/{room}/decline',        [CallController::class, 'decline']);
 $router->get('/calls/incoming',              [CallController::class, 'incoming']);
+$router->get('/pulse',                        [PresenceController::class, 'pulse']);
+$router->get('/statuses',                     [StatusController::class, 'index']);
+$router->post('/statuses',                    [StatusController::class, 'create']);
+$router->post('/statuses/{id}/view',          [StatusController::class, 'view']);
+$router->get('/statuses/{id}/viewers',        [StatusController::class, 'viewers']);
+$router->delete('/statuses/{id}',             [StatusController::class, 'destroy']);
+$router->post('/threads/{id}/typing',        [PresenceController::class, 'typing']);
+$router->patch('/me/presence',               [PresenceController::class, 'settings']);
 $router->get('/weather',                     [WeatherController::class, 'index']);
 
 // Place photos and saved searches
@@ -237,6 +245,11 @@ $router->post('/artisans/me',                [ArtisanController::class, 'save'])
 $router->get('/artisans/mine',               [ServiceJobController::class, 'mine']);   // before {id}, which would match 'mine'
 $router->get('/artisans/{id}',               [ArtisanController::class, 'show']);
 $router->post('/artisans/{id}/chat',         [ArtisanController::class, 'chat']);
+$router->get('/artisans/me/menu',             [ArtisanController::class, 'myMenu']);
+$router->post('/artisans/me/menu',            [ArtisanController::class, 'addMenuItem']);
+$router->patch('/artisans/me/menu/{id}',      [ArtisanController::class, 'updateMenuItem']);
+$router->delete('/artisans/me/menu/{id}',     [ArtisanController::class, 'deleteMenuItem']);
+$router->patch('/artisans/me/delivery',       [ArtisanController::class, 'delivery']);
 $router->get('/citizen/agencies',            [CitizenController::class, 'agencies']);
 $router->get('/citizen/reports',             [CitizenController::class, 'mine']);
 $router->post('/citizen/reports',            [CitizenController::class, 'create']);

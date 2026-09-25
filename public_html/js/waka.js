@@ -36,17 +36,21 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
   }
 
   /* ---------- Place picker ---------- */
-  function picker(el, onPick) {
+  const kmBetween = (a, b, c, d) => { const R = 6371, r = Math.PI / 180, dLa = (c - a) * r, dLo = (d - b) * r; const x = Math.sin(dLa / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
+  const distTxt = (d) => d < 1 ? Math.round(d * 1000 / 10) * 10 + ' m' : d.toFixed(1) + ' km';
+  const here = (ms = 8000) => new Promise((res) => { if (!navigator.geolocation) return res(null); let done = false; const f = (v) => { if (!done) { done = true; res(v); } }; setTimeout(() => f(null), ms); navigator.geolocation.getCurrentPosition((p) => f({ lat: p.coords.latitude, lng: p.coords.longitude }), () => f(null), { enableHighAccuracy: true, timeout: ms, maximumAge: 60000 }); });
+  function picker(el, onPick, me) {
     const sheet = el.querySelector('#picker');
     return async (title) => {
-      const { places } = await api.wakaPlaces();
+      let { places } = await api.wakaPlaces();
+      if (me) places = places.map((p) => ({ ...p, _d: kmBetween(me.lat, me.lng, p.lat, p.lng) })).sort((a, b) => a._d - b._d);
       sheet.innerHTML = `<div style="position:fixed;inset:0;background:var(--surface);z-index:30;display:flex;flex-direction:column;max-width:480px;margin:0 auto">
         <header class="topbar"><button class="iconbtn" id="pclose" aria-label="Close">${icon('arrow-left')}</button><h1>${h(title)}</h1></header>
         <div class="pad stack" style="gap:10px"><div class="card row" style="height:48px;padding:0 16px"><label for="pq" style="position:absolute;left:-9999px">Search places</label>${icon('magnifying-glass')}<input id="pq" type="search" placeholder="Park, junction, landmark" autofocus style="flex:1;border:none;background:transparent;outline:none;font-size:15px;color:var(--ink)"></div>
         <button class="btn btn-outline" id="pgps" style="height:46px">${icon('location-dot')} Use where I am now</button><div class="small muted center" id="pgpsmsg"></div></div>
         <div id="plist" class="pad stack" style="gap:6px;padding-top:12px;overflow-y:auto;flex:1"></div></div>`;
       const list = sheet.querySelector('#plist');
-      const render = (v) => { const vv = v.trim().toLowerCase(); const rows = places.filter((p) => !vv || p.name.toLowerCase().includes(vv) || p.district.toLowerCase().includes(vv)); list.innerHTML = rows.map((p) => `<button class="card row" data-p="${p.id}" style="padding:12px 14px;text-align:left;width:100%;gap:12px"><span class="iconbtn" style="width:36px;height:36px;font-size:14px;color:${p.kind === 'park' ? 'var(--orange-dark)' : 'var(--ink-3)'}">${icon(p.kind === 'park' ? 'bus' : 'location-dot')}</span><span class="grow"><span style="font-size:15px;font-weight:600;display:block">${h(p.name)}</span><span class="small muted">${h(p.district)}${p.kind === 'park' ? ' · motor park' : ''}</span></span></button>`).join('') || `<div class="small muted center" style="padding:30px 0">No place found. More stops are added as riders suggest them.</div>`; };
+      const render = (v) => { const vv = v.trim().toLowerCase(); const rows = places.filter((p) => !vv || p.name.toLowerCase().includes(vv) || p.district.toLowerCase().includes(vv)); list.innerHTML = rows.map((p) => `<button class="card row" data-p="${p.id}" style="padding:12px 14px;text-align:left;width:100%;gap:12px"><span class="iconbtn" style="width:36px;height:36px;font-size:14px;color:${p.kind === 'park' ? 'var(--orange-dark)' : 'var(--ink-3)'}">${icon(p.kind === 'park' ? 'bus' : 'location-dot')}</span><span class="grow"><span style="font-size:15px;font-weight:600;display:block">${h(p.name)}</span><span class="small muted">${h(p.district)}${p.kind === 'park' ? ' · motor park' : ''}${p._d != null ? ' · ' + distTxt(p._d) + ' away' : ''}</span></span></button>`).join('') || `<div class="small muted center" style="padding:30px 0">No place found. More stops are added as riders suggest them.</div>`; };
       render('');
       sheet.querySelector('#pq').addEventListener('input', (e) => render(e.target.value));
       sheet.querySelector('#pgps').addEventListener('click', (e) => {
@@ -78,11 +82,14 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
     <main class="pad stack" style="gap:16px">
       <div class="card stack" style="padding:16px;gap:10px">
         <button class="row" id="from" style="height:52px;padding:0 14px;background:var(--surface);border:1px solid var(--line);border-radius:14px;width:100%;text-align:left;gap:12px"><span style="width:10px;height:10px;border-radius:5px;background:var(--ink)"></span><span class="grow" id="fromName" style="font-size:15px;color:var(--ink-3)">Where from?</span></button>
-        <div class="row" style="gap:10px"><div style="flex:1;height:1px;background:var(--line)"></div><button class="iconbtn" id="swap" aria-label="Swap" style="width:36px;height:36px">${icon('sliders')}</button></div>
+        <div class="row" style="gap:10px"><div style="flex:1;height:1px;background:var(--line)"></div><button class="iconbtn" id="swap" aria-label="Swap from and to" style="width:36px;height:36px">${icon('arrows-up-down')}</button></div>
         <button class="row" id="to" style="height:52px;padding:0 14px;background:var(--surface);border:1px solid var(--line);border-radius:14px;width:100%;text-align:left;gap:12px"><span style="width:10px;height:10px;border-radius:5px;background:var(--orange)"></span><span class="grow" id="toName" style="font-size:15px;color:var(--ink-3)">Where to?</span></button>
+        <div class="small muted" id="nearmsg" style="line-height:1.45;margin-top:-2px"></div>
         <button class="btn btn-primary" id="plan" disabled>${icon('route')} Find the way</button>
+        <div id="popular"></div>
         <a class="row" href="#/waka/map" style="gap:10px;padding:10px 12px;border-radius:14px;background:var(--night);color:#fff;text-decoration:none"><span style="width:34px;height:34px;border-radius:10px;background:rgba(126,217,87,.16);color:#7ED957;display:flex;align-items:center;justify-content:center">${icon('map-location-dot')}</span><span class="grow"><span style="display:block;font-size:14px;font-weight:700">Live Waka map</span><span class="small" style="color:#9AA0AB">Stops near you, road alerts, riders on routes now</span></span>${icon('chevron-right')}</a>
       </div>
+      <div id="recent"></div>
       ${saved.length ? `<div class="stack" style="gap:10px"><div class="section">SAVED</div><div class="card list">${saved.map((s) => `<a class="item" href="#/waka/plan?from=${s.from}&to=${s.to}"><div class="mi">${icon('bookmark')}</div><div class="grow"><div class="t">${h(s.label || s.fromName + ' to ' + s.toName)}</div><div class="s">${h(s.fromName)} → ${h(s.toName)}</div></div>${icon('chevron-right')}</a>`).join('')}</div></div>` : ''}
       <div class="stack" style="gap:10px"><div class="section">ROUTES RIGHT NOW</div>
         <div class="card list">${busy_.map((r) => `<a class="item" href="#/waka/route/${r.id}"><div class="mi" style="color:${r.color}">${icon(modeIcon[r.mode])}</div><div class="grow"><div class="t">${h(r.name)}</div><div class="s">${r.modeLabel} · ${naira(r.fare.amount)}${r.fare.confirmed ? '' : ' est.'} · ${r.stops.length} stops</div></div>${r.ridersNow ? `<span class="tag green">${r.ridersNow} now</span>` : ''}${icon('chevron-right')}</a>`).join('')}</div>
@@ -92,16 +99,45 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
     </main>
     <div id="picker"></div>`;
   }, {
-    mount(el) {
-      let from = null, to = null;
-      const qf = q().get('from'), qt = q().get('to');
-      if (qf || qt) api.wakaPlaces().then(({ places }) => { if (qf) from = places.find((p) => String(p.id) === qf) || null; if (qt) to = places.find((p) => String(p.id) === qt) || null; set(); });
-      const toq = q().get('toq'); if (toq) api.wakaPlaces(toq).then(({ places }) => { const p = places.find((x) => x.district === toq) || places[0]; if (p) { to = p; set(); } });
-      const set = () => { el.querySelector('#fromName').textContent = from ? from.name : 'Where from?'; el.querySelector('#fromName').style.color = from ? 'var(--ink)' : ''; el.querySelector('#toName').textContent = to ? to.name : 'Where to?'; el.querySelector('#toName').style.color = to ? 'var(--ink)' : ''; el.querySelector('#plan').disabled = !(from && to && from.id !== to.id); };
-      el.querySelector('#from').addEventListener('click', () => picker(el, (p) => { from = p; set(); })('Where from?'));
-      el.querySelector('#to').addEventListener('click', () => picker(el, (p) => { to = p; set(); })('Where to?'));
-      el.querySelector('#swap').addEventListener('click', () => { [from, to] = [to, from]; set(); });
-      el.querySelector('#plan').addEventListener('click', () => go(`/waka/plan?from=${from.id}&to=${to.id}`));
+    async mount(el) {
+      let from = null, to = null, me = null, auto = false;
+      const RK = 'buja_waka_recent';
+      const recents = () => { try { return JSON.parse(localStorage.getItem(RK) || '[]') || []; } catch { return []; } };
+      const qf = q().get('from'), qt = q().get('to'), toq = q().get('toq');
+      const set = () => {
+        el.querySelector('#fromName').textContent = from ? from.name : 'Where from?'; el.querySelector('#fromName').style.color = from ? 'var(--ink)' : '';
+        el.querySelector('#toName').textContent = to ? to.name : 'Where to?'; el.querySelector('#toName').style.color = to ? 'var(--ink)' : '';
+        el.querySelector('#plan').disabled = !(from && to && from.id !== to.id);
+        const m = el.querySelector('#nearmsg');
+        if (m) m.innerHTML = from && me ? (() => { const d = kmBetween(me.lat, me.lng, from.lat, from.lng); const walk = Math.max(1, Math.round(d * 1000 / 80)); return `${auto ? 'Starting from the nearest stop to you, ' : ''}${h(from.name)} is ${distTxt(d)} from you${d < 3 ? ', about ' + walk + ' min on foot' : ''}. <a href="${h(placeHref({ lat: from.lat, lng: from.lng, name: from.name, sub: from.district || '', icon: from.kind === 'park' ? 'bus' : 'location-dot', color: '#2E7D1E' }))}" style="font-weight:700;color:var(--orange-dark)">Walk there</a>`; })() : '';
+      };
+      const drawRecent = () => {
+        const box = el.querySelector('#recent'); if (!box) return; const r = recents();
+        box.innerHTML = r.length ? `<div class="stack" style="gap:10px"><div class="row"><div class="section grow" style="margin:0">RECENT TRIPS</div><button class="btn btn-ghost btn-sm" id="rclear" style="width:auto">Clear</button></div><div class="card list">${r.map((t) => `<a class="item" href="#/waka/plan?from=${t.from.id}&to=${t.to.id}"><div class="mi">${icon('clock-rotate-left')}</div><div class="grow"><div class="t">${h(t.from.name)} → ${h(t.to.name)}</div></div><button class="iconbtn" data-back="${t.from.id}|${t.to.id}" aria-label="Plan the way back" title="The way back" style="width:34px;height:34px">${icon('arrows-up-down')}</button></a>`).join('')}</div></div>` : '';
+        box.querySelector('#rclear')?.addEventListener('click', () => { try { localStorage.removeItem(RK); } catch {} drawRecent(); });
+        box.querySelectorAll('[data-back]').forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); const [f, t] = b.dataset.back.split('|'); go(`/waka/plan?from=${t}&to=${f}`); }));
+      };
+      drawRecent();
+      el.querySelector('#from').addEventListener('click', () => picker(el, (p) => { from = p; auto = false; set(); }, me)('Where from?'));
+      el.querySelector('#to').addEventListener('click', () => picker(el, (p) => { to = p; set(); }, me)('Where to?'));
+      el.querySelector('#swap').addEventListener('click', () => { [from, to] = [to, from]; auto = false; set(); });
+      el.querySelector('#plan').addEventListener('click', () => {
+        try { const r = recents().filter((t) => !(t.from.id === from.id && t.to.id === to.id)); r.unshift({ from: { id: from.id, name: from.name }, to: { id: to.id, name: to.name } }); localStorage.setItem(RK, JSON.stringify(r.slice(0, 5))); } catch {}
+        go(`/waka/plan?from=${from.id}&to=${to.id}`);
+      });
+      let places = [];
+      try { places = (await api.wakaPlaces()).places || []; } catch { return; }
+      if (qf) from = places.find((p) => String(p.id) === qf) || null;
+      if (qt) to = places.find((p) => String(p.id) === qt) || null;
+      if (toq) { const p = places.find((x) => x.district === toq) || places.find((x) => x.name.toLowerCase().includes(toq.toLowerCase())); if (p) to = p; }
+      set();
+      const pop = places.filter((p) => p.kind === 'park').slice(0, 8);
+      const pb = el.querySelector('#popular');
+      if (pb && pop.length) { pb.innerHTML = `<div class="small muted" style="margin-bottom:6px">Popular stops</div><div class="row" style="gap:6px;overflow-x:auto;padding-bottom:2px">${pop.map((p) => `<button class="chip" data-pop="${p.id}" style="flex-shrink:0">${h(p.name)}</button>`).join('')}</div>`; pb.querySelectorAll('[data-pop]').forEach((b) => b.addEventListener('click', () => { const p = places.find((x) => String(x.id) === b.dataset.pop); if (!from || from.id === p.id) { if (!from) { from = p; auto = false; } else to = p; } else to = p; set(); })); }
+      me = await here(8000);
+      if (!el.isConnected || !me) return;
+      if (!from && places.length) { from = places.map((p) => ({ p, d: kmBetween(me.lat, me.lng, p.lat, p.lng) })).sort((a, b) => a.d - b.d)[0].p; auto = true; }
+      set();
     }
   });
 

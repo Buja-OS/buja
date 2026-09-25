@@ -7,12 +7,13 @@ declare(strict_types=1);
  */
 final class ArtisanController
 {
-    public const TRADES = ['mechanic' => 'Mechanic', 'vulcanizer' => 'Vulcanizer / tyres', 'towing' => 'Towing', 'electrician' => 'Electrician', 'plumber' => 'Plumber', 'mason' => 'Mason / bricklayer', 'carpenter' => 'Carpenter', 'painter' => 'Painter', 'tiler' => 'Tiler', 'welder' => 'Welder', 'ac' => 'AC repair', 'generator' => 'Generator repair', 'solar' => 'Solar & inverter', 'cctv' => 'CCTV installer', 'dstv' => 'DStv / GOtv installer', 'phone' => 'Phone repair', 'laptop' => 'Laptop repair', 'carwash' => 'Car wash', 'laundry' => 'Laundry', 'cleaning' => 'Cleaning', 'errand' => 'Errand / dispatch', 'cook' => 'Cook / caterer', 'hair' => 'Hair & beauty', 'tailor' => 'Tailor', 'gardener' => 'Gardener', 'pest' => 'Pest control', 'locksmith' => 'Locksmith', 'movers' => 'Movers'];
+    // Businesses first (food and deliveries can be ordered from and tracked), then trades that come to you.
+    public const TRADES = ['restaurant' => 'Restaurant / food vendor', 'suya' => 'Suya & grills', 'bakery' => 'Bakery & cakes', 'drinks' => 'Drinks & lounge', 'grocery' => 'Groceries & provisions', 'water' => 'Water delivery', 'gas' => 'Cooking gas refill', 'events' => 'Events & decor', 'printing' => 'Printing & branding', 'photography' => 'Photographer', 'mechanic' => 'Mechanic', 'vulcanizer' => 'Vulcanizer / tyres', 'towing' => 'Towing', 'electrician' => 'Electrician', 'plumber' => 'Plumber', 'mason' => 'Mason / bricklayer', 'carpenter' => 'Carpenter', 'painter' => 'Painter', 'tiler' => 'Tiler', 'welder' => 'Welder', 'ac' => 'AC repair', 'generator' => 'Generator repair', 'solar' => 'Solar & inverter', 'cctv' => 'CCTV installer', 'dstv' => 'DStv / GOtv installer', 'phone' => 'Phone repair', 'laptop' => 'Laptop repair', 'carwash' => 'Car wash', 'laundry' => 'Laundry', 'cleaning' => 'Cleaning', 'errand' => 'Errand / dispatch', 'cook' => 'Cook / caterer', 'hair' => 'Hair & beauty', 'tailor' => 'Tailor', 'gardener' => 'Gardener', 'pest' => 'Pest control', 'locksmith' => 'Locksmith', 'movers' => 'Movers'];
 
     /** $contact: the artisan's own phone numbers, only for the artisan themselves. Everyone else reaches them inside Buja. */
-    private function shape(array $a, ?array $at = null, bool $contact = false): array
+    public function shape(array $a, ?array $at = null, bool $contact = false): array
     {
-        $u = Db::one('SELECT name, selfie_verified_at, district FROM users WHERE id = ?', [$a['user_id']]);
+        $u = Db::one('SELECT * FROM users WHERE id = ?', [$a['user_id']]) ?: [];
         $out = ['id' => (int) $a['user_id'], 'name' => $a['business'] ?: explode(' ', trim((string) ($u['name'] ?? 'Artisan')))[0], 'person' => explode(' ', trim((string) ($u['name'] ?? '')))[0],
             'trade' => $a['trade'], 'tradeLabel' => self::TRADES[$a['trade']] ?? $a['trade'], 'about' => $a['about'], 'phone' => $contact ? $a['phone'] : null, 'whatsapp' => $contact ? ($a['whatsapp'] ?: $a['phone']) : null,
             'district' => $a['base_district'], 'radiusKm' => (int) $a['radius_km'], 'years' => (int) $a['years'], 'available' => (bool) $a['available'],
@@ -21,7 +22,9 @@ final class ArtisanController
             'owner' => $a['owner_name'] ?? null, 'services' => json_decode((string) ($a['services'] ?? '[]'), true) ?: [], 'brands' => json_decode((string) ($a['brands'] ?? '[]'), true) ?: [],
             'mobileService' => (bool) ($a['mobile_service'] ?? 1), 'emergency' => (bool) ($a['emergency'] ?? 0), 'hours' => $a['hours'] ?? null, 'calloutFee' => isset($a['callout_fee']) && $a['callout_fee'] !== null ? (int) $a['callout_fee'] : null,
             'address' => $a['address'] ?? null, 'landmark' => $a['landmark'] ?? null, 'hasId' => !empty($a['id_upload']),
-            'onlineAgo' => !empty($a['last_online_at']) ? max(0, time() - strtotime($a['last_online_at'] . ' UTC')) : null];
+            'onlineAgo' => !empty($a['last_online_at']) ? max(0, time() - strtotime($a['last_online_at'] . ' UTC')) : null,
+            'onDuty' => ServiceJobController::onDuty($a['schedule'] ?? null), 'orderable' => in_array($a['trade'], ServiceJobController::ORDER_TRADES, true),
+            'online' => Presence::shows($u) && !empty($u['last_seen_at']) && time() - strtotime($u['last_seen_at'] . ' UTC') <= Presence::ONLINE_SEC * 2];
         if ($at && $a['lat'] !== null) { $km = WakaRules::km($at[0], $at[1], (float) $a['lat'], (float) $a['lng']); $out['km'] = $km < 1 ? round($km, 1) : round($km); }
         return $out;
     }
@@ -45,6 +48,9 @@ final class ArtisanController
                 return ($x['km'] ?? 9999) <=> ($y['km'] ?? 9999);
             });
         } else usort($rows, fn($x, $y) => ($y['rating']['count'] <=> $x['rating']['count']) ?: ($y['jobs'] <=> $x['jobs']));
+        $sort = (string) ($q['sort'] ?? '');
+        if ($sort === 'rating') usort($rows, fn($x, $y) => ((float) ($y['rating']['count'] ? $y['rating']['stars'] : 0) <=> (float) ($x['rating']['count'] ? $x['rating']['stars'] : 0)) ?: ($y['rating']['count'] <=> $x['rating']['count']) ?: (($x['km'] ?? 9999) <=> ($y['km'] ?? 9999)));
+        elseif ($sort === 'open') usort($rows, fn($x, $y) => ((int) $y['onDuty'] <=> (int) $x['onDuty']) ?: ((int) $y['online'] <=> (int) $x['online']) ?: (($x['km'] ?? 9999) <=> ($y['km'] ?? 9999)));
         Http::json(['artisans' => array_slice($rows, 0, 40), 'trades' => self::TRADES]);
     }
 
@@ -54,7 +60,87 @@ final class ArtisanController
         $u = Auth::require();
         $a = Db::one('SELECT * FROM artisans WHERE user_id = ?', [$id]); if (!$a) Http::json(['error' => 'not_found', 'message' => 'No artisan profile there.'], 404);
         $me = Db::one('SELECT lat, lng FROM users WHERE id = ?', [$u['id']]);
-        Http::json(['artisan' => $this->shape($a, $me && $me['lat'] !== null ? [(float) $me['lat'], (float) $me['lng']] : null)]);
+        $out = $this->shape($a, $me && $me['lat'] !== null ? [(float) $me['lat'], (float) $me['lng']] : null);
+        $out['orderable'] = in_array($a['trade'], ServiceJobController::ORDER_TRADES, true);
+        $out['menu'] = $out['orderable'] ? self::menuOf($id, false) : [];
+        $out['deliveryFee'] = isset($a['delivery_fee']) && $a['delivery_fee'] !== null ? (int) $a['delivery_fee'] : null;
+        $out['minOrder'] = isset($a['min_order']) && $a['min_order'] !== null ? (int) $a['min_order'] : null;
+        Http::json(['artisan' => $out]);
+    }
+
+    /* ---------------- Menus and price lists: restaurants, bakeries, grills, groceries, water, gas ---------------- */
+
+    public static function menuOf(int $artisanId, bool $all): array
+    {
+        try {
+            $st = Db::pdo()->prepare('SELECT * FROM artisan_menu WHERE artisan_id = ? AND deleted_at IS NULL' . ($all ? '' : ' AND available = 1') . ' ORDER BY sort, id');
+            $st->execute([$artisanId]);
+        } catch (Throwable $e) { return []; }
+        return array_map(fn($m) => ['id' => (int) $m['id'], 'section' => $m['section'], 'name' => $m['name'], 'description' => $m['description'], 'price' => (int) $m['price'],
+            'photo' => $m['photo_upload'] ? '/api/uploads/' . (int) $m['photo_upload'] : null, 'available' => (bool) $m['available']], $st->fetchAll());
+    }
+    private function mine(array $u): array
+    {
+        $a = Db::one('SELECT * FROM artisans WHERE user_id = ?', [$u['id']]);
+        if (!$a) Http::json(['error' => 'not_found', 'message' => 'Register your business first.'], 404);
+        if (!in_array($a['trade'], ServiceJobController::ORDER_TRADES, true)) Http::json(['error' => 'validation', 'message' => 'Menus are for food, drinks, groceries, water, gas, laundry and errands. Change your trade on your profile to add one.'], 422);
+        return $a;
+    }
+    private function menuInput(array $b, array $u, ?array $old = null): array
+    {
+        $e = []; $row = [];
+        if ($old === null || array_key_exists('name', $b)) { $n = mb_substr(trim((string) ($b['name'] ?? '')), 0, 80); if (mb_strlen($n) < 2) $e['name'] = 'Name the dish or item.'; $row['name'] = $n; }
+        if ($old === null || array_key_exists('price', $b)) { $pr = (int) preg_replace('/\D+/', '', (string) ($b['price'] ?? '')); if ($pr < 50 || $pr > 2000000) $e['price'] = 'A price between ₦50 and ₦2,000,000.'; $row['price'] = $pr; }
+        if (array_key_exists('section', $b)) $row['section'] = mb_substr(trim((string) $b['section']), 0, 40) ?: null;
+        if (array_key_exists('description', $b)) $row['description'] = mb_substr(trim((string) $b['description']), 0, 240) ?: null;
+        if (array_key_exists('available', $b)) $row['available'] = !empty($b['available']) ? 1 : 0;
+        if (array_key_exists('sort', $b)) $row['sort'] = max(-999, min(999, (int) $b['sort']));
+        if (!empty($b['uploadId'])) $row['photo_upload'] = UploadsController::claim((int) $b['uploadId'], $u);
+        if (array_key_exists('removePhoto', $b) && $b['removePhoto']) $row['photo_upload'] = null;
+        if ($e) Http::json(['error' => 'validation', 'fields' => $e], 422);
+        return $row;
+    }
+    /** GET /artisans/me/menu */
+    public function myMenu(): void
+    {
+        $u = Auth::require(); $a = $this->mine($u);
+        Http::json(['menu' => self::menuOf((int) $u['id'], true), 'deliveryFee' => isset($a['delivery_fee']) ? ($a['delivery_fee'] !== null ? (int) $a['delivery_fee'] : null) : null, 'minOrder' => isset($a['min_order']) && $a['min_order'] !== null ? (int) $a['min_order'] : null]);
+    }
+    /** POST /artisans/me/menu { section, name, description, price, uploadId, available } */
+    public function addMenuItem(): void
+    {
+        $u = Auth::require(); $this->mine($u); RateLimit::hit('menu', 200, 86400);
+        if ((int) (Db::one('SELECT COUNT(*) AS n FROM artisan_menu WHERE artisan_id = ? AND deleted_at IS NULL', [$u['id']])['n'] ?? 0) >= 150) Http::json(['error' => 'validation', 'message' => 'A menu can hold 150 items.'], 422);
+        $row = $this->menuInput(Http::body(), $u) + ['artisan_id' => $u['id'], 'available' => 1, 'created_at' => Db::now()];
+        Db::run('INSERT INTO artisan_menu (' . implode(', ', array_keys($row)) . ') VALUES (' . implode(',', array_fill(0, count($row), '?')) . ')', array_values($row));
+        Http::json(['menu' => self::menuOf((int) $u['id'], true)], 201);
+    }
+    /** PATCH /artisans/me/menu/{id} */
+    public function updateMenuItem(int $id): void
+    {
+        $u = Auth::require(); $this->mine($u);
+        $old = Db::one('SELECT * FROM artisan_menu WHERE id = ? AND artisan_id = ? AND deleted_at IS NULL', [$id, $u['id']]); if (!$old) Http::json(['error' => 'not_found'], 404);
+        $row = $this->menuInput(Http::body(), $u, $old);
+        if ($row) Db::run('UPDATE artisan_menu SET ' . implode(', ', array_map(fn($k) => "$k = ?", array_keys($row))) . ' WHERE id = ?', array_merge(array_values($row), [$id]));
+        Http::json(['menu' => self::menuOf((int) $u['id'], true)]);
+    }
+    /** DELETE /artisans/me/menu/{id} */
+    public function deleteMenuItem(int $id): void
+    {
+        $u = Auth::require();
+        Db::run('UPDATE artisan_menu SET deleted_at = ? WHERE id = ? AND artisan_id = ?', [Db::now(), $id, $u['id']]);
+        Http::json(['menu' => self::menuOf((int) $u['id'], true)]);
+    }
+    /** PATCH /artisans/me/delivery { deliveryFee, minOrder } */
+    public function delivery(): void
+    {
+        $u = Auth::require(); $this->mine($u); $b = Http::body();
+        $fee = !isset($b['deliveryFee']) || $b['deliveryFee'] === '' ? null : (int) preg_replace('/\D+/', '', (string) $b['deliveryFee']);
+        $min = !isset($b['minOrder']) || $b['minOrder'] === null || $b['minOrder'] === '' ? null : (int) preg_replace('/\D+/', '', (string) $b['minOrder']);
+        if ($fee !== null && $fee > 50000) Http::json(['error' => 'validation', 'fields' => ['deliveryFee' => 'Up to ₦50,000.']], 422);
+        try { Db::run('UPDATE artisans SET delivery_fee = ?, min_order = ? WHERE user_id = ?', [$fee, $min ?: null, $u['id']]); }
+        catch (Throwable $e) { Http::json(['error' => 'validation', 'message' => 'Delivery fees are coming very soon. Try again shortly.'], 422); }
+        Http::json(['deliveryFee' => $fee, 'minOrder' => $min ?: null]);
     }
 
     /** GET /artisans/me and POST /artisans/me : register or update your own listing */
@@ -79,9 +165,9 @@ final class ArtisanController
         $phone = Validator::ngPhone((string) ($b['phone'] ?? ($u['phone'] ?? ''))); if (!$phone) $e['phone'] = 'A Nigerian phone number customers can call.';
         $wa = !empty($b['whatsapp']) ? Validator::ngPhone((string) $b['whatsapp']) : null;
         $lat = isset($b['lat']) ? (float) $b['lat'] : 0; $lng = isset($b['lng']) ? (float) $b['lng'] : 0;
-        if ($lat < 8 || $lat > 10 || $lng < 6.5 || $lng > 8) $e['lat'] = 'Put the pin on your workshop so customers nearby can find you.';
+        if ($lat < 8 || $lat > 10 || $lng < 6.5 || $lng > 8) $e['lat'] = 'Put the pin on your workshop or shop so customers nearby can find you.';
         $photo = !empty($b['uploadId']) ? UploadsController::claim((int) $b['uploadId'], $u) : null;
-        if (!$photo && !($had['photo_upload'] ?? null)) $e['photo'] = 'Add a clear photo of your face. Customers want to know who is coming.';
+        if (!$photo && !($had['photo_upload'] ?? null)) $e['photo'] = in_array($trade, ServiceJobController::ORDER_TRADES, true) ? 'Add a photo of you or your shop, so customers know who they are ordering from.' : 'Add a clear photo of your face. Customers want to know who is coming.';
         if ($e) Http::json(['error' => 'validation', 'fields' => $e], 422);
         $idUp = !empty($b['idUploadId']) ? UploadsController::claim((int) $b['idUploadId'], $u) : null;
         $district = mb_substr(trim((string) ($b['district'] ?? '')), 0, 60) ?: (Osm::districtFor($lat, $lng) ?: ($u['district'] ?? 'Abuja'));
@@ -153,7 +239,8 @@ final class ArtisanController
         $recent->execute([$u['id']]);
         Http::json(['artisan' => ['name' => $a['business'] ?: $a['owner_name'], 'trade' => self::TRADES[$a['trade']] ?? $a['trade'], 'available' => (bool) $a['available'], 'verified' => !empty($a['verified_at']),
                 'photo' => $a['photo_upload'] ? '/api/uploads/' . (int) $a['photo_upload'] : null, 'schedule' => $a['schedule'] ? json_decode($a['schedule'], true) : null, 'onDuty' => ServiceJobController::onDuty($a['schedule'] ?? null),
-                'profileUrl' => rtrim((string) Http::config('app_origin'), '/') . '/#/artisans/' . (int) $u['id'], 'idSent' => !empty($a['id_upload'])],
+                'profileUrl' => rtrim((string) Http::config('app_origin'), '/') . '/#/artisans/' . (int) $u['id'], 'idSent' => !empty($a['id_upload']),
+                'tradeKey' => $a['trade'], 'orderable' => in_array($a['trade'], ServiceJobController::ORDER_TRADES, true), 'menuCount' => count(self::menuOf((int) $u['id'], true)), 'deliveryFee' => isset($a['delivery_fee']) && $a['delivery_fee'] !== null ? (int) $a['delivery_fee'] : null],
             'week' => $span(7), 'month' => $span(30), 'reliability' => $rel,
             'offers' => array_map(fn($o) => ['id' => (int) $o['id'], 'problem' => $o['problem'], 'km' => round((float) $o['km'], 1), 'at' => $o['offered_at']], $offers->fetchAll()),
             'recent' => array_map(fn($r) => ['id' => (int) $r['id'], 'problem' => $r['problem'], 'status' => $r['status'], 'at' => $r['created_at'], 'customer' => explode(' ', trim((string) $r['name']))[0], 'price' => $r['quote_status'] === 'accepted' ? (int) $r['quote_amount'] : null], $recent->fetchAll())]);

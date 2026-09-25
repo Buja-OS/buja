@@ -45,12 +45,14 @@ return [
     // Ask Buja. Set ASK_PROVIDER to gemini, groq, anthropic or rules. Whichever keys exist are tried in turn,
     // starting with the one you chose, and Ask falls back to keyword matching if they all fail. All optional.
     // Video calls. meet.jit.si is free and needs no account. Point this at your own Jitsi if you ever run one.
-    // Chat calls run phone to phone. STUN is free; a TURN relay is only needed for networks that block
-    // a direct connection. openrelay.metered.ca gives free TURN if you want one.
-    'turn_url' => $env('TURN_URL', 'turn:openrelay.metered.ca:80,turn:openrelay.metered.ca:443,turn:openrelay.metered.ca:443?transport=tcp'),
-    'turn_user' => $env('TURN_USER', 'openrelayproject'),
-    'turn_pass' => $env('TURN_PASS', 'openrelayproject'),
-    'turn_default' => $env('TURN_URL', '') === '',
+    // Call relay (TURN). Calls between phones on mobile data need one. Cloudflare's is free for 1,000 GB a month:
+    // set CF_TURN_KEY_ID and CF_TURN_API_TOKEN. Or point TURN_URL/TURN_USER/TURN_PASS at any other TURN server.
+    // (The old free "Open Relay" logins no longer work, so there is no default.)
+    'cf_turn_key_id' => $env('CF_TURN_KEY_ID', ''),
+    'cf_turn_token' => $env('CF_TURN_API_TOKEN', ''),
+    'turn_url' => $env('TURN_URL', ''),
+    'turn_user' => $env('TURN_USER', ''),
+    'turn_pass' => $env('TURN_PASS', ''),
     'jitsi_domain' => $env('JITSI_DOMAIN', 'meet.jit.si'),
     'ask_provider' => $env('ASK_PROVIDER', 'gemini'),
     // Play Store (PWABuilder Android package): the package name and the SHA-256 signing fingerprint(s), comma separated.

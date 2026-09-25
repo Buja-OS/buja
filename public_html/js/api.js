@@ -130,8 +130,8 @@ export const api = {
   respondOffer:    (messageId, action) => request('POST', '/messages/' + messageId + '/offer-response', { action }),
   // Ask
   ask:             (question, history, at) => request('POST', '/ask', { question, history, lat: at ? at.lat : undefined, lng: at ? at.lng : undefined }),
-  spots:           (q) => request('GET', '/spots' + qs({ q })),
-  spot:            (id) => request('GET', '/spots/' + id),
+  spots:           (q, extra) => request('GET', '/spots' + qs({ q, ...(extra || {}) })),
+  spot:            (id, at) => request('GET', '/spots/' + id + qs(at ? { lat: at.lat.toFixed(5), lng: at.lng.toFixed(5) } : {})),
   rateSpot:        (id, stars, comment) => request('POST', '/spots/' + id + '/rate', { stars, comment }),
   addSpot:         (b) => request('POST', '/spots', b),
   // Trust and money
@@ -201,6 +201,14 @@ export const api = {
   callSignals:     (room, since) => request('GET', '/call/' + room + '/signals' + qs({ since })),
   incomingCall:    () => request('GET', '/calls/incoming'),
   declineCall:     (room) => request('POST', '/call/' + room + '/decline'),
+  pulse:           () => request('GET', '/pulse'),
+  statuses:        () => request('GET', '/statuses'),
+  postStatus:      (b) => request('POST', '/statuses', b),
+  viewStatus:      (id) => request('POST', '/statuses/' + id + '/view'),
+  statusViewers:   (id) => request('GET', '/statuses/' + id + '/viewers'),
+  deleteStatus:    (id) => request('DELETE', '/statuses/' + id),
+  typing:          (threadId) => request('POST', '/threads/' + threadId + '/typing'),
+  setPresence:     (showLastSeen) => request('PATCH', '/me/presence', { showLastSeen }),
   weather:         () => request('GET', '/weather'),
   addSpotPhoto:    (id, uploadId) => request('POST', '/spots/' + id + '/photos', { uploadId }),
   removeSpotPhoto: (id) => request('DELETE', '/spots/photos/' + id),
@@ -283,6 +291,11 @@ export const api = {
   kartChat:        (code, body) => request('POST', '/kart/rooms/' + code + '/chat', { body }),
   serviceJob:      (id) => request('GET', '/service-jobs/' + id),
   jobCreate:       (b) => request('POST', '/service-jobs', b),
+  myMenu:          () => request('GET', '/artisans/me/menu'),
+  addMenuItem:     (b) => request('POST', '/artisans/me/menu', b),
+  updateMenuItem:  (id, b) => request('PATCH', '/artisans/me/menu/' + id, b),
+  deleteMenuItem:  (id) => request('DELETE', '/artisans/me/menu/' + id),
+  setDelivery:     (b) => request('PATCH', '/artisans/me/delivery', b),
   jobAct:          (id, action, b) => request('POST', '/service-jobs/' + id + '/' + action, b || {}),
   jobPing:         (id, b) => request('POST', '/service-jobs/' + id + '/ping', b),
   jobRate:         (id, b) => request('POST', '/service-jobs/' + id + '/rate', b),
@@ -414,7 +427,7 @@ async function mockRequest(method, path, body) {
     return { user: pub(u), next: u.district ? 'home' : 'onboarding' };
   }
   if (path === '/auth/logout') { d.session = null; msave(d); return { ok: true }; }
-  if (path.startsWith('/jobs') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter') || path.startsWith('/ask') || path.startsWith('/spots') || path.startsWith('/pay') || path.startsWith('/verify') || path.startsWith('/admin') || path.startsWith('/notifications') || path.startsWith('/avatar') || path.startsWith('/news') || path.startsWith('/social') || path.startsWith('/radio') || path.startsWith('/uploads') || path.startsWith('/safety') || path.startsWith('/search') || path.startsWith('/report') || path.startsWith('/invite') || path.startsWith('/call') || path.startsWith('/weather') || path.startsWith('/saved-searches') || path.startsWith('/spots') || path.startsWith('/users') || path.startsWith('/waka/alerts') || path.startsWith('/events') || path.startsWith('/artisans') || path.startsWith('/citizen') || path.startsWith('/tickets') || path.startsWith('/light') || path.startsWith('/fuel') || path.startsWith('/blood') || path.startsWith('/lostfound') || path.startsWith('/plates') || path.startsWith('/prices') || path.startsWith('/learn') || path.startsWith('/cert/') || path.startsWith('/queues') || path.startsWith('/rides') || path.startsWith('/rent-index') || path.startsWith('/service-jobs') || path.startsWith('/route') || path.startsWith('/kart') || path.startsWith('/escrow') || path.startsWith('/tag') || path.startsWith('/me/tag') || path.startsWith('/friends') || path.startsWith('/artisans/mine')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
+  if (path.startsWith('/jobs') || path.startsWith('/pulse') || path.startsWith('/statuses') || path.startsWith('/company') || path.startsWith('/me/') || path.startsWith('/inbox') || path.startsWith('/threads') || path.startsWith('/push') || path.startsWith('/messages') || path.startsWith('/applications') || path.startsWith('/match') || path.startsWith('/waka') || path.startsWith('/homes') || path.startsWith('/landlord') || path.startsWith('/declutter') || path.startsWith('/ask') || path.startsWith('/spots') || path.startsWith('/pay') || path.startsWith('/verify') || path.startsWith('/admin') || path.startsWith('/notifications') || path.startsWith('/avatar') || path.startsWith('/news') || path.startsWith('/social') || path.startsWith('/radio') || path.startsWith('/uploads') || path.startsWith('/safety') || path.startsWith('/search') || path.startsWith('/report') || path.startsWith('/invite') || path.startsWith('/call') || path.startsWith('/weather') || path.startsWith('/saved-searches') || path.startsWith('/spots') || path.startsWith('/users') || path.startsWith('/waka/alerts') || path.startsWith('/events') || path.startsWith('/artisans') || path.startsWith('/citizen') || path.startsWith('/tickets') || path.startsWith('/light') || path.startsWith('/fuel') || path.startsWith('/blood') || path.startsWith('/lostfound') || path.startsWith('/plates') || path.startsWith('/prices') || path.startsWith('/learn') || path.startsWith('/cert/') || path.startsWith('/queues') || path.startsWith('/rides') || path.startsWith('/rent-index') || path.startsWith('/service-jobs') || path.startsWith('/route') || path.startsWith('/kart') || path.startsWith('/escrow') || path.startsWith('/tag') || path.startsWith('/me/tag') || path.startsWith('/friends') || path.startsWith('/artisans/mine')) throw { error: 'mock', message: 'Work needs the live server. Open buja.onrender.com.' };
   if (path === '/me' && method === 'PATCH') {
     const u = me(); if (!u) throw { error: 'unauthenticated', message: 'Please sign in.' };
     Object.assign(u, body); msave(d); return { user: pub(u) };

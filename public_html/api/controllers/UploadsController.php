@@ -80,9 +80,10 @@ final class UploadsController
     /**
      * GET /uploads/{id}. Two kinds of picture:
      *  - public: shown on listings anyone can open, including signed-out visitors and Google (Social posts and
-     *    their photo sets, artisans' faces, company logos, landlord photos, place photos, event covers,
+     *    their photo sets, artisans' faces, menu photos, company logos, landlord photos, place photos, event covers,
      *    open lost-and-found posts). Anyone may load them.
-     *  - private: chat attachments and a breakdown's photo. Only the people in that conversation or job.
+     *  - private: chat attachments and a breakdown's photo (only the people in that conversation or job), and
+ *    status photos (only the poster's friends, while the status is up).
      * Everything else is visible to its owner only.
      */
     public function show(int $id): void
@@ -95,6 +96,7 @@ final class UploadsController
                 'SELECT 1 AS x FROM social_replies WHERE upload_id = ? AND hidden_at IS NULL',
                 'SELECT 1 AS x FROM social_images i LEFT JOIN social_posts p ON p.id = i.post_id LEFT JOIN social_replies r ON r.id = i.reply_id WHERE i.upload_id = ? AND (p.hidden_at IS NULL AND (i.post_id IS NOT NULL) OR r.hidden_at IS NULL AND (i.reply_id IS NOT NULL))',
                 'SELECT 1 AS x FROM artisans WHERE photo_upload = ? AND hidden_at IS NULL',
+                'SELECT 1 AS x FROM artisan_menu WHERE photo_upload = ? AND deleted_at IS NULL',
                 'SELECT 1 AS x FROM companies WHERE logo_upload_id = ?',
                 'SELECT 1 AS x FROM landlord_profiles WHERE photo_upload_id = ?',
                 'SELECT 1 AS x FROM spot_photos WHERE upload_id = ? AND hidden_at IS NULL',
@@ -110,7 +112,9 @@ final class UploadsController
         if (!$allowed && $u) {
             $allowed = (int) $f['user_id'] === (int) $u['id']
                 || Db::one('SELECT 1 AS x FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.upload_id = ? AND (t.user_a = ? OR t.user_b = ?)', [$id, $u['id'], $u['id']]) !== null
-                || (function () use ($id, $u): bool { try { return Db::one('SELECT 1 AS x FROM service_jobs WHERE photo_upload = ? AND (customer_id = ? OR artisan_id = ?)', [$id, $u['id'], $u['id']]) !== null; } catch (Throwable $e) { return false; } })();
+                || (function () use ($id, $u): bool { try { return Db::one('SELECT 1 AS x FROM service_jobs WHERE photo_upload = ? AND (customer_id = ? OR artisan_id = ?)', [$id, $u['id'], $u['id']]) !== null; } catch (Throwable $e) { return false; } })()
+                // a status photo: the poster's friends, while the status is up
+                || (function () use ($id, $u): bool { try { $s = Db::one('SELECT user_id FROM statuses WHERE upload_id = ? AND deleted_at IS NULL AND expires_at > ?', [$id, Db::now()]); return $s !== null && in_array((int) $s['user_id'], StatusController::friendIds((int) $u['id']), true); } catch (Throwable $e) { return false; } })();
         }
         if (!$allowed) Http::json(['error' => $u ? 'forbidden' : 'unauthorized'], $u ? 403 : 401);
         if ($public) header('Cache-Control: public, max-age=86400'); // listings: safe to cache for everyone

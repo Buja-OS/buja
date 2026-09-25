@@ -4,18 +4,44 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
   const when = (iso) => { const d = new Date(iso.replace(' ', 'T') + 'Z'); const now = new Date(); const same = d.toDateString() === now.toDateString(); return same ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); };
   const pic = (url, name, size, col, zoom) => url ? `<img src="${url}" alt=""${zoom ? ` data-zoom="${url}"` : ''} style="width:${size}px;height:${size}px;border-radius:${size / 2}px;object-fit:cover;flex-shrink:0">` : avatar(name, size, col);
   const pretty = (at) => new Date(at.replace(' ', 'T') + 'Z').toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  // "online", "typing…", or "last seen today at 14:05" (the way WhatsApp says it)
+  const seenText = (p) => {
+    if (!p) return '';
+    if (p.typing) return 'typing…';
+    if (p.online) return 'online';
+    if (!p.lastSeen) return '';
+    const d = new Date(p.lastSeen), now = new Date(), t = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    if (d.toDateString() === now.toDateString()) return 'last seen today at ' + t;
+    if (d.toDateString() === y.toDateString()) return 'last seen yesterday at ' + t;
+    if (now - d < 6 * 864e5) return 'last seen ' + d.toLocaleDateString('en-GB', { weekday: 'long' }) + ' at ' + t;
+    return 'last seen ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  };
+  const tick = (m) => m.mine ? ` <span class="tk" data-tk="${m.id}" aria-label="Sent">✓</span>` : '';
   const colors = ['#1F4E9C', '#2E7D1E', '#8E44AD', '#C0392B', '#0E7C86', '#E8620E'];
   const color = (s) => colors[[...String(s)].reduce((a, c) => a + c.charCodeAt(0), 0) % colors.length];
 
   /* ---------- Inbox ---------- */
   route('/inbox', { auth: true, tabs: 'Inbox' }, async () => {
-    const { threads } = await api.inbox();
+    const { threads, showLastSeen } = await api.inbox();
     return `
     ${topbar('Inbox', '')}
     <main class="pad stack" style="gap:10px">
-      ${threads.length ? `<div class="card list">${threads.map((t) => `<a class="item" href="#/inbox/${t.id}" style="gap:12px">${pic(t.avatar, t.title, 48, color(t.title))}<div class="grow" style="min-width:0"><div class="row" style="justify-content:space-between"><span class="t" style="font-weight:${t.unread ? 700 : 600}">${h(t.title)}</span><span class="small ${t.unread ? '' : 'muted'}" style="${t.unread ? 'color:var(--orange-dark);font-weight:600' : ''}">${when(t.lastAt)}</span></div><div class="s" style="${t.unread ? 'color:var(--ink);font-weight:500' : ''};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(t.preview)}</div>${t.subtitle ? `<div class="s" style="font-size:11px">${h(t.subtitle)}</div>` : ''}</div>${t.unread ? `<span style="min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:var(--orange);color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center">${t.unread}</span>` : ''}</a>`).join('')}</div>`
+      <div id="strow" class="st-wrap"><div class="st-row"><span class="st-item"><span class="st-face st-ghost"></span></span><span class="st-item"><span class="st-face st-ghost"></span></span><span class="st-item"><span class="st-face st-ghost"></span></span></div></div>
+      ${threads.length ? `<div class="card list">${threads.map((t) => `<a class="item" href="#/inbox/${t.id}" style="gap:12px"><span class="chat-face${t.online ? ' on' : ''}">${pic(t.avatar, t.title, 48, color(t.title))}</span><div class="grow" style="min-width:0"><div class="row" style="justify-content:space-between"><span class="t" style="font-weight:${t.unread ? 700 : 600}">${h(t.title)}</span><span class="small ${t.unread ? '' : 'muted'}" style="${t.unread ? 'color:var(--orange-dark);font-weight:600' : ''}">${when(t.lastAt)}</span></div><div class="s" style="${t.unread ? 'color:var(--ink);font-weight:500' : ''};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(t.preview)}</div>${t.subtitle ? `<div class="s" style="font-size:11px">${h(t.subtitle)}</div>` : ''}</div>${t.unread ? `<span style="min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:var(--orange);color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center">${t.unread}</span>` : ''}</a>`).join('')}</div>`
       : `<div class="placeholder" style="padding:60px 0"><div class="mi card">${icon('message')}</div><div class="h-md">No conversations yet</div><div class="small muted" style="max-width:280px;line-height:1.5">${state.user.kind === 'company' ? 'Open an applicant on a vacancy and tap Message to start one.' : 'Companies you apply to can message you here. Matches, buyers and landlords join later.'}</div></div>`}
+      <div class="card row" style="padding:12px 14px;gap:12px;margin-top:6px"><span class="grow"><span style="display:block;font-weight:650;font-size:14px">Show when I am online</span><span class="small muted" style="display:block;line-height:1.45;margin-top:2px">Others see "online" and your last seen. Turn it off to hide both; like WhatsApp, you then will not see theirs either.</span></span><button class="switch ${showLastSeen ? 'on' : ''}" style="flex-shrink:0" id="showseen" role="switch" aria-checked="${showLastSeen ? 'true' : 'false'}" aria-label="Show when I am online"><span></span></button></div>
     </main>`;
+  }, {
+    mount(el) {
+      import('./status.js').then((m) => m.statusRow(el.querySelector('#strow'), { api, ui, go })).catch(() => el.querySelector('#strow')?.remove());
+      el.querySelector('#showseen')?.addEventListener('click', async (e) => {
+        const b = e.currentTarget, on = !b.classList.contains('on');
+        b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on));
+        try { await api.setPresence(on); toast(on ? 'People can see when you are online' : 'Your online status and last seen are hidden'); }
+        catch (err) { b.classList.toggle('on', !on); b.setAttribute('aria-checked', String(!on)); failed(el, err); }
+      });
+    },
   });
 
   /* ---------- Thread ---------- */
@@ -45,7 +71,11 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
     if (m.type === 'call') {
       const meta = m.meta || {};
       const started = meta.startsAt ? new Date(meta.startsAt.replace(' ', 'T') + 'Z') : null;
-      const soon = true;
+      const age = Date.now() - new Date(m.createdAt.replace(' ', 'T') + 'Z').getTime();
+      // a call that rang more than two minutes ago is over: show it as a short line with "Call back", not a Join button
+      if (!started && age > 120000) return `<div class="row" style="align-self:${m.mine ? 'flex-end' : 'flex-start'};gap:10px;padding:8px 10px 8px 12px;border-radius:14px;background:var(--card);border:1px solid var(--line);font-size:13px">
+        <span style="color:${m.mine ? 'var(--green-dark)' : 'var(--orange-dark)'};display:flex">${icon(meta.mode === 'audio' ? 'phone' : 'video')}</span><span><strong>${m.mine ? 'You called' : 'They called'}</strong> <span class="muted">· ${meta.mode === 'audio' ? 'voice' : 'video'} · ${when(m.createdAt)}</span></span>
+        <button class="btn btn-sm btn-outline" data-callback="${meta.mode === 'audio' ? 'audio' : 'video'}" style="width:auto;height:30px;font-size:12px;padding:0 10px">Call back</button></div>`;
       return `<div class="card stack" style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px;padding:14px;gap:10px;border-color:var(--orange)">
         <div class="row" style="gap:10px"><span style="width:34px;height:34px;border-radius:17px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center">${icon(meta.mode === 'audio' ? 'phone' : 'video')}</span><div class="grow"><div style="font-size:14px;font-weight:700">${h(m.body)}</div>${started ? `<div class="small muted">${started.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>` : '<div class="small muted">Now</div>'}</div></div>
         <a class="btn btn-sm btn-primary" href="#/rtc/${h(meta.room)}">${icon(meta.mode === 'audio' ? 'phone' : 'video')} Join the call</a>
@@ -53,8 +83,8 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
     }
     const att = m.attachment ? attachmentHtml(m.attachment, { max: 260 }) : '';
     const yt = youtubeEmbed(m.body || '');
-    if (att && !m.body) return `<div style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px">${att}<div class="small muted" style="text-align:right;margin-top:3px">${when(m.createdAt)}</div></div>`;
-    return `<div style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px;padding:${att || yt ? '8px 8px 10px' : '12px 14px'};border-radius:${m.mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px'};font-size:14px;line-height:1.5;${m.mine ? 'background:var(--ink);color:var(--surface)' : 'background:var(--card);border:1px solid var(--line)'}">${att ? `<div style="margin-bottom:8px">${att}</div>` : ''}${yt ? `<div style="margin-bottom:8px">${yt}</div>` : ''}<div style="white-space:pre-line;${att || yt ? 'padding:0 6px' : ''}">${linkify(h(m.body || ''))}</div><div class="small" style="opacity:.6;margin-top:4px;text-align:right;${att || yt ? 'padding:0 6px' : ''}">${when(m.createdAt)}</div></div>`;
+    if (att && !m.body) return `<div style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px">${att}<div class="small muted" style="text-align:right;margin-top:3px">${when(m.createdAt)}${tick(m)}</div></div>`;
+    return `<div style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:280px;padding:${att || yt ? '8px 8px 10px' : '12px 14px'};border-radius:${m.mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px'};font-size:14px;line-height:1.5;${m.mine ? 'background:var(--ink);color:var(--surface)' : 'background:var(--card);border:1px solid var(--line)'}">${att ? `<div style="margin-bottom:8px">${att}</div>` : ''}${yt ? `<div style="margin-bottom:8px">${yt}</div>` : ''}<div style="white-space:pre-line;${att || yt ? 'padding:0 6px' : ''}">${linkify(h(m.body || ''))}</div><div class="small" style="opacity:.75;margin-top:4px;text-align:right;${att || yt ? 'padding:0 6px' : ''}">${when(m.createdAt)}${tick(m)}</div></div>`;
   }
 
   route('/inbox/:id', { auth: true, tabs: '' }, async ({ id }) => {
@@ -62,13 +92,13 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
     const c = t.context;
     return `
     ${topbar('', '/inbox', `${t.other && t.other.id ? `<button class="iconbtn" id="vcall" aria-label="Video call" style="width:38px;height:38px">${icon('video')}</button><button class="iconbtn" id="acall" aria-label="Voice call" style="width:38px;height:38px">${icon('phone')}</button>` : ''}` + (t.canSchedule ? `<button class="iconbtn" id="sched" aria-label="Schedule interview" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('calendar-check')}</button>` : t.canRequestInspection ? `<button class="iconbtn" id="inspect" aria-label="Request inspection" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('calendar-check')}</button>` : t.canOffer ? `<button class="iconbtn" id="mkoffer" aria-label="Make an offer" style="background:var(--orange);border-color:var(--orange);color:#fff">${icon('naira-sign')}</button>` : ''))}
-    ${t.other && t.other.id ? `<a href="#/people/${t.other.id}" class="row" style="position:absolute;left:64px;top:calc(12px + var(--safe-t));gap:10px;text-decoration:none;color:var(--ink);max-width:calc(100% - 200px)">${pic(t.other.avatar, t.title, 36, color(t.title), true)}<span style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(t.title)}</span></a>` : `<div style="position:absolute;left:64px;top:calc(18px + var(--safe-t));font-size:17px;font-weight:700">${h(t.title)}</div>`}
+    ${t.other && t.other.id ? `<a href="#/people/${t.other.id}" class="row" style="position:absolute;left:64px;top:calc(10px + var(--safe-t));gap:10px;text-decoration:none;color:var(--ink);max-width:calc(100% - 200px)"><span class="chat-face${t.peer && t.peer.online ? ' on' : ''}" id="peerface">${pic(t.other.avatar, t.title, 36, color(t.title), true)}</span><span style="min-width:0;display:flex;flex-direction:column;line-height:1.2"><span style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(t.title)}</span><span id="peerstat" class="chat-stat${t.peer && t.peer.typing ? ' typing' : ''}">${h(seenText(t.peer))}</span></span></a>` : `<div style="position:absolute;left:64px;top:calc(18px + var(--safe-t));font-size:17px;font-weight:700">${h(t.title)}</div>`}
     ${t.kind === 'declutter' && c ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${icon('tags')}<span class="grow">${c.isSeller ? `${h(t.other.name)} · about your <strong style="color:var(--ink)">${h(c.title)}</strong>` : `<strong style="color:var(--ink)">${h(c.title)}</strong> · ₦${Number(c.price).toLocaleString('en-NG')}`}${c.status !== 'active' ? ' · <strong>' + c.status + '</strong>' : ''}</span><a href="#/declutter/${c.listingId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
     ${t.kind === 'homes' && c ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${icon('house-chimney')}<span class="grow">${c.isOwner ? `${h(t.other.name)} · enquiring about <strong style="color:var(--ink)">${h(c.title)}</strong>` : `<strong style="color:var(--ink)">${h(c.title)}</strong> · ${h(c.district)}`}</span><a href="#/homes/${c.propertyId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
     ${t.kind === 'match' ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${pic(t.other.avatar, t.other.name, 28, color(t.other.name))}<span class="grow">You matched on Buja</span></div>
     <a class="pad" href="#/safety/start?with=${encodeURIComponent(t.other.name.split(' ')[0])}&user=${t.other.id}" style="display:block;padding-top:0;padding-bottom:8px"><span class="card row" style="padding:10px 12px;gap:10px;background:#E7F6EC;border-color:#BFE3CB"><span style="color:var(--green-dark)">${icon('shield-halved')}</span><span class="grow small" style="line-height:1.4;color:var(--ink)"><b>Meeting ${h(t.other.name.split(' ')[0])}?</b> Share your live location with a friend until you check in safe.</span>${icon('chevron-right')}</span></a><div style="display:none"><a href="#/match/profile/${t.other.id}" style="color:var(--orange-dark);font-weight:600">Profile</a></div>` : ''}
     ${c && t.kind !== 'homes' && t.kind !== 'declutter' ? `<div class="pad row small muted" style="padding-bottom:8px;gap:8px">${pic(t.other.avatar, t.other.name, 28, color(t.other.name))}<span class="grow">${state.user.kind === 'company' ? `${h(t.other.name)} · applied for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong> · ${c.match}% match` : `Recruiting for <strong style="color:var(--ink)">${h(c.jobTitle)}</strong>`}</span><a href="#/work/${state.user.kind === 'company' ? 'company/job/' + c.jobId : 'job/' + c.jobId}" style="color:var(--orange-dark);font-weight:600">Open</a></div>` : ''}
-    <main id="msgs" class="stack" style="padding:8px 16px 0;gap:12px;flex:1" data-last="${t.messages.length ? t.messages[t.messages.length - 1].id : 0}">${t.messages.map(bubble).join('')}</main>
+    <main id="msgs" class="stack" style="padding:8px 16px 0;gap:12px;flex:1" data-read="${t.peerRead || 0}" data-last="${t.messages.length ? t.messages[t.messages.length - 1].id : 0}">${t.messages.map(bubble).join('')}</main>
     <div id="sheet"></div>
     <div id="attachbar"></div>
     <form id="compose" class="row" style="gap:8px;padding:10px 16px calc(10px + var(--safe-b));background:var(--card);border-top:1px solid var(--line);position:sticky;bottom:0">
@@ -94,11 +124,23 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
         try { await api.respond(mid, { action, note }); toast(action === 'confirm' ? 'Interview confirmed' : 'Suggestion sent'); location.reload(); } catch (err) { busy(b, false); failed(el, err); }
       }); });
       bindResponds();
-      const poll = async () => {
-        if (document.hidden) return;
-        try { const t = await api.thread(id, last); if (t.messages.length) { box.insertAdjacentHTML('beforeend', t.messages.map(bubble).join('')); last = t.messages[t.messages.length - 1].id; bindResponds(); bindOffers(); scroll(); } } catch {}
+      // presence line and blue ticks, refreshed with every check
+      const showPeer = (p, read) => {
+        const st = el.querySelector('#peerstat'); if (st && p) { st.textContent = seenText(p); st.classList.toggle('typing', !!p.typing); }
+        if (p) el.querySelector('#peerface')?.classList.toggle('on', !!p.online);
+        if (read != null) el.querySelectorAll('.tk[data-tk]').forEach((k) => { if (+k.dataset.tk <= read) { k.textContent = '✓✓'; k.classList.add('read'); k.setAttribute('aria-label', 'Read'); } });
       };
-      const timer = setInterval(poll, 5000);
+      showPeer(null, +box.dataset.read || 0);
+      let polling = false;
+      const poll = async () => {
+        if (document.hidden || polling) return; polling = true;
+        try { const t = await api.thread(id, last); if (t.messages.length) { box.insertAdjacentHTML('beforeend', t.messages.map(bubble).join('')); last = t.messages[t.messages.length - 1].id; bindResponds(); bindOffers(); scroll(); } showPeer(t.peer, t.peerRead); } catch {}
+        polling = false;
+      };
+      const timer = setInterval(poll, 2500);   // quick enough to show "typing…" while it is happening
+      // tell the other side you are typing, at most every 3 s
+      let typedAt = 0;
+      el.querySelector('#body').addEventListener('input', () => { const now = Date.now(); if (now - typedAt > 3000 && el.querySelector('#body').value.trim()) { typedAt = now; api.typing(id).catch(() => {}); } });
       window.addEventListener('hashchange', () => clearInterval(timer), { once: true });
       /* ---- attachments ---- */
       let pending = null;
@@ -162,9 +204,11 @@ export function registerMessages({ route, go, state, setState, api, ui, failed }
       const ring = async (mode) => { try { const r = await api.startCall(id, mode); go('/rtc/' + r.call.room); } catch (err) { failed(el, err); } };
       el.querySelector('#vcall')?.addEventListener('click', () => ring('video'));
       el.querySelector('#acall')?.addEventListener('click', () => ring('audio'));
+      box.addEventListener('click', (e) => { const b = e.target.closest('[data-callback]'); if (b) ring(b.dataset.callback); });
       el.querySelector('#compose').addEventListener('submit', async (e) => {
         e.preventDefault(); const i = el.querySelector('#body'); const v = i.value.trim(); if (!v && !pending) return; i.value = '';
         const att = pending; pending = null; showPending();
+        typedAt = 0;
         try { const r = await api.sendMessage(id, v, att ? att.id : null); box.insertAdjacentHTML('beforeend', bubble(r.message)); last = r.message.id; scroll(); } catch (err) { i.value = v; pending = att; showPending(); failed(el, err); }
       });
       if (new URLSearchParams(location.hash.split('?')[1] || '').get('schedule') === '1') setTimeout(() => el.querySelector('#sched')?.click(), 50);

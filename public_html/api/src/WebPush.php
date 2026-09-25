@@ -85,13 +85,15 @@ final class WebPush
     }
 
     /** Sends one notification. Returns HTTP status; 404/410 mean the subscription is dead. */
-    public static function send(array $sub, array $payload, string $subject, int $ttl = 86400): int
+    /** Urgency 'high' asks Android to wake the phone at once (calls); 'normal' may be held back to save battery. */
+    public static function send(array $sub, array $payload, string $subject, int $ttl = 86400, string $urgency = 'normal'): int
     {
+        $urgency = in_array($urgency, ['very-low', 'low', 'normal', 'high'], true) ? $urgency : 'normal';
         $body = self::encrypt(json_encode($payload, JSON_UNESCAPED_UNICODE), self::unb64u($sub['p256dh']), self::unb64u($sub['auth']));
         $ch = curl_init($sub['endpoint']);
         curl_setopt_array($ch, [
             CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 6, CURLOPT_POSTFIELDS => $body,
-            CURLOPT_HTTPHEADER => ['Content-Type: application/octet-stream', 'Content-Encoding: aes128gcm', 'Content-Length: ' . strlen($body), 'TTL: ' . $ttl, 'Urgency: normal', 'Authorization: ' . self::vapid($sub['endpoint'], $subject)],
+            CURLOPT_HTTPHEADER => ['Content-Type: application/octet-stream', 'Content-Encoding: aes128gcm', 'Content-Length: ' . strlen($body), 'TTL: ' . $ttl, 'Urgency: ' . $urgency, 'Authorization: ' . self::vapid($sub['endpoint'], $subject)],
         ]);
         curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);

@@ -21,7 +21,16 @@ final class OpsController
         if ($key === '' || (string) ($_GET['key'] ?? '') !== $key) Http::json(['error' => 'forbidden'], 403);
         $done = Cron::tidy();
         Db::run('DELETE FROM app_keys WHERE k = ?', ['tidy_last']); Db::run('INSERT INTO app_keys (k, v) VALUES (?,?)', ['tidy_last', Db::now()]);
-        Http::json(['tidied' => $done, 'at' => Db::now()]);
+        // Answer the scheduler at once (it gives up after 30 s), then keep working on the places directory:
+        // one category imported from OpenStreetMap every few hours, and real photos found for places that lack one.
+        // Plain text, so Apache does not hold the reply back to compress it.
+        ignore_user_abort(true); @set_time_limit(120);
+        $body = json_encode(['tidied' => $done, 'at' => Db::now(), 'places' => 'updating in the background']);
+        while (ob_get_level() > 0) @ob_end_clean();
+        header('Content-Type: text/plain; charset=utf-8'); header('Cache-Control: no-store'); header('Connection: close'); header('Content-Length: ' . strlen($body));
+        echo $body; flush();
+        try { $r = Places::step(); error_log('[buja places] ' . json_encode($r)); } catch (Throwable $e) { error_log('[buja places] ' . $e->getMessage()); }
+        exit;
     }
 
     /** GET /admin/launch : everything an admin needs to know before telling people about Buja */
@@ -49,7 +58,7 @@ final class OpsController
             ['id' => 'ask', 'title' => 'Ask Buja (AI)', 'ok' => $cfg('gemini_api_key') || $cfg('groq_api_key') || $cfg('anthropic_api_key'), 'detail' => $cfg('gemini_api_key') || $cfg('groq_api_key') || $cfg('anthropic_api_key') ? 'Provider: ' . Http::config('ask_provider', 'gemini') : 'No AI key. Ask answers by keyword only.', 'fix' => 'GEMINI_API_KEY from aistudio.google.com, free.', 'weight' => 2],
             ['id' => 'google', 'title' => 'Google sign-in', 'ok' => $cfg('google_client_id'), 'detail' => $cfg('google_client_id') ? 'Client ID set.' : 'Not set. The Google button says "not switched on".', 'fix' => 'GOOGLE_CLIENT_ID from console.cloud.google.com, with https://buja.onrender.com as an authorised origin.', 'weight' => 2],
             ['id' => 'paystack', 'title' => 'Payments (Paystack)', 'ok' => $cfg('paystack_secret') && !Http::config('paystack_mock'), 'detail' => Http::config('paystack_mock') ? 'MOCK MODE IS ON. Every purchase is free. Remove PAYSTACK_MOCK before real users.' : ($cfg('paystack_secret') ? (str_starts_with((string) Http::config('paystack_secret'), 'sk_test') ? 'Test key. Real cards will not be charged.' : 'Live key set.') : 'Not set. Buja Plus and paid tickets are off.'), 'fix' => 'PAYSTACK_SECRET (sk_live_…) in Render, and the webhook URL https://buja.onrender.com/api/pay/webhook in the Paystack dashboard.', 'weight' => Http::config('paystack_mock') ? 3 : 1],
-            ['id' => 'turn', 'title' => 'Call relay (TURN)', 'ok' => true, 'detail' => Http::config('turn_default') ? 'Using the free public Open Relay. Fine to launch on; a paid relay only matters once calls are heavy.' : 'Your own relay is set.', 'fix' => '', 'weight' => 2],
+            ['id' => 'turn', 'title' => 'Call relay (TURN)', 'ok' => CallController::hasRelay(), 'detail' => CallController::hasRelay() ? 'Calls have a relay, so they connect on mobile data too.' : 'No call relay: calls between phones on mobile data will sit on "Connecting". Add CF_TURN_KEY_ID and CF_TURN_API_TOKEN (Cloudflare, free) in Render.', 'fix' => '', 'weight' => 3],
             ['id' => 'origin', 'title' => 'App address', 'ok' => !str_contains((string) Http::config('app_origin'), 'onrender.com'), 'detail' => (string) Http::config('app_origin'), 'fix' => 'A .com.ng domain makes Buja look like a product and keeps email out of spam. Point it at Render, then change APP_ORIGIN and the Google origin.', 'weight' => 1],
             ['id' => 'content', 'title' => 'Enough to look alive', 'ok' => (int) ($one("SELECT COUNT(*) AS n FROM jobs WHERE status = 'open'")['n'] ?? 0) >= 10 && (int) ($one("SELECT COUNT(*) AS n FROM properties WHERE status = 'available'")['n'] ?? 0) >= 5, 'detail' => (int) ($one("SELECT COUNT(*) AS n FROM jobs WHERE status = 'open'")['n'] ?? 0) . ' open jobs, ' . (int) ($one("SELECT COUNT(*) AS n FROM properties WHERE status = 'available'")['n'] ?? 0) . ' homes, ' . (int) ($one("SELECT COUNT(*) AS n FROM listings WHERE status = 'active'")['n'] ?? 0) . ' items, ' . (int) ($one("SELECT COUNT(*) AS n FROM meetups WHERE status = 'live' AND starts_at > ?", [Db::now()])['n'] ?? 0) . ' events, ' . (int) ($one('SELECT COUNT(*) AS n FROM artisans')['n'] ?? 0) . ' artisans', 'fix' => 'An empty app tells a new user to leave. Ten real jobs and five real homes before the first invite.', 'weight' => 3],
         ];
@@ -62,8 +71,9 @@ final class OpsController
         $m040 = $has('SELECT 1 FROM live_tracks LIMIT 1') && $has('SELECT kind, ready_at FROM service_jobs LIMIT 1') && $has('SELECT drop_lat FROM escrow_orders LIMIT 1');
         $m041 = (function () { try { $r = Db::one("SELECT COLUMN_TYPE AS t FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'threads' AND COLUMN_NAME = 'kind'"); return !$r || str_contains((string) $r['t'], 'friend'); } catch (Throwable $e) { return true; } })();
         $m042 = $has('SELECT stability FROM kart_profiles LIMIT 1');
-        $checks[] = ['id' => 'migrations', 'title' => 'Database up to date', 'ok' => $m036 && $m037 && $m038 && $m039 && $m040 && $m041 && $m042, 'weight' => 3,
-            'detail' => ($m036 && $m037 && $m038 && $m039 && $m040 && $m041 && $m042) ? 'Migrations 036 to 042 are in (friends, escrow, kart shop, kart competition, order tracking, friend chats, kart stability).' : 'Missing: ' . implode(' and ', array_filter([$m036 ? '' : '036 (friends, saved mechanics, garage)', $m037 ? '' : '037 (escrow)', $m038 ? '' : '038 (kart shop)', $m039 ? '' : '039 (kart competition)', $m040 ? '' : '040 (order tracking)', $m041 ? '' : '041 (friend chats)', $m042 ? '' : '042 (kart stability)'])) . '.',
+        $m043 = $has('SELECT show_last_seen FROM users LIMIT 1') && $has('SELECT id FROM statuses LIMIT 1') && $has('SELECT id FROM artisan_menu LIMIT 1') && $has('SELECT photo_url FROM spots LIMIT 1') && $has('SELECT items_json FROM service_jobs LIMIT 1');
+        $checks[] = ['id' => 'migrations', 'title' => 'Database up to date', 'ok' => $m036 && $m037 && $m038 && $m039 && $m040 && $m041 && $m042 && $m043, 'weight' => 3,
+            'detail' => ($m036 && $m037 && $m038 && $m039 && $m040 && $m041 && $m042 && $m043) ? 'Migrations 036 to 043 are in (friends, escrow, kart shop, kart competition, order tracking, friend chats, kart stability, presence, statuses, menus and places).' : 'Missing: ' . implode(' and ', array_filter([$m036 ? '' : '036 (friends, saved mechanics, garage)', $m037 ? '' : '037 (escrow)', $m038 ? '' : '038 (kart shop)', $m039 ? '' : '039 (kart competition)', $m040 ? '' : '040 (order tracking)', $m041 ? '' : '041 (friend chats)', $m042 ? '' : '042 (kart stability)', $m043 ? '' : '043 (online status, statuses, menus, places)'])) . '.',
             'fix' => 'In TiDB Cloud, SQL Editor: run the missing migration file from the migrations folder on GitHub.'];
         $wh = $one('SELECT v FROM app_keys WHERE k = ?', ['paystack_webhook_last']);
         $mock = (bool) Http::config('paystack_mock');

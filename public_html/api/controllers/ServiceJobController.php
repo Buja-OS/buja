@@ -21,7 +21,7 @@ final class ServiceJobController
     public const RING_SEC = 60;          // wait this long before alerting the next ones
     public const MAX_RINGS = 5;
     /** Trades whose jobs are orders: prepared first, then brought to the customer (food, laundry, errands). */
-    public const ORDER_TRADES = ['cook', 'laundry', 'errand'];          // five rounds, widening each time, then the customer is told
+    public const ORDER_TRADES = ['cook', 'laundry', 'errand', 'restaurant', 'suya', 'bakery', 'drinks', 'grocery', 'water', 'gas'];          // five rounds, widening each time, then the customer is told
 
     private function job(int $id, array $u): array
     {
@@ -67,6 +67,7 @@ final class ServiceJobController
         } elseif ($live && $live['etaMin'] !== null) $etaTotal = $live['etaMin'];
         return [
             'kind' => $kind, 'prep' => $prep, 'etaTotalMin' => $etaTotal,
+            'items' => !empty($j['items_json']) ? (json_decode((string) $j['items_json'], true) ?: null) : null, 'subtotal' => isset($j['subtotal']) && $j['subtotal'] !== null ? (int) $j['subtotal'] : null, 'deliveryFee' => isset($j['delivery_fee']) && $j['delivery_fee'] !== null ? (int) $j['delivery_fee'] : null,
             'id' => (int) $j['id'], 'status' => $j['status'], 'role' => $isCustomer ? 'customer' : 'artisan', 'trade' => $j['trade'], 'tradeLabel' => ArtisanController::TRADES[$j['trade']] ?? $j['trade'],
             'problem' => $j['problem'], 'landmark' => $showExact ? $j['landmark'] : null,
             'place' => $showExact ? ['lat' => (float) $j['lat'], 'lng' => (float) $j['lng'], 'exact' => true] : ['lat' => round((float) $j['lat'] / 0.005) * 0.005, 'lng' => round((float) $j['lng'] / 0.005) * 0.005, 'exact' => false],
@@ -94,7 +95,23 @@ final class ServiceJobController
         Http::json(['jobs' => $rows]);
     }
 
-    /** POST /service-jobs { artisanId, problem, lat, lng, landmark } */
+    /** Checks ordered items against the live menu. Returns [items with names and prices, subtotal] or [null, 0]. */
+    public static function priceItems(int $artisanId, array $want): array
+    {
+        $qty = [];
+        foreach ($want as $w) { $id = (int) ($w['id'] ?? 0); $q = (int) ($w['qty'] ?? 0); if ($id > 0 && $q > 0) $qty[$id] = min(50, ($qty[$id] ?? 0) + $q); }
+        if (!$qty || count($qty) > 40) return [null, 0];
+        try {
+            $st = Db::pdo()->prepare('SELECT id, name, price FROM artisan_menu WHERE artisan_id = ? AND deleted_at IS NULL AND available = 1 AND id IN (' . implode(',', array_map('intval', array_keys($qty))) . ')');
+            $st->execute([$artisanId]);
+        } catch (Throwable $e) { return [null, 0]; }
+        $items = []; $sum = 0;
+        foreach ($st->fetchAll() as $r) { $n = $qty[(int) $r['id']]; $items[] = ['id' => (int) $r['id'], 'name' => $r['name'], 'price' => (int) $r['price'], 'qty' => $n]; $sum += (int) $r['price'] * $n; }
+        if (count($items) !== count($qty)) return [null, 0];   // something was taken off the menu: ask the customer to look again
+        return [$items, $sum];
+    }
+
+    /** POST /service-jobs { artisanId, problem, lat, lng, landmark, items: [{id, qty}] } */
     public function create(): void
     {
         $u = Auth::require(); RateLimit::hit('servicejob', 8, 3600); $b = Http::body();
@@ -103,15 +120,28 @@ final class ServiceJobController
         $a = Db::one('SELECT * FROM artisans WHERE user_id = ? AND hidden_at IS NULL', [$aid]); if (!$a) Http::json(['error' => 'not_found', 'message' => 'That artisan is not listed.'], 404);
         if (!(int) $a['available']) Http::json(['error' => 'validation', 'message' => 'They are not taking jobs right now. Try another, or let Buja find the nearest.'], 422);
         $lat = (float) ($b['lat'] ?? 0); $lng = (float) ($b['lng'] ?? 0);
-        if (!self::inFct($lat, $lng)) Http::json(['error' => 'validation', 'message' => 'Your location is outside the FCT. Buja mechanics work inside Abuja; on a phone, turn on GPS so the pin is exact.'], 422);
-        $problem = mb_substr(trim((string) ($b['problem'] ?? '')), 0, 400); if (mb_strlen($problem) < 5) Http::json(['error' => 'validation', 'fields' => ['problem' => 'Say what is wrong in a few words.']], 422);
+        if (!self::inFct($lat, $lng)) Http::json(['error' => 'validation', 'message' => 'Your location is outside the FCT. Buja businesses and artisans work inside Abuja; on a phone, turn on GPS so the pin is exact.'], 422);
+        // A menu order: the items and prices come from the business's menu here, never from the phone.
+        $items = null; $subtotal = null; $fee = null;
+        if (!empty($b['items']) && is_array($b['items'])) {
+            [$items, $subtotal] = self::priceItems($aid, $b['items']);
+            if (!$items) Http::json(['error' => 'validation', 'message' => 'Those items are no longer on the menu. Refresh and try again.'], 422);
+            $fee = isset($a['delivery_fee']) && $a['delivery_fee'] !== null ? (int) $a['delivery_fee'] : 0;
+            if (!empty($a['min_order']) && $subtotal < (int) $a['min_order']) Http::json(['error' => 'validation', 'message' => 'The smallest order here is ₦' . number_format((int) $a['min_order']) . '.'], 422);
+            $note = mb_substr(trim((string) ($b['problem'] ?? '')), 0, 160);
+            $b['problem'] = implode(', ', array_map(fn($i) => $i['qty'] . '× ' . $i['name'], $items)) . ($note !== '' ? '. Note: ' . $note : '');
+        }
+        $problem = mb_substr(trim((string) ($b['problem'] ?? '')), 0, 400); if (mb_strlen($problem) < 5) { $msg = in_array($a['trade'], self::ORDER_TRADES, true) ? 'Say what you would like in a few words.' : 'Say what is wrong in a few words.'; Http::json(['error' => 'validation', 'message' => $msg, 'fields' => ['problem' => $msg]], 422); }
         if (Db::one("SELECT id FROM service_jobs WHERE customer_id = ? AND artisan_id = ? AND status IN ('requested','accepted','enroute','arrived')", [$u['id'], $aid])) Http::json(['error' => 'validation', 'message' => 'You already have an open job with them.'], 409);
         Db::run('INSERT INTO service_jobs (customer_id, artisan_id, trade, problem, lat, lng, landmark, created_at) VALUES (?,?,?,?,?,?,?,?)', [$u['id'], $aid, $a['trade'], $problem, round($lat, 6), round($lng, 6), mb_substr(trim((string) ($b['landmark'] ?? '')), 0, 160) ?: null, Db::now()]);
         $id = (int) Db::lastId();
         $isOrder = in_array($a['trade'], self::ORDER_TRADES, true) && ($b['kind'] ?? 'order') === 'order';
         if ($isOrder) { try { Db::run("UPDATE service_jobs SET kind = 'order' WHERE id = ?", [$id]); } catch (Throwable $e) {} }   // before migration 040 it simply stays a call-out
+        if ($items) {   // the price is agreed by the menu: recorded as an accepted quote, so both sides see the same total
+            try { Db::run("UPDATE service_jobs SET items_json = ?, subtotal = ?, delivery_fee = ?, quote_amount = ?, quote_note = ?, quote_status = 'accepted', quoted_at = ? WHERE id = ?", [json_encode($items, JSON_UNESCAPED_UNICODE), $subtotal, $fee, $subtotal + $fee, 'Menu order', Db::now(), $id]); } catch (Throwable $e) {}
+        }
         $km = WakaRules::km((float) ($a['lat'] ?? $lat), (float) ($a['lng'] ?? $lng), $lat, $lng);
-        Notify::user($aid, 'work', $isOrder ? 'New order from ' . explode(' ', trim((string) $u['name']))[0] . ', ' . ($km < 1 ? 'under 1' : round($km)) . ' km away' : explode(' ', trim((string) $u['name']))[0] . ' needs a ' . strtolower(ArtisanController::TRADES[$a['trade']] ?? 'hand') . ' about ' . ($km < 1 ? 'under 1' : round($km)) . ' km away', mb_substr($problem, 0, 90) . ' Tap to accept or decline.', '/#/jobs/' . $id, true);
+        Notify::user($aid, 'work', $isOrder ? 'New order from ' . explode(' ', trim((string) $u['name']))[0] . ($items ? ' · ₦' . number_format($subtotal + $fee) : '') . ', ' . ($km < 1 ? 'under 1' : round($km)) . ' km away' : explode(' ', trim((string) $u['name']))[0] . ' needs a ' . strtolower(ArtisanController::TRADES[$a['trade']] ?? 'hand') . ' about ' . ($km < 1 ? 'under 1' : round($km)) . ' km away', mb_substr($problem, 0, 90) . ' Tap to accept or decline.', '/#/jobs/' . $id, true);
         Track::hit($u, 'artisan', 'job_request');
         Http::json(['id' => $id], 201);
     }
