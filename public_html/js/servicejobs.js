@@ -9,6 +9,9 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
   const here = (ms = 8000) => new Promise((res) => { if (!navigator.geolocation) return res(null); let done = false; const f = (v) => { if (!done) { done = true; res(v); } }; setTimeout(() => f(null), ms); navigator.geolocation.getCurrentPosition((p) => f({ lat: p.coords.latitude, lng: p.coords.longitude }), () => f(null), { enableHighAccuracy: true, timeout: ms, maximumAge: 30000 }); });
   const NOUN = { mechanic: ['mechanic', 'mechanics'], vulcanizer: ['tyre man', 'tyre men'], towing: ['tow truck', 'tow trucks'], electrician: ['electrician', 'electricians'], plumber: ['plumber', 'plumbers'], hair: ['barber', 'barbers'], tailor: ['tailor', 'tailors'], ac: ['AC repairer', 'AC repairers'], locksmith: ['locksmith', 'locksmiths'], '': ['artisan', 'artisans'] };
   const noun = (t, n) => (NOUN[t] || ['artisan', 'artisans'])[n === 1 ? 0 : 1];
+  /** Orders: made or collected first, then brought to you. Each one has a ready time and live tracking. */
+  const ORDER_TRADES = { cook: ['What would you like?', '2 plates of jollof rice with chicken, 1 pack of moi moi'], laundry: ['What needs washing?', '8 shirts, 3 trousers, 1 duvet. Pick up and return ironed'], errand: ['What should they get or deliver?', 'Buy 2 bags of pure water and a gas refill from Wuse market'] };
+  const isOrder = (j) => j && j.kind === 'order';
   const QUICK = [['mechanic', 'Mechanic'], ['vulcanizer', 'Tyres'], ['towing', 'Towing'], ['electrician', 'Electrician'], ['plumber', 'Plumber'], ['hair', 'Barber & hair'], ['tailor', 'Tailor'], ['ac', 'AC repair'], ['locksmith', 'Locksmith'], ['', 'All']];
 
   /* ============================== ARTISANS ON THE MAP ============================== */
@@ -49,18 +52,19 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
         sheet.body.querySelector('#askcome')?.addEventListener('click', () => requestForm(a));
       };
       const requestForm = (a) => {
-        sheet.body.innerHTML = `<div class="stack" style="gap:12px;padding-top:4px"><div class="h-md">Ask ${h(a.name)} to come</div>
-          <div class="field" style="margin:0"><label for="prob">What is wrong?</label><textarea class="input" id="prob" maxlength="400" placeholder="${a.trade === 'mechanic' ? 'Car will not start. Battery light came on.' : 'Describe the problem in a few words'}" style="height:84px;padding:12px 14px;resize:none"></textarea></div>
+        const ord = ORDER_TRADES[a.trade];
+        sheet.body.innerHTML = `<div class="stack" style="gap:12px;padding-top:4px"><div class="h-md">${ord ? 'Order from ' + h(a.name) : 'Ask ' + h(a.name) + ' to come'}</div>
+          <div class="field" style="margin:0"><label for="prob">${ord ? ord[0] : 'What is wrong?'}</label><textarea class="input" id="prob" maxlength="400" placeholder="${ord ? ord[1] : a.trade === 'mechanic' ? 'Car will not start. Battery light came on.' : 'Describe the problem in a few words'}" style="height:84px;padding:12px 14px;resize:none"></textarea></div>
           <div class="field" style="margin:0"><label for="lm">A landmark so they find you (optional)</label><input class="input" id="lm" maxlength="160" placeholder="Beside the filling station, blue gate"></div>
-          <div class="small muted" style="line-height:1.5">They see only your rough area until they accept. Then they see your exact spot and you can watch them come. Agree the price on the phone before work starts.</div>
-          <button class="btn btn-primary" id="send">${icon('paper-plane')} Send request</button><button class="btn btn-ghost small" id="cancelreq">Back</button></div>`;
+          <div class="small muted" style="line-height:1.5">${ord ? 'They accept, tell you when it will be ready, then you watch it come to you on the map with the arrival time. Agree the price in the app before they start.' : 'They see only your rough area until they accept. Then they see your exact spot and you can watch them come. Agree the price on the phone before work starts.'}</div>
+          <button class="btn btn-primary" id="send">${icon('paper-plane')} ${ord ? 'Place order' : 'Send request'}</button><button class="btn btn-ghost small" id="cancelreq">Back</button></div>`;
         sheet.set('full');
         sheet.body.querySelector('#cancelreq').addEventListener('click', () => detail(a));
         sheet.body.querySelector('#send').addEventListener('click', async (e) => {
           const b = e.currentTarget; busy(b, true);
           const pos = me || await here(10000);
           if (!pos) { busy(b, false); toast('Turn on location so they can find you'); return; }
-          try { const r = await api.jobCreate({ artisanId: a.id, problem: sheet.body.querySelector('#prob').value, landmark: sheet.body.querySelector('#lm').value, lat: pos.lat, lng: pos.lng }); go('/jobs/' + r.id); }
+          try { const r = await api.jobCreate({ artisanId: a.id, problem: sheet.body.querySelector('#prob').value, landmark: sheet.body.querySelector('#lm').value, lat: pos.lat, lng: pos.lng, kind: ord ? 'order' : 'callout' }); go('/jobs/' + r.id); }
           catch (err) { busy(b, false); failed(el, err); }
         });
       };
@@ -356,10 +360,12 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
         const n = j.other.name; const L = j.live;
         if (j.status === 'requested' && j.mode === 'nearest' && j.role === 'customer') return j.dispatch && j.dispatch.alerted ? `${j.dispatch.alerted} ${j.dispatch.alerted === 1 ? 'mechanic' : 'mechanics'} alerted` : 'Finding a mechanic';
         if (j.status === 'requested') return j.role === 'customer' ? `Waiting for ${n} to reply` : 'New job request';
+        if (j.status === 'accepted' && isOrder(j)) return j.prep ? (j.prep.minutesLeft > 0 ? `Preparing · ready in ${j.prep.minutesLeft} min` : 'Ready, leaving soon') : j.role === 'customer' ? `${n} accepted your order` : 'Accepted. Say when it will be ready';
         if (j.status === 'accepted') return j.role === 'customer' ? `${n} accepted` : 'You accepted. Set off when ready';
         if (j.status === 'enroute' && L) { if (L.lost) return `Signal lost ${Math.round(L.age / 60)} min ago`; if (L.stopped) return `${j.role === 'customer' ? n + ' has' : 'You have'} stopped for ${L.stoppedMin} min`; return L.etaMin != null ? `${L.etaMin <= 1 ? 'Arriving now' : L.etaMin + ' min away'}` : 'On the way'; }
         if (j.status === 'enroute') return 'On the way';
-        if (j.status === 'arrived') return j.role === 'customer' ? `${n} has arrived` : 'You have arrived';
+        if (j.status === 'arrived') return isOrder(j) ? (j.role === 'customer' ? 'Your order is here' : 'You have arrived') : j.role === 'customer' ? `${n} has arrived` : 'You have arrived';
+        if (j.status === 'done' && isOrder(j)) return 'Delivered';
         return STATUS[j.status][0];
       };
 
@@ -372,7 +378,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           if (!live) return '';
           return `<div class="card stack" style="padding:12px 14px;gap:8px"><div class="small" style="font-weight:700">${Q ? (Q.status === 'declined' ? 'Your price was declined. Send a new one:' : 'Waiting for your customer to accept ' + naira(Q.amount) + '. Change it:') : 'Send your price before you start'}</div>
             <div class="row" style="gap:8px"><span style="font-weight:800;align-self:center">₦</span><input class="input" id="qamt" type="number" inputmode="numeric" placeholder="15000" value="${Q ? Q.amount : ''}" style="flex:1"><button class="btn btn-sm btn-primary" id="qsend" style="width:auto">Send</button></div>
-            <input class="input" id="qnote" maxlength="200" placeholder="What it covers, e.g. new battery and fitting" value="${h(Q && Q.note || '')}"></div>`;
+            <input class="input" id="qnote" maxlength="200" placeholder="${isOrder(j) ? 'What it covers, e.g. food and delivery' : 'What it covers, e.g. new battery and fitting'}" value="${h(Q && Q.note || '')}"></div>`;
         }
         if (!Q) return live ? `<div class="small muted">Your ${h(j.tradeLabel.toLowerCase())} will send a price here before starting. Do not pay for work you have not agreed.</div>` : '';
         if (Q.status === 'sent') return `<div class="card stack" style="padding:14px;gap:10px;border-color:var(--orange);background:var(--orange-tint)"><div><span class="small muted">Price for this job</span><div style="font-size:24px;font-weight:900">${naira(Q.amount)}</div>${Q.note ? `<div class="small">${h(Q.note)}</div>` : ''}</div>
@@ -383,6 +389,14 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       const bindPrice = () => {
         sheet.body.querySelector('#qsend')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.jobQuote(id, { amount: +sheet.body.querySelector('#qamt').value, note: sheet.body.querySelector('#qnote').value }); toast('Price sent'); render(r.job); } catch (err) { busy(b, false); failed(el, err); } });
         sheet.body.querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.jobQuoteAnswer(id, b.dataset.q); toast(b.dataset.q === 'accept' ? 'Price agreed' : 'Declined'); render(r.job); } catch (err) { busy(b, false); failed(el, err); } }));
+      };
+      /** Ordered, accepted, preparing, on the way, delivered: where an order is, at a glance. */
+      const tracker = (j) => {
+        if (!isOrder(j) || ['declined', 'cancelled', 'expired'].includes(j.status)) return '';
+        const at = { requested: 0, accepted: j.prep ? 2 : 1, enroute: 3, arrived: 4, done: 4 }[j.status] ?? 0;
+        const names = ['Ordered', 'Accepted', 'Preparing', 'On the way', 'Delivered'];
+        const eta = j.etaTotalMin != null && j.status === 'accepted' ? `<div class="row" style="gap:10px;align-items:baseline"><span style="font-size:26px;font-weight:900;letter-spacing:-.5px">${j.etaTotalMin <= 1 ? 'Any moment' : 'About ' + j.etaTotalMin + ' min'}</span><span class="small muted">${j.status === 'accepted' ? (j.prep ? 'to your door, including ' + j.prep.minutesLeft + ' min to get it ready' : 'to your door, once they start') : 'to your door'}</span></div>` : '';
+        return `<div class="stack" style="gap:10px">${eta}<div class="row" style="gap:4px">${names.map((n, i) => `<div class="grow stack" style="gap:5px;min-width:0"><span style="height:5px;border-radius:3px;background:${i <= at ? (j.status === 'done' || i < at ? 'var(--green)' : 'var(--orange)') : 'var(--line)'}"></span><span style="font-size:10.5px;font-weight:${i === at ? 800 : 600};color:${i <= at ? 'var(--ink)' : 'var(--ink-3, #9A9AA3)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${n}</span></div>`).join('')}</div></div>`;
       };
       const render = (j) => {
         job = j; pill.textContent = headline(j);
@@ -400,22 +414,27 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
             <div class="small muted">Not exactly where your car is? Drag the red pin.</div></div>
             <button class="btn btn-outline" data-act="cancel">Cancel request</button>`;
           else if (j.status === 'requested') body = `<div class="small muted" style="line-height:1.5">They have your rough area, not your exact spot, until they accept. Requests expire after 20 minutes.</div><button class="btn btn-outline" data-act="cancel">Cancel request</button>`;
+          else if (j.status === 'accepted' && isOrder(j)) body = `<div class="small muted" style="line-height:1.5">${j.prep ? 'Your order is being prepared. When it leaves you will see it move on the map, with the time it will reach you.' : 'They have your order and your location. They will tell you when it will be ready.'}</div><button class="btn btn-outline" data-act="cancel">Cancel order</button>`;
           else if (j.status === 'accepted') body = `<div class="small muted" style="line-height:1.5">They can now see where you are. When they set off you will see them move on the map.</div><button class="btn btn-outline" data-act="cancel">Cancel</button>`;
           else if (j.status === 'enroute') body = `${eta}<button class="btn btn-outline" data-act="cancel">Cancel</button>`;
-          else if (j.status === 'arrived') body = `<div class="small muted">When the work is finished, mark it done and rate them.</div><button class="btn btn-primary" data-rate>${icon('star')} Fixed. Rate ${h(j.other.name)}</button>`;
+          else if (j.status === 'arrived') body = isOrder(j) ? `<div class="small muted">Got everything you ordered? Mark it received and rate them.</div><button class="btn btn-primary" data-rate>${icon('star')} Received. Rate ${h(j.other.name)}</button>` : `<div class="small muted">When the work is finished, mark it done and rate them.</div><button class="btn btn-primary" data-rate>${icon('star')} Fixed. Rate ${h(j.other.name)}</button>`;
           else if (j.status === 'done' && !j.rated) body = `<button class="btn btn-primary" data-rate>${icon('star')} Rate ${h(j.other.name)}</button>`;
           else if (j.status === 'done') body = `<div class="small muted">Thank you for rating. It helps the next person choose.</div>`;
           if (j.status === 'done' && j.other && j.other.id && j.role === 'customer') body += `<button class="btn btn-outline" data-save="${j.other.id}">${icon('bookmark')} Save to My mechanics</button><div class="small muted">They will be first to hear from you next time.</div>`;
-          else body = `<a class="btn btn-primary" href="#/artisans/map?trade=${h(j.trade)}">Find someone else nearby</a>`;
+          else if (['declined', 'cancelled', 'expired'].includes(j.status)) body = `<a class="btn btn-primary" href="#/artisans/map?trade=${h(j.trade)}">Find someone else nearby</a>`;   // only when this one is over
         } else {
           if (j.status === 'requested' && j.mode === 'nearest') body = `<div class="card" style="padding:12px;background:var(--orange-tint);border-color:var(--orange)"><div class="small" style="font-weight:700;color:var(--orange-dark)">Breakdown near you. First to accept gets it.</div><div style="font-size:15px;font-weight:600;margin-top:4px">${h(j.problem)}</div><div class="small muted" style="margin-top:6px">${j.km != null ? 'About ' + (j.km < 1 ? 'under 1' : j.km) + ' km from your workshop. ' : ''}You see the exact spot once you accept.</div></div><div class="row" style="gap:8px"><button class="btn btn-primary grow" data-act="accept" style="height:52px">Accept and go</button><button class="btn btn-outline" data-act="decline" style="width:auto">Not now</button></div>`;
           else if (j.status === 'requested') body = `<div class="card" style="padding:12px;background:var(--surface);border:none"><div class="small muted">Problem</div><div style="font-size:15px;font-weight:600;margin-top:2px">${h(j.problem)}</div><div class="small muted" style="margin-top:6px">${j.km != null ? 'About ' + (j.km < 1 ? 'under 1' : j.km) + ' km from your workshop. ' : ''}You will see the exact spot once you accept.</div></div><div class="row" style="gap:8px"><button class="btn btn-primary grow" data-act="accept">Accept</button><button class="btn btn-outline" data-act="decline" style="width:auto">Decline</button></div>`;
+          else if (j.status === 'accepted' && isOrder(j)) body = `<div class="card" style="padding:12px;background:var(--surface);border:none"><div class="small muted">Order</div><div style="font-size:15px;font-weight:600">${h(j.problem)}</div>${j.landmark ? `<div class="small" style="margin-top:4px">Landmark: ${h(j.landmark)}</div>` : ''}</div>
+            <div class="stack" style="gap:6px"><div class="small" style="font-weight:700">${j.prep ? 'Ready in ' + j.prep.minutesLeft + ' min. Change it:' : 'When will it be ready?'}</div><div class="row" style="gap:6px;flex-wrap:wrap">${[10, 20, 30, 45, 60, 90].map((m) => `<button class="chip ${j.prep && j.prep.minutes === m ? 'on' : ''}" data-prep="${m}">${m} min</button>`).join('')}</div></div>
+            <button class="btn btn-primary" data-start>${icon('car-side')} Out for delivery</button><div class="small muted" style="line-height:1.5">Your customer sees the countdown now, then watches you come on the map with the arrival time. Keep this screen open while you travel.</div>`;
           else if (j.status === 'accepted') body = `<div class="card" style="padding:12px;background:var(--surface);border:none"><div class="small muted">Problem</div><div style="font-size:15px;font-weight:600">${h(j.problem)}</div>${j.landmark ? `<div class="small" style="margin-top:4px">Landmark: ${h(j.landmark)}</div>` : ''}</div><button class="btn btn-primary" data-start>${icon('car-side')} I am setting off</button><div class="small muted" style="line-height:1.5">Your customer will see you move on the map with your arrival time. Keep this screen open while you travel.</div>`;
           else if (j.status === 'enroute') body = `${eta}<a class="btn btn-outline" href="https://www.google.com/maps/dir/?api=1&destination=${j.place.lat},${j.place.lng}&travelmode=driving" target="_blank" rel="noopener">${icon('route')} Directions in Google Maps</a><button class="btn btn-primary" data-act="arrived">I have arrived</button><div class="small muted" id="share">${watch != null ? 'Sharing your location' : 'Location not being shared'}</div>`;
           else if (j.status === 'arrived') body = `<div class="small muted">When the work is finished:</div><button class="btn btn-primary" data-act="done">${icon('circle-check')} Job done</button>`;
           else body = `<div class="small muted">${j.status === 'done' ? 'Well done. Their rating will show on your profile.' : 'This job is closed.'}</div>`;
         }
-        sheet.body.innerHTML = `<div class="stack" style="gap:14px;padding-top:4px">${who}${j.role === 'customer' || j.status !== 'requested' ? `<div class="small" style="color:var(--ink-2)"><strong>${h(j.tradeLabel)}:</strong> ${h(j.problem)}</div>` : ''}${priceBlock(j)}${body}</div>`;
+        sheet.body.innerHTML = `<div class="stack" style="gap:14px;padding-top:4px">${tracker(j)}${who}${j.role === 'customer' || j.status !== 'requested' ? `<div class="small" style="color:var(--ink-2)"><strong>${isOrder(j) ? 'Your order' : h(j.tradeLabel)}:</strong> ${h(j.problem)}</div>` : ''}${priceBlock(j)}${body}</div>`;
+        sheet.body.querySelectorAll('[data-prep]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.jobAct(id, 'prepare', { minutes: +b.dataset.prep }); toast('Your customer can see it will be ready in ' + b.dataset.prep + ' min'); render(r.job); } catch (err) { busy(b, false); failed(el, err); } }));
         sheet.body.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
           const a = b.dataset.act; if ((a === 'cancel' || a === 'decline') && !confirm(a === 'cancel' ? 'Cancel this job?' : 'Decline this job?')) return;
           busy(b, true);
@@ -429,7 +448,8 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       };
 
       const rateForm = () => {
-        const TAGS = ['Came quickly', 'Fixed it properly', 'Fair price', 'Honest about the problem', 'Overcharged', 'Did not fix it', 'Did not turn up', 'Damaged something'];
+        const TAGS = isOrder(job) ? (job.trade === 'cook' ? ['Arrived hot and fresh', 'On time', 'Good portions', 'Tasty', 'Well packed', 'Late', 'Wrong order', 'Cold or spoilt'] : ['On time', 'Careful with my things', 'Fair price', 'Friendly', 'Late', 'Something missing', 'Did not turn up'])
+          : ['Came quickly', 'Fixed it properly', 'Fair price', 'Honest about the problem', 'Overcharged', 'Did not fix it', 'Did not turn up', 'Damaged something'];
         let n = 0; const pick = new Set();
         sheet.body.innerHTML = `<div class="stack" style="gap:14px;padding-top:4px"><div class="h-md">How did ${h(job.other.name)} do?</div>
           <div class="row" id="st" style="gap:6px;justify-content:center">${[1, 2, 3, 4, 5].map((i) => `<button data-s="${i}" aria-label="${i} stars" style="border:none;background:none;font-size:38px;color:var(--line);cursor:pointer">★</button>`).join('')}</div>

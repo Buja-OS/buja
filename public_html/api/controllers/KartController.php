@@ -58,7 +58,8 @@ final class KartController
     public static function lookOf(int $uid): array
     {
         try { $p = Db::one('SELECT * FROM kart_profiles WHERE user_id = ?', [$uid]); } catch (Throwable $e) { $p = null; }
-        return $p ? self::equippedOf($p) + ['paint' => $p['paint'] ?? null] : self::equippedOf([]) + ['paint' => null];
+        $stats = []; foreach (array_keys(self::STATS) as $k) $stats[$k] = $p ? (int) ($p[$k] ?? 0) : 0;   // upgrades show on the kart for everyone in the room
+        return ($p ? self::equippedOf($p) + ['paint' => $p['paint'] ?? null] : self::equippedOf([]) + ['paint' => null]) + ['stats' => $stats];
     }
     /** Monday 00:00 in Abuja, as UTC, $offset weeks from this one. The tournament week. */
     public static function weekStart(int $offset = 0): string

@@ -254,7 +254,7 @@ export const api = {
   tagFind:         (tag) => request('GET', '/tag/' + encodeURIComponent(tag.replace(/^@/, ''))),
   tagSearch:       (q) => request('GET', '/tags?q=' + encodeURIComponent(q.replace(/^@/, ''))),
   kartBoard:       (f) => request('GET', '/kart/board' + qs(f)),
-  escrowBuy:       (listingId) => request('POST', '/escrow/buy/' + listingId),
+  escrowBuy:       (listingId, b) => request('POST', '/escrow/buy/' + listingId, b || {}),
   escrowOrders:    () => request('GET', '/escrow/orders'),
   escrowOrder:     (id) => request('GET', '/escrow/orders/' + id),
   escrowAct:       (id, action, b) => request('POST', '/escrow/orders/' + id + '/' + action, b || {}),

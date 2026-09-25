@@ -59,8 +59,9 @@ final class OpsController
         $m037 = $has('SELECT 1 FROM escrow_orders LIMIT 1') && $has('SELECT 1 FROM payout_accounts LIMIT 1') && $has('SELECT 1 FROM payouts LIMIT 1');
         $m038 = $has('SELECT owned, equipped, daily_on, streak FROM kart_profiles LIMIT 1');
         $m039 = $has('SELECT 1 FROM kart_perf LIMIT 1') && $has('SELECT 1 FROM kart_achievements LIMIT 1') && $has('SELECT 1 FROM kart_prizes LIMIT 1');
-        $checks[] = ['id' => 'migrations', 'title' => 'Database up to date', 'ok' => $m036 && $m037 && $m038 && $m039, 'weight' => 3,
-            'detail' => ($m036 && $m037 && $m038 && $m039) ? 'Migrations 036 to 039 are in (friends, escrow, kart shop, kart competition).' : 'Missing: ' . implode(' and ', array_filter([$m036 ? '' : '036 (friends, saved mechanics, garage)', $m037 ? '' : '037 (escrow)', $m038 ? '' : '038 (kart shop)', $m039 ? '' : '039 (kart competition)'])) . '.',
+        $m040 = $has('SELECT 1 FROM live_tracks LIMIT 1') && $has('SELECT kind, ready_at FROM service_jobs LIMIT 1') && $has('SELECT drop_lat FROM escrow_orders LIMIT 1');
+        $checks[] = ['id' => 'migrations', 'title' => 'Database up to date', 'ok' => $m036 && $m037 && $m038 && $m039 && $m040, 'weight' => 3,
+            'detail' => ($m036 && $m037 && $m038 && $m039 && $m040) ? 'Migrations 036 to 040 are in (friends, escrow, kart shop, kart competition, order tracking).' : 'Missing: ' . implode(' and ', array_filter([$m036 ? '' : '036 (friends, saved mechanics, garage)', $m037 ? '' : '037 (escrow)', $m038 ? '' : '038 (kart shop)', $m039 ? '' : '039 (kart competition)', $m040 ? '' : '040 (order tracking)'])) . '.',
             'fix' => 'In TiDB Cloud, SQL Editor: run the missing migration file from the migrations folder on GitHub.'];
         $wh = $one('SELECT v FROM app_keys WHERE k = ?', ['paystack_webhook_last']);
         $mock = (bool) Http::config('paystack_mock');

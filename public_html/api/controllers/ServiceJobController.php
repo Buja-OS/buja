@@ -19,7 +19,9 @@ final class ServiceJobController
     public const REQUEST_TTL_MIN = 20;   // unanswered requests expire
     public const RING_SIZE = 3;          // mechanics alerted at once
     public const RING_SEC = 60;          // wait this long before alerting the next ones
-    public const MAX_RINGS = 5;          // five rounds, widening each time, then the customer is told
+    public const MAX_RINGS = 5;
+    /** Trades whose jobs are orders: prepared first, then brought to the customer (food, laundry, errands). */
+    public const ORDER_TRADES = ['cook', 'laundry', 'errand'];          // five rounds, widening each time, then the customer is told
 
     private function job(int $id, array $u): array
     {
@@ -56,7 +58,15 @@ final class ServiceJobController
                 'etaMin' => $j['eta_min'] !== null ? (int) $j['eta_min'] : null, 'etaAt' => $j['eta_at'], 'routeKm' => $j['route_km'] !== null ? (float) $j['route_km'] : null,
                 'metres' => (int) round(self::metres((float) $j['a_lat'], (float) $j['a_lng'], (float) $j['lat'], (float) $j['lng']))];
         }
+        // Orders: a preparing stage with a ready time, and an arrival estimate from the moment it is accepted
+        $kind = $j['kind'] ?? 'callout'; $prep = null; $etaTotal = null;
+        if (!empty($j['ready_at']) && $j['status'] === 'accepted') { $left = max(0, (int) ceil((strtotime($j['ready_at'] . ' UTC') - $now) / 60)); $prep = ['readyAt' => $j['ready_at'], 'minutesLeft' => $left, 'minutes' => (int) ($j['prep_min'] ?? 0)]; }
+        if ($j['status'] === 'accepted') {
+            $base = Db::one('SELECT lat, lng FROM artisans WHERE user_id = ?', [$j['artisan_id']]);
+            if ($base && $base['lat'] !== null) $etaTotal = ($prep ? $prep['minutesLeft'] : 0) + LiveTrack::guessMinutes(WakaRules::km((float) $base['lat'], (float) $base['lng'], (float) $j['lat'], (float) $j['lng']));
+        } elseif ($live && $live['etaMin'] !== null) $etaTotal = $live['etaMin'];
         return [
+            'kind' => $kind, 'prep' => $prep, 'etaTotalMin' => $etaTotal,
             'id' => (int) $j['id'], 'status' => $j['status'], 'role' => $isCustomer ? 'customer' : 'artisan', 'trade' => $j['trade'], 'tradeLabel' => ArtisanController::TRADES[$j['trade']] ?? $j['trade'],
             'problem' => $j['problem'], 'landmark' => $showExact ? $j['landmark'] : null,
             'place' => $showExact ? ['lat' => (float) $j['lat'], 'lng' => (float) $j['lng'], 'exact' => true] : ['lat' => round((float) $j['lat'] / 0.005) * 0.005, 'lng' => round((float) $j['lng'] / 0.005) * 0.005, 'exact' => false],
@@ -98,8 +108,10 @@ final class ServiceJobController
         if (Db::one("SELECT id FROM service_jobs WHERE customer_id = ? AND artisan_id = ? AND status IN ('requested','accepted','enroute','arrived')", [$u['id'], $aid])) Http::json(['error' => 'validation', 'message' => 'You already have an open job with them.'], 409);
         Db::run('INSERT INTO service_jobs (customer_id, artisan_id, trade, problem, lat, lng, landmark, created_at) VALUES (?,?,?,?,?,?,?,?)', [$u['id'], $aid, $a['trade'], $problem, round($lat, 6), round($lng, 6), mb_substr(trim((string) ($b['landmark'] ?? '')), 0, 160) ?: null, Db::now()]);
         $id = (int) Db::lastId();
+        $isOrder = in_array($a['trade'], self::ORDER_TRADES, true) && ($b['kind'] ?? 'order') === 'order';
+        if ($isOrder) { try { Db::run("UPDATE service_jobs SET kind = 'order' WHERE id = ?", [$id]); } catch (Throwable $e) {} }   // before migration 040 it simply stays a call-out
         $km = WakaRules::km((float) ($a['lat'] ?? $lat), (float) ($a['lng'] ?? $lng), $lat, $lng);
-        Notify::user($aid, 'work', explode(' ', trim((string) $u['name']))[0] . ' needs a ' . strtolower(ArtisanController::TRADES[$a['trade']] ?? 'hand') . ' about ' . ($km < 1 ? 'under 1' : round($km)) . ' km away', mb_substr($problem, 0, 90) . ' Tap to accept or decline.', '/#/jobs/' . $id, true);
+        Notify::user($aid, 'work', $isOrder ? 'New order from ' . explode(' ', trim((string) $u['name']))[0] . ', ' . ($km < 1 ? 'under 1' : round($km)) . ' km away' : explode(' ', trim((string) $u['name']))[0] . ' needs a ' . strtolower(ArtisanController::TRADES[$a['trade']] ?? 'hand') . ' about ' . ($km < 1 ? 'under 1' : round($km)) . ' km away', mb_substr($problem, 0, 90) . ' Tap to accept or decline.', '/#/jobs/' . $id, true);
         Track::hit($u, 'artisan', 'job_request');
         Http::json(['id' => $id], 201);
     }
@@ -133,7 +145,7 @@ final class ServiceJobController
                 $t = Db::one("SELECT id FROM threads WHERE kind = 'artisan' AND user_a = ? AND user_b = ?", [$a, $b]);
                 if (!$t) { Db::run("INSERT INTO threads (kind, user_a, user_b, last_message_at, created_at) VALUES ('artisan', ?, ?, ?, ?)", [$a, $b, Db::now(), Db::now()]); $tid = (int) Db::lastId(); } else $tid = (int) $t['id'];
                 Db::run("UPDATE service_jobs SET status = 'accepted', accepted_at = ?, thread_id = ? WHERE id = ?", [Db::now(), $tid, $id]);
-                Notify::user($to, 'work', $name . ' accepted your job', 'They will set off soon. You can follow them on the map.', $url, true);
+                Notify::user($to, 'work', ($j['kind'] ?? '') === 'order' ? $name . ' accepted your order' : $name . ' accepted your job', ($j['kind'] ?? '') === 'order' ? 'They will tell you when it will be ready, then you can watch it come.' : 'They will set off soon. You can follow them on the map.', $url, true);
                 break;
             case 'decline':
                 if (($j['mode'] ?? 'direct') === 'nearest' && (int) $j['artisan_id'] !== (int) $u['id']) {
@@ -145,12 +157,19 @@ final class ServiceJobController
                 Db::run("UPDATE service_jobs SET status = 'declined' WHERE id = ?", [$id]);
                 Notify::user($to, 'work', $name . ' cannot come this time', 'Try another one near you.', '/#/artisans/map?trade=' . $j['trade'], true);
                 break;
+            case 'prepare':
+                // an order is being made: the customer sees a countdown, then live tracking once it leaves
+                if (!$isArtisan || $j['status'] !== 'accepted') $bad();
+                $mins = max(5, min(240, (int) (Http::body()['minutes'] ?? 20)));
+                Db::run('UPDATE service_jobs SET ready_at = ?, prep_min = ? WHERE id = ?', [gmdate('Y-m-d H:i:s', time() + $mins * 60), $mins, $id]);
+                Notify::user($to, 'work', $name . ' is preparing your order', 'Ready in about ' . $mins . ' minutes. You will see it on the map when it leaves.', $url, true);
+                break;
             case 'start':
                 if (!$isArtisan || !in_array($j['status'], ['accepted', 'enroute'], true)) $bad();
                 $b = Http::body();
                 Db::run("UPDATE service_jobs SET status = 'enroute', started_at = COALESCE(started_at, ?) WHERE id = ?", [Db::now(), $id]);
                 if (!empty($b['lat'])) $this->recordPing($id, (float) $b['lat'], (float) $b['lng'], null, null, true);
-                if ($j['status'] === 'accepted') Notify::user($to, 'work', $name . ' is on the way', 'Tap to watch them come and see when they will arrive.', $url, true);
+                if ($j['status'] === 'accepted') Notify::user($to, 'work', ($j['kind'] ?? '') === 'order' ? 'Your order is on the way' : $name . ' is on the way', 'Tap to watch it come and see when it will arrive.', $url, true);
                 break;
             case 'arrived':
                 if (!$isArtisan || $j['status'] !== 'enroute') $bad();
@@ -214,7 +233,7 @@ final class ServiceJobController
         if ($j['status'] === 'enroute' && $dist <= self::ARRIVE_M) {
             Db::run("UPDATE service_jobs SET status = 'arrived', arrived_at = ?, eta_min = 0 WHERE id = ?", [$now, $id]);
             $name = (Db::one('SELECT business FROM artisans WHERE user_id = ?', [$j['artisan_id']])['business'] ?? '') ?: explode(' ', trim((string) (Db::one('SELECT name FROM users WHERE id = ?', [$j['artisan_id']])['name'] ?? 'They')))[0];
-            Notify::user((int) $j['customer_id'], 'work', $name . ' has arrived', 'They are at your location.', '/#/jobs/' . $id, true);
+            Notify::user((int) $j['customer_id'], 'work', ($j['kind'] ?? '') === 'order' ? 'Your order has arrived' : $name . ' has arrived', ($j['kind'] ?? '') === 'order' ? $name . ' is at your location with it.' : 'They are at your location.', '/#/jobs/' . $id, true);
         }
     }
 

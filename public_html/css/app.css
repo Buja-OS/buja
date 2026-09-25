@@ -491,3 +491,14 @@ body.kart-on .kart-stage{width:100vw;height:100vh;height:100dvh}
 
 /* Long unbroken words or pasted links in titles and posts wrap instead of pushing the page wider than the phone */
 .screen { overflow-wrap: break-word; }
+
+/* Buja Kart HUD: speed and the item button sit clear of your own kart (it fills the bottom-centre of the view) */
+.kart-stage .kart-speed{top:calc(58px + var(--safe-t,0px));bottom:auto;left:50%;transform:translateX(-50%);padding:5px 14px 7px;min-width:84px;background:rgba(10,10,14,.55);backdrop-filter:none;border:1px solid rgba(255,255,255,.12)}
+.kart-stage .kart-speed b{font-size:24px}
+.kart-stage .kart-item{right:calc(16px + var(--safe-r,0px));left:auto;transform:none;bottom:calc(250px + var(--safe-b,0px));width:64px;height:64px;font-size:32px}
+@media (orientation: landscape){
+  .kart-stage .kart-speed{top:calc(10px + var(--safe-t,0px))}
+  .kart-stage .kart-item{right:calc(172px + var(--safe-r,0px));bottom:calc(22px + var(--safe-b,0px))}
+}
+.kart-stage .kart-mid{left:auto;right:calc(172px + var(--safe-r,0px));transform:translateZ(0);bottom:calc(22px + var(--safe-b,0px))}
+@media (orientation: landscape){ .kart-stage .kart-item{bottom:calc(112px + var(--safe-b,0px))} }

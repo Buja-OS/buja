@@ -53,7 +53,18 @@ final class EscrowController
             'listing' => $l ? ['id' => (int) $l['id'], 'title' => $l['title'], 'district' => $l['district'], 'photo' => $ph ? '/api/declutter/photos/' . $ph['id'] : null] : null,
             'buyer' => $b ? ['id' => (int) $b['id'], 'name' => self::first($b['name'])] : null, 'seller' => $s ? ['id' => (int) $s['id'], 'name' => self::first($s['name'])] : null,
             'note' => $o['note'], 'paidAt' => $o['paid_at'], 'shippedAt' => $o['shipped_at'], 'releaseAt' => $o['release_at'], 'releasedAt' => $o['released_at'], 'refundedAt' => $o['refunded_at'], 'createdAt' => $o['created_at'],
-            'payout' => $po ? ['status' => $po['status'], 'sentAt' => $po['sent_at']] : null];
+            'payout' => $po ? ['status' => $po['status'], 'sentAt' => $po['sent_at']] : null,
+            'handover' => $o['handover'] ?? null,
+            'drop' => $role && ($o['drop_lat'] ?? null) !== null ? ['lat' => (float) $o['drop_lat'], 'lng' => (float) $o['drop_lng'], 'note' => $o['drop_note'] ?? null] : null,
+            'track' => $role ? LiveTrack::shape(LiveTrack::get('escrow', (int) $o['id'])) : null];
+    }
+    /** Where the buyer wants it delivered, if they chose delivery. Quietly skipped until migration 040 has run. */
+    private static function saveDrop(int $id, array $b): void
+    {
+        $h = ($b['handover'] ?? '') === 'delivery' ? 'delivery' : (($b['handover'] ?? '') === 'pickup' ? 'pickup' : null); if (!$h) return;
+        $lat = isset($b['lat']) ? (float) $b['lat'] : null; $lng = isset($b['lng']) ? (float) $b['lng'] : null;
+        if ($h === 'delivery' && ($lat === null || !ServiceJobController::inFct($lat, $lng))) { $lat = $lng = null; }
+        try { Db::run('UPDATE escrow_orders SET handover = ?, drop_lat = ?, drop_lng = ?, drop_note = ? WHERE id = ?', [$h, $lat !== null ? round($lat, 6) : null, $lng !== null ? round($lng, 6) : null, mb_substr(trim((string) ($b['note'] ?? '')), 0, 160) ?: null, $id]); } catch (Throwable $e) {}
     }
 
     /** POST /escrow/buy/{listingId} : start paying; the price is the listing's, or an offer the seller accepted from this buyer */
@@ -75,6 +86,7 @@ final class EscrowController
         $ref = 'BJE-' . $listingId . '-' . bin2hex(random_bytes(5));
         Db::run('INSERT INTO escrow_orders (listing_id, buyer_id, seller_id, price, fee, total, reference, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)', [$listingId, $u['id'], $l['seller_id'], $price, $fee, $total, $ref, Db::now(), Db::now()]);
         $id = (int) Db::pdo()->lastInsertId();
+        self::saveDrop($id, Http::body());
         try { $p = Paystack::initialize($u['email'], $total, $ref, ['purpose' => 'escrow', 'order_id' => $id, 'listing_id' => $listingId]); }
         catch (Throwable $e) { Db::run("UPDATE escrow_orders SET status = 'cancelled', updated_at = ? WHERE id = ?", [Db::now(), $id]); Http::json(['error' => 'unavailable', 'message' => 'Payments are not available right now. Try again shortly.'], 503); }
         Track::hit($u, 'declutter', 'escrow_start');
@@ -123,10 +135,33 @@ final class EscrowController
         if ($action === 'ship') {
             if (!$isSeller || $o['status'] !== 'paid') Http::json(['error' => 'validation', 'message' => 'Only the seller can do this, once the buyer has paid.'], 422);
             Db::run("UPDATE escrow_orders SET status = 'shipped', shipped_at = ?, release_at = ?, updated_at = ? WHERE id = ?", [Db::now(), gmdate('Y-m-d H:i:s', time() + self::RELEASE_HOURS * 3600), Db::now(), $id]);
+            LiveTrack::end('escrow', $id);
             Notify::user((int) $o['buyer_id'], 'offers', 'Your item is on its way', 'When ' . $title . ' is in your hands and as described, tap "I received it". If there is a problem, report it within 3 days.', '/#/orders/' . $id, true);
+        } elseif ($action === 'where') {
+            // the buyer sets or moves the delivery spot
+            if (!$isBuyer || !in_array($o['status'], ['pending', 'paid'], true)) Http::json(['error' => 'validation', 'message' => 'The delivery spot can only change before the item is handed over.'], 422);
+            $b = Http::body(); if (!isset($b['lat']) || !ServiceJobController::inFct((float) $b['lat'], (float) $b['lng'])) Http::json(['error' => 'validation', 'message' => 'That spot is outside the FCT. Turn on GPS and try again.'], 422);
+            self::saveDrop($id, ['handover' => 'delivery'] + $b);
+            if ($t = LiveTrack::get('escrow', $id)) { if ($t['status'] !== 'ended') LiveTrack::start('escrow', $id, (int) $o['seller_id'], (int) $o['buyer_id'], (float) $b['lat'], (float) $b['lng']); }
+        } elseif ($action === 'deliver') {
+            // the seller sets off: the buyer watches them come
+            if (!$isSeller || $o['status'] !== 'paid') Http::json(['error' => 'validation', 'message' => 'You can start delivering once the buyer has paid.'], 422);
+            $o = Db::one('SELECT * FROM escrow_orders WHERE id = ?', [$id]);
+            if (($o['drop_lat'] ?? null) === null) Http::json(['error' => 'validation', 'message' => 'The buyer has not set where to deliver yet. Message them, or meet up and hand it over.'], 422);
+            $b = Http::body();
+            LiveTrack::start('escrow', $id, (int) $o['seller_id'], (int) $o['buyer_id'], (float) $o['drop_lat'], (float) $o['drop_lng'], isset($b['lat']) ? (float) $b['lat'] : null, isset($b['lng']) ? (float) $b['lng'] : null);
+            Notify::user((int) $o['buyer_id'], 'offers', self::first((string) (Db::one('SELECT name FROM users WHERE id = ?', [$o['seller_id']])['name'] ?? 'The seller')) . ' is bringing ' . $title, 'Tap to watch it come to you and see when it will arrive.', '/#/orders/' . $id, true);
+        } elseif ($action === 'ping') {
+            if (!$isSeller) Http::json(['error' => 'forbidden'], 403);
+            $t = LiveTrack::get('escrow', $id);
+            if (!$t || $t['status'] === 'ended' || $o['status'] !== 'paid') Http::json(['order' => self::shape($o, $u), 'stop' => true]);
+            $b = Http::body(); $lat = (float) ($b['lat'] ?? 0); $lng = (float) ($b['lng'] ?? 0);
+            if ($lat < 8 || $lat > 10 || $lng < 6.5 || $lng > 8) Http::json(['error' => 'validation'], 422);
+            $was = $t['status']; $t = LiveTrack::ping($t, $lat, $lng, isset($b['heading']) ? (int) $b['heading'] : null, isset($b['speed']) ? (float) $b['speed'] : null);
+            if ($was === 'enroute' && $t['status'] === 'arrived') Notify::user((int) $o['buyer_id'], 'offers', 'Your item has arrived', 'Check it, then confirm in Buja so the seller is paid.', '/#/orders/' . $id, true);
         } elseif ($action === 'confirm') {
             if (!$isBuyer || !in_array($o['status'], ['paid', 'shipped'], true)) Http::json(['error' => 'validation', 'message' => 'This order cannot be confirmed now.'], 422);
-            self::release($o, 'The buyer confirmed the item arrived.');
+            self::release($o, 'The buyer confirmed the item arrived.'); LiveTrack::end('escrow', $id);
         } elseif ($action === 'dispute') {
             if (!$isBuyer || !in_array($o['status'], ['paid', 'shipped'], true)) Http::json(['error' => 'validation', 'message' => 'This order cannot be disputed now.'], 422);
             $note = trim(mb_substr((string) (Http::body()['note'] ?? ''), 0, 300)); if (mb_strlen($note) < 10) Http::json(['error' => 'validation', 'fields' => ['note' => 'Tell us what went wrong, in a sentence or two.']], 422);
@@ -135,7 +170,7 @@ final class EscrowController
             self::tellAdmins('Escrow dispute: ' . $title, $note, '/#/admin/escrow');
         } elseif ($action === 'cancel') {
             if (!$isSeller || $o['status'] !== 'paid') Http::json(['error' => 'validation', 'message' => 'Only the seller can cancel, before handing the item over.'], 422);
-            self::refund($o, 'The seller cancelled the sale.');
+            self::refund($o, 'The seller cancelled the sale.'); LiveTrack::end('escrow', $id);
         } else Http::json(['error' => 'not_found'], 404);
         Http::json(['order' => self::shape(Db::one('SELECT * FROM escrow_orders WHERE id = ?', [$id]), $u)]);
     }

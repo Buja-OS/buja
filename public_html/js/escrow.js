@@ -1,4 +1,5 @@
 // Buy safely (Declutter escrow): my orders, one order's steps, where sellers get paid, and the admin escrow desk.
+import { createMap, carHtml, avatarHtml, pinHtml, keepAwake, metres } from './map.js';
 export function registerEscrow({ route, go, state, api, ui, failed }) {
   const { h, toast, topbar, icon, busy } = ui;
   const naira = (n) => '₦' + Number(n || 0).toLocaleString('en-NG');
@@ -27,7 +28,7 @@ export function registerEscrow({ route, go, state, api, ui, failed }) {
     const steps = [['Paid and held by Buja', o.paidAt], ['Seller handed it over', o.shippedAt], [o.status === 'refunded' ? 'Refunded to the buyer' : 'Seller paid', o.releasedAt || o.refundedAt]];
     const buyer = o.role === 'buyer', seller = o.role === 'seller';
     let actions = '';
-    if (buyer && o.status === 'paid') actions = `<div class="small muted" style="line-height:1.5">Meet ${h(o.seller.name)} and check the item. The seller cannot be paid until you confirm, and you get your money back if it is never handed over.</div><button class="btn btn-primary" data-act="confirm">${icon('circle-check')} I received it, pay the seller</button><button class="btn btn-ghost" data-act="dispute">Report a problem</button>`;
+    if (buyer && o.status === 'paid') actions = `<div class="small muted" style="line-height:1.5">${o.handover === 'delivery' ? 'When ' + h(o.seller.name) + ' brings it, check the item.' : 'Meet ' + h(o.seller.name) + ' and check the item.'} The seller cannot be paid until you confirm, and you get your money back if it is never handed over.</div><button class="btn btn-primary" data-act="confirm">${icon('circle-check')} I received it, pay the seller</button><button class="btn btn-ghost" data-act="dispute">Report a problem</button>`;
     if (buyer && o.status === 'shipped') actions = `<div class="small muted" style="line-height:1.5">If it is in your hands and as described, confirm to pay ${h(o.seller.name)}. If there is a problem, report it before <b>${when(o.releaseAt)}</b>; after that the payment releases by itself.</div><button class="btn btn-primary" data-act="confirm">${icon('circle-check')} I received it, pay the seller</button><button class="btn btn-ghost" data-act="dispute">Report a problem</button>`;
     if (seller && o.status === 'paid') actions = `<div class="small muted" style="line-height:1.5">${h(o.buyer.name)} paid ${naira(o.price)} and Buja is holding it. Hand the item over, then tap below. You are paid when they confirm, or automatically 3 days after handover if they report no problem.</div>${hasPayoutAccount ? '' : `<a class="card row" href="#/payout" style="padding:10px 12px;gap:10px;background:var(--orange-tint);border-color:var(--orange)">${icon('building-columns')}<span class="grow small"><b>Add your bank account</b> so the money can reach you</span>${icon('chevron-right')}</a>`}<button class="btn btn-primary" data-act="ship">${icon('box')} I have handed it over</button><button class="btn btn-ghost" data-act="cancel">I can't sell it any more (refund the buyer)</button>`;
     if (seller && o.status === 'shipped') actions = `<div class="small muted" style="line-height:1.5">Waiting for ${h(o.buyer.name)} to confirm. If they say nothing, you are paid automatically on <b>${when(o.releaseAt)}</b>.</div>${hasPayoutAccount ? '' : `<a class="btn btn-outline" href="#/payout">Add your bank account</a>`}`;
@@ -43,10 +44,12 @@ export function registerEscrow({ route, go, state, api, ui, failed }) {
         ${buyer ? `<div class="row small"><span class="grow muted">Buyer protection</span><b>${naira(o.fee)}</b></div><div class="row"><span class="grow"><b>You paid</b></span><b>${naira(o.total)}</b></div>` : `<div class="row small"><span class="grow muted">You receive</span><b>${naira(o.price)}</b></div>`}
       </div>
       <div class="card stack" style="padding:12px 14px;gap:10px">${steps.map(([t, at], i) => `<div class="row" style="gap:10px;align-items:flex-start"><span style="width:22px;height:22px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font:800 12px Inter;${at ? 'background:var(--green);color:#101014' : 'background:var(--surface);color:var(--muted)'}">${at ? '✓' : i + 1}</span><span class="grow small"><b style="${at ? '' : 'color:var(--muted)'}">${t}</b>${at ? `<br><span class="muted">${when(at)}</span>` : ''}</span></div>`).join('')}</div>
+      ${o.handover === 'delivery' && ['paid', 'shipped'].includes(o.status) && (buyer || seller) ? `<div class="card stack" id="deliv" style="padding:0;gap:0;overflow:hidden"><div id="dmap" style="height:230px;background:var(--surface)"></div><div class="stack" id="dinfo" style="padding:12px 14px;gap:10px"></div></div>` : ''}
       <div class="stack" style="gap:10px" id="acts">${actions}</div>
     </main>`;
   }, {
     mount(el, { id }) {
+      if (el.querySelector('#deliv')) deliveryPanel(el, id);
       el.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
         const a = b.dataset.act; let note;
         if (a === 'confirm' && !confirm('Confirm you have the item and it is as described? The seller will be paid.')) return;
@@ -58,6 +61,64 @@ export function registerEscrow({ route, go, state, api, ui, failed }) {
       }));
     }
   });
+
+  /* ---------- delivery: the buyer watches the seller bring it; the seller shares their location on the way ---------- */
+  async function deliveryPanel(el, id) {
+    const info = el.querySelector('#dinfo'); const box = el.querySelector('#dmap');
+    let o = (await api.escrowOrder(id)).order; const buyer = o.role === 'buyer';
+    const map = await createMap(box, { center: o.drop ? [o.drop.lng, o.drop.lat] : undefined, zoom: 14 });
+    if (!map) box.style.display = 'none';
+    let watch = null, wake = null, lastSent = 0, lastPos = null, timer = null, fitted = false;
+    const gone = () => !document.body.contains(el);
+    const clock = (iso) => new Date(String(iso).replace(' ', 'T') + 'Z').toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const stop = () => { if (watch != null) { navigator.geolocation.clearWatch(watch); watch = null; } try { wake && wake.release(); } catch {} wake = null; };
+    const here = (ms = 9000) => new Promise((res) => { if (!navigator.geolocation) return res(null); let d = false; const f = (v) => { if (!d) { d = true; res(v); } }; setTimeout(() => f(null), ms); navigator.geolocation.getCurrentPosition((p) => f({ lat: p.coords.latitude, lng: p.coords.longitude }), () => f(null), { enableHighAccuracy: true, timeout: ms, maximumAge: 30000 }); });
+    const draw = () => {
+      if (!map) return; const T = o.track, L = T && T.live;
+      if (o.drop && (!map.has('dest') || draw._at !== o.drop.lat + ',' + o.drop.lng)) { draw._at = o.drop.lat + ',' + o.drop.lng; map.marker('dest', { lng: o.drop.lng, lat: o.drop.lat, z: 2, html: pinHtml({ iconName: 'location-dot', color: '#D92D20' }) }); }
+      if (L) {
+        if (map.has('c')) map.move('c', L.lng, L.lat, { heading: L.heading, ms: 3500 });
+        else map.marker('c', { lng: L.lng, lat: L.lat, z: 4, anchor: 'center', html: buyer ? avatarHtml(null, '#FF7A1A', (o.seller.name || '?').slice(0, 1).toUpperCase()) : carHtml('#FF7A1A', 'box') });
+        if (T.route && T.route.length > 1) map.line('r', T.route, { color: '#FF7A1A', width: 5 }); else if (o.drop) map.line('r', [[L.lng, L.lat], [o.drop.lng, o.drop.lat]], { color: '#FF7A1A', width: 4, dashed: true });
+        if (o.drop) map.fit([[L.lng, L.lat], [o.drop.lng, o.drop.lat]], { bottom: 40, top: 40, side: 40, ms: fitted ? 900 : 0, maxZoom: 16 }); fitted = true;
+      } else { map.remove('c'); map.removeLine('r'); if (o.drop && !fitted) { map.center(o.drop.lng, o.drop.lat, 15); fitted = true; } }
+    };
+    const render = () => {
+      const T = o.track, L = T && T.live, on = T && T.status === 'enroute', arrived = T && T.status === 'arrived';
+      const etaLine = L && L.etaMin != null ? `<div style="font-size:26px;font-weight:900;letter-spacing:-.5px">${L.etaMin <= 1 ? 'Arriving now' : L.etaMin + ' min away'}</div><div class="small muted">${L.etaAt ? 'about ' + clock(L.etaAt) + ' · ' : ''}${L.metres >= 1000 ? (L.metres / 1000).toFixed(1) + ' km' : L.metres + ' m'} to go</div>` : '';
+      const warn = L && L.lost ? `<div class="small" style="color:#D92D20"><b>No location for ${Math.round(L.age / 60)} min.</b> ${buyer ? 'Their phone may have lost data. Message or call them.' : 'Keep this screen open so the buyer can follow you.'}</div>` : L && L.stopped ? `<div class="small" style="color:var(--orange-dark)"><b>Stopped for ${L.stoppedMin} min.</b> ${buyer ? 'Could be traffic.' : 'The buyer can see you have stopped.'}</div>` : '';
+      let html = '';
+      if (buyer) {
+        if (!o.drop) html = `<div class="small muted">Tell the seller where to bring it, so you can watch it come.</div><button class="btn btn-primary" id="setdrop">Use my location for delivery</button>`;
+        else if (arrived) html = `<div style="font-weight:800;font-size:17px">${h(o.seller.name)} has arrived</div><div class="small muted">Check the item before you confirm below.</div>`;
+        else if (on) html = `${etaLine || `<div style="font-weight:700">${h(o.seller.name)} is on the way</div>`}${warn}`;
+        else html = `<div style="font-weight:700">Delivery to your pin</div><div class="small muted">You will see ${h(o.seller.name)} move on the map when they set off.${o.drop.note ? ' Landmark: ' + h(o.drop.note) : ''}</div><button class="btn btn-outline btn-sm" id="setdrop" style="width:auto">Move the pin to where I am now</button>`;
+      } else {
+        if (!o.drop) html = `<div class="small muted">The buyer has not set where to deliver yet. Message them, or meet up and hand it over.</div>`;
+        else if (on || arrived) html = `${arrived ? `<div style="font-weight:800;font-size:17px">You have arrived</div><div class="small muted">Hand it over, then tap "I have handed it over" below.</div>` : etaLine}${warn}<a class="btn btn-outline" href="https://www.google.com/maps/dir/?api=1&destination=${o.drop.lat},${o.drop.lng}&travelmode=driving" target="_blank" rel="noopener">${icon('route')} Directions in Google Maps</a><div class="small muted" id="sharing">${watch != null ? 'Sharing your location with the buyer' : 'Location not being shared. Keep this screen open.'}</div>`;
+        else if (o.status === 'paid') html = `<div style="font-weight:700">Deliver to ${h(o.buyer.name)}</div>${o.drop.note ? `<div class="small">Landmark: ${h(o.drop.note)}</div>` : ''}<button class="btn btn-primary" id="deliver">${icon('car-side')} Start delivery</button><div class="small muted">The buyer sees you move on the map with your arrival time. Keep this screen open while you travel.</div>`;
+      }
+      info.innerHTML = html;
+      info.querySelector('#setdrop')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); const p = await here(); if (!p) { busy(b, false); toast('Turn on location first'); return; } try { o = (await api.escrowAct(id, 'where', p)).order; toast('Delivery spot saved'); fitted = false; draw(); render(); } catch (err) { busy(b, false); failed(el, err); } });
+      info.querySelector('#deliver')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); const p = await here(); try { o = (await api.escrowAct(id, 'deliver', p || {})).order; share(); draw(); render(); } catch (err) { busy(b, false); failed(el, err); } });
+    };
+    const share = async () => {
+      if (watch != null || !navigator.geolocation) return; wake = await keepAwake();
+      watch = navigator.geolocation.watchPosition(async (p) => {
+        const pos = { lat: p.coords.latitude, lng: p.coords.longitude }, now = Date.now();
+        if (now - lastSent < 4000 && lastPos && metres(lastPos, pos) < 20) return; lastSent = now; lastPos = pos;
+        try { const r = await api.escrowAct(id, 'ping', { ...pos, heading: p.coords.heading != null && !isNaN(p.coords.heading) ? Math.round(p.coords.heading) : null, speed: p.coords.speed }); if (r.stop) stop(); if (!gone()) { o = r.order; draw(); render(); } } catch {}
+      }, () => toast('Location is off. The buyer cannot see you.'), { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
+    };
+    const tick = async () => {
+      if (gone()) { stop(); return; }
+      if (!document.hidden) { try { const r = await api.escrowOrder(id); if (JSON.stringify(r.order) !== JSON.stringify(o)) { o = r.order; draw(); if (!(document.activeElement && info.contains(document.activeElement))) render(); } } catch {} }
+      timer = setTimeout(tick, o.track && o.track.status === 'enroute' ? 3000 : 5000);
+    };
+    draw(); render();
+    if (!buyer && o.track && o.track.status !== 'ended' && o.status === 'paid') share();   // reopened mid-journey
+    timer = setTimeout(tick, 4000);
+  }
 
   /* ---------- where sellers get paid ---------- */
   route('/payout', { auth: true, tabs: 'Me' }, async () => {
