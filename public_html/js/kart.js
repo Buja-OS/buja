@@ -32,11 +32,25 @@ function turntable(canvas, colour, look) {
   const loop = () => { if (!running) return; kart.rotation.y += 0.008; kart._spin = kart.rotation.y; if (kart.flames) kart.flames.set(0, false, 0); r.render(scene, cam); requestAnimationFrame(loop); }; loop();
   return { set: (c, l) => { const s = kart ? kart.rotation.y : 0.6; set(c, l); kart.rotation.y = s; }, stop: () => { running = false; r.dispose(); } };
 }
+/** One-off garage sounds (the door, an upgrade going in). Respects the sound-effects setting; quietly does nothing if the phone blocks audio. */
+const garageSfx = (() => { let ctx = null; const cache = {};
+  return async (name, vol = 0.6, dur = 0) => {
+    try { if (localStorage.getItem('buja_kart_sfx') === '0') return 0; } catch {}
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return 0; ctx = ctx || new AC(); if (ctx.state === 'suspended') await ctx.resume();
+      if (ctx.state !== 'running') return 0;
+      cache[name] = cache[name] || fetch(TEX + 'sfx/' + name + '.mp3').then((r) => r.arrayBuffer()).then((d) => new Promise((res, rej) => ctx.decodeAudioData(d, res, rej)));
+      const b = await cache[name]; const src = ctx.createBufferSource(), g = ctx.createGain(); g.gain.value = vol; src.buffer = b; src.connect(g); g.connect(ctx.destination); src.start();
+      if (dur) g.gain.setTargetAtTime(0, ctx.currentTime + dur, 0.35);
+      return dur || b.duration;
+    } catch { return 0; }
+  }; })();
 /** Hear an engine before buying it: a short rev from idle to full speed. */
 function previewSound(pack, tune) {
-  const a = new KartAudio(); a.musicOn = false; a.sfxOn = true; a.wake(); if (!a.ctx) return; a.setTune(tune);
+  const a = new KartAudio(); a.musicOn = false; a.sfxOn = true; a.lite = true; a.wake(); if (!a.ctx) return; a.setTune(tune);
   const go = () => { a.setPack(pack); let v = 4; const t = setInterval(() => { v = Math.min(38, v + 2.5); a.update(v, true, false, false, false); }, 90); setTimeout(() => { clearInterval(t); a.update(0, false, false, false, true); setTimeout(() => a.stop(), 500); }, 2200); };
-  setTimeout(go, pack === 'kart' || pack === 'okada' ? 700 : 50); // the recordings need a moment to load
+  let started = false; const once = () => { if (!started) { started = true; go(); } };
+  if (a.ready) a.ready.then(once); setTimeout(once, 2500);   // start as soon as the recordings are in (or give up waiting)
 }
 /** Flip a circuit's direction: the start stays put, every position along the lap is mirrored. */
 function reverseCircuit(c) {
@@ -64,6 +78,8 @@ const PAINT_NAMES = { green: 'Amaka green', red: 'Tunde red', yellow: 'Ngozi yel
 const UPGRADE = { engine: (l) => ({ topMul: 1 + 0.03 * l }), accel: (l) => ({ accMul: 1 + 0.08 * l }), handling: (l) => ({ turnMul: 1 + 0.05 * l, offBonus: l }), boost: (l) => ({ boostMul: 1 + 0.12 * l }), stability: (l) => ({ stab: l }) };
 const myDriver = () => { try { const d = localStorage.getItem('buja_kart_driver'); return DRIVERS[d] ? d : 'green'; } catch { return 'green'; } };
 const TEX = '/assets/kart/';
+// where each looping recording repeats (seconds): the files carry a little of the loop either side so the join is seamless on every browser
+const SFX_LOOPS = {"eng-idle":[0.12,4.07],"eng-low":[0.12,6.07],"eng-high":[0.12,5.47],"eng-electric":[0.12,2.5811],"skid":[0.12,1.32],"track":[0.12,13.62]};
 /** What the shop sells. Prices live on the server; these are the names and blurbs. */
 const SHOP_INFO = {
   design: { title: 'Design', items: { classic: ['Classic', 'Your colour, clean'], stripes: ['Racing stripes', 'Twin white stripes, nose to tail'], naija: ['Green-white-green', 'The flag, down the middle'], flames: ['Flames', 'Hot-rod flames on the side pods'], carbon: ['Carbon', 'Matte carbon with an orange line'], neon: ['Neon', 'Glowing trims and underglow, made for night'] } },
@@ -160,12 +176,14 @@ export function registerKart({ route, go, state, api, ui, failed }) {
     </main>`;
   }, {
     async mount(el) {
+      // the roller door goes up as you walk in (not after every upgrade refresh, and not more than once every few minutes)
+      try { const last = +sessionStorage.getItem('buja_garage_door') || 0; if (Date.now() - last > 5 * 60000) { sessionStorage.setItem('buja_garage_door', String(Date.now())); garageSfx('garage-door', 0.5, 3.4); } } catch {}
       const { garage: g } = await api.kartGarage();
       const driverCol = DRIVERS[myDriver()].colour;
       const baseLook = { ...(g.equipped || {}), paint: g.paint, driver: myDriver(), stats: Object.fromEntries((g.stats || []).map((x) => [x.id, x.level])) }; let look = { ...baseLook }; let paint = g.paint && PAINTS[g.paint] ? PAINTS[g.paint] : driverCol;
       // the 3D preview is a bonus: if a phone cannot draw it, the shop still works
       let tt = { set() {}, stop() {} }; try { tt = turntable(el.querySelector('#tt'), paint, look); } catch (e) { console.warn('turntable', e); el.querySelector('.kart-turntable').style.height = '64px'; }
-      el.querySelectorAll('[data-up]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { await api.kartUpgrade(b.dataset.up); toast('Upgraded'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } }));
+      el.querySelectorAll('[data-up]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { await api.kartUpgrade(b.dataset.up); toast('Upgraded'); garageSfx('upgrade-rev', 0.7); setTimeout(() => location.reload(), 1100); } catch (err) { busy(b, false); failed(el, err); } }));
       el.querySelectorAll('[data-paint]').forEach((b) => b.addEventListener('click', async () => {
         if (!b.dataset.paint) { tt.set(driverCol, look); try { localStorage.removeItem('buja_kart_paint'); } catch {} try { await api.kartPaint(''); } catch {} toast('Using your driver\'s colour'); location.reload(); return; }
         tt.set(PAINTS[b.dataset.paint], { ...look, paint: b.dataset.paint }); busy(b, true);
@@ -294,7 +312,7 @@ class Race {
   constructor(el, o) {
     Object.assign(this, o); this.el = el; this.running = false; this.input = { l: 0, r: 0, brake: 0, drift: 0 };
     this.remotes = {}; this.chatAfter = 0; this.lastSync = 0; this.recording = []; this.bestLap = null; this.lapTimes = [];
-    this.audio = new KartAudio(); this.paused = false; this.steerMode = (() => { try { return localStorage.getItem('buja_kart_steer') || 'buttons'; } catch { return 'buttons'; } })(); this.tilt = 0; this.shake = 0;
+    this.audio = new KartAudio(); this.audio.engineOff = true; this.paused = false; this.steerMode = (() => { try { return localStorage.getItem('buja_kart_steer') || 'buttons'; } catch { return 'buttons'; } })(); this.tilt = 0; this.shake = 0;
   }
 
   /* ------------------------------ setup ------------------------------ */
@@ -649,7 +667,7 @@ class Race {
     const pad = (id, pairs) => { const el = this.el.querySelector('#' + id); const btns = pairs.map(([bid, key]) => [this.el.querySelector('#' + bid), key]);
       const upd = (e) => { if (e.cancelable) e.preventDefault(); const act = new Set();
         for (const t of e.touches) { if (!el.contains(t.target) || (t.target.closest && t.target.closest('#kd,#ki'))) continue; let best = null, bd = 1e9; for (const [b, key] of btns) { if (!b.offsetParent) continue; const r = b.getBoundingClientRect(); const dx = Math.max(r.left - t.clientX, 0, t.clientX - r.right), dy = Math.max(r.top - t.clientY, 0, t.clientY - r.bottom); const d = dx * dx + dy * dy; if (d < bd) { bd = d; best = key; } } if (best && bd < 70 * 70) act.add(best); }
-        for (const [b, key] of btns) { const was = !!this.input[key], now = act.has(key); if (now && !was) { try { navigator.vibrate && navigator.vibrate(8); } catch {} } this.input[key] = now ? 1 : 0; b.classList.toggle('on', now); } };
+        for (const [b, key] of btns) { const was = !!this.input[key], now = act.has(key); if (now && !was) { try { navigator.vibrate && navigator.vibrate(8); } catch {} if ((key === 'l' || key === 'r') && this.player) this.audio.steerTick(key === 'l' ? -1 : 1, this.player.v); } this.input[key] = now ? 1 : 0; b.classList.toggle('on', now); } };
       ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach((ev) => el.addEventListener(ev, upd, { passive: false })); };
     pad('padsteer', [['kl', 'l'], ['kr', 'r']]); pad('paddrive', [['kb', 'brake'], ['kg', 'gas']]);
     try { if (localStorage.getItem('buja_kart_hand') === 'r') this.el.classList.add('kart-swap'); } catch {}
@@ -663,7 +681,7 @@ class Race {
     this._vis = () => { if (document.hidden && this.phase === 'race' && this.mode !== 'room' && !this.paused) this.togglePause(); }; document.addEventListener('visibilitychange', this._vis);
     const map = { ArrowLeft: 'l', a: 'l', A: 'l', ArrowRight: 'r', d: 'r', D: 'r', ArrowDown: 'brake', s: 'brake', S: 'brake', ArrowUp: 'gas', w: 'gas', W: 'gas', ' ': 'drift', Shift: 'drift' };
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') this.togglePause(); });
-    this._kd = (e) => { if (map[e.key]) { this.input[map[e.key]] = 1; e.preventDefault(); } }; this._ku = (e) => { if (map[e.key]) this.input[map[e.key]] = 0; };
+    this._kd = (e) => { if (map[e.key]) { const k = map[e.key]; if (!this.input[k] && (k === 'l' || k === 'r') && this.player) this.audio.steerTick(k === 'l' ? -1 : 1, this.player.v); this.input[k] = 1; e.preventDefault(); } }; this._ku = (e) => { if (map[e.key]) this.input[map[e.key]] = 0; };
     window.addEventListener('keydown', this._kd); window.addEventListener('keyup', this._ku);
 
   }
@@ -742,8 +760,9 @@ class Race {
       const startAt = this.countFrom ?? (this.room && this.room.startAt ? performance.now() + (this.room.startAt - (Date.now() + (this.skew || 0))) : null);
       if (startAt != null) { this.countFrom = startAt; const left = Math.ceil((startAt - performance.now()) / 1000);
         if (this.startLights) { const lit = left > 3 ? 0 : left <= 0 ? 0 : Math.min(5, Math.round((1 - (startAt - performance.now()) / 3000) * 5)); this.startLights.forEach((m, i) => { m.material.emissiveIntensity = i < lit ? 9 : 0; m.material.color.set(i < lit ? '#FF2A1A' : '#2A0E0C'); }); }
-        if (left !== this._lastLeft) { this._lastLeft = left; if (left >= 1 && left <= 3) this.audio.beep(false); else if (left <= 0) this.audio.beep(true); }
+        if (left !== this._lastLeft) { if (this._lastLeft === undefined) this.audio.startUp(); this._lastLeft = left; if (left >= 1 && left <= 3) this.audio.beep(false); else if (left <= 0) this.audio.beep(true); }
         count.innerHTML = left > 3 ? '' : left > 0 ? `<b class="pop">${left}</b>` : '<b class="pop go">GO!</b>';
+        if (!this.paused) this.audio.update(0, !!this.input.gas, false, false, false, { crowd: this.crowdNear(), track: true });
         if (left <= 0) { this.phase = 'race'; this.t0 = startAt; this.lapStart = startAt; this.buzz(40); setTimeout(() => { count.innerHTML = ''; }, 700); } }
       else count.innerHTML = '<b style="font-size:22px">Waiting for the host…</b>';
     }
@@ -769,7 +788,7 @@ class Race {
       this.hud(now);
       if (this.fx) this.fx.update(dt);
       if (this.items && this.phase === 'race') this.itemTick(now, dt);
-      const P = this.player; this.audio.update(P.v, !this.input.brake && (this.autoGas || this.input.gas || this.input.l || this.input.r), P._drifting, P._off, false, { boost: P.boost > 0, crowd: this.crowdNear() });
+      const P = this.player; this.audio.update(P.v, !this.input.brake && (this.autoGas || this.input.gas || this.input.l || this.input.r), P._drifting, P._off, false, { boost: P.boost > 0, crowd: this.crowdNear(), rival: this._rival, track: true });
       // wrong way: facing against the circuit for more than a second
       const t = this.tangents[P.idx], dot = Math.sin(P.h) * t.x + Math.cos(P.h) * t.z;
       // counted in real time, so a slow phone shows it as quickly as a fast one
@@ -778,13 +797,17 @@ class Race {
       // overtakes and being overtaken
       if (this.phase === 'race' && (this.bots.length || Object.keys(this.remotes).length)) { const place = this.placing(); if (this._place && place !== this._place && now - (this._placeAt || 0) > 900) { this.callout(place < this._place ? '▲ ' + this.ord(place) : '▼ ' + this.ord(place), place < this._place); this.audio.overtake(place < this._place); this._placeAt = now; } this._place = place; }
       this.el.querySelector('#lines').classList.toggle('on', P.boost > 0);
-      const others = [...this.bots, ...Object.values(this.remotes).map((r) => r.kart).filter(Boolean)];
+      const others = [...this.bots, ...Object.values(this.remotes).map((r) => r.kart).filter(Boolean)]; let rival = null;
       for (const o of others) {
         const dx = o.position.x - P.position.x, dz = o.position.z - P.position.z, dist = Math.hypot(dx, dz);
         const ahead = dx * Math.sin(P.h) + dz * Math.cos(P.h), side = dx * Math.cos(P.h) - dz * Math.sin(P.h);
         if (o._ahead != null && Math.sign(ahead) !== Math.sign(o._ahead) && dist < 9) this.audio.passBy(Math.max(-1, Math.min(1, -side / 4)), Math.abs((o.v || 0) - P.v));
         o._ahead = ahead;
+        // the nearest rival is heard: louder as it closes, panned to its side, pitched up as it comes at you
+        const closing = o._pd != null && dt > 0 ? (o._pd - dist) / dt : 0; o._pd = dist;
+        if (!rival || dist < rival.d) rival = { d: dist, pan: Math.max(-1, Math.min(1, -side / 6)), v: o.v || 0, closing: Math.max(-25, Math.min(25, closing)) };
       }
+      this._rival = rival;
     }
     this.flagWave(now);
     this.chase(dt);
@@ -827,7 +850,7 @@ class Race {
   }
   async finish(now) {
     this.phase = 'done'; const raceMs = Math.round(now - this.t0);
-    const place = this.placing(); this.buzz(80); this.audio.finish(this.mode === 'solo' || place === 1); this.audio.cheer(place === 1);
+    const place = this.placing(); this.buzz(80); this.audio.finish(this.mode === 'solo' || place === 1); this.audio.cheer(place === 1); this.audio.pullUp();
     let saved = null;
     let gpHtml = '';
     if (this.mode === 'gp') {
@@ -935,7 +958,7 @@ class Race {
     // bananas: anyone driving over one spins out (the dropper is safe for a second)
     this.bananas = this.bananas.filter((ban) => {
       for (const k of racers) { if (k === ban.owner && now - ban.born < 1200) continue;
-        if ((k.position.x - ban.g.position.x) ** 2 + (k.position.z - ban.g.position.z) ** 2 < 1.7 ** 2 && !(k.spin > 0)) { k.spin = 1.1; k.v *= 0.45; if (ban.owner === this.player && k !== this.player) this._bananaHits = (this._bananaHits || 0) + 1; if (k === this.player) { this.audio.tone(500, 0.5, 'sine', 0.2, 0, -350); this.callout('🍌 Spun out!', false); this.buzz(50); } this.scene.remove(ban.g); return false; } }
+        if ((k.position.x - ban.g.position.x) ** 2 + (k.position.z - ban.g.position.z) ** 2 < 1.7 ** 2 && !(k.spin > 0)) { k.spin = 1.1; k.v *= 0.45; if (ban.owner === this.player && k !== this.player) this._bananaHits = (this._bananaHits || 0) + 1; if (k === this.player) { if (!this.audio.screech(0.55)) this.audio.tone(500, 0.5, 'sine', 0.2, 0, -350); this.callout('🍌 Spun out!', false); this.buzz(50); } this.scene.remove(ban.g); return false; } }
       ban.g.rotation.y += dt; return now - ban.born < 45000;
     });
     // computer drivers use what they pick up, after a moment's thought
@@ -1270,25 +1293,62 @@ class KartAudio {
       if (this.ctx.state === 'suspended') this.ctx.resume();
     } catch {}
   }
-  /** Real recordings: a go-kart engine loop, a drive-by and a rev. The generated engine stays as the fallback. */
-  async loadSamples() {
-    const c = this.ctx; const get = async (f) => { try { const r = await fetch(TEX + 'sfx/' + f); const data = await r.arrayBuffer(); return await new Promise((res, rej) => c.decodeAudioData(data, res, rej)); } catch { return null; } };
-    const [engine, pass, rev] = await Promise.all([get('engine.mp3'), get('pass.mp3'), get('rev.mp3')]);
-    this.bufPass = pass; this.bufRev = rev;
-    if (engine && this.ctx) {
-      this.engS = c.createGain(); this.engS.gain.value = 0; this.engS.connect(this.sfx);
-      this.engSrc = c.createBufferSource(); this.engSrc.buffer = engine; this.engSrc.loop = true; this.engSrc.connect(this.engS); this.engSrc.start();
-      this.eng.gain.setTargetAtTime(0, c.currentTime, 0.2); this.sampled = true;          // the recording takes over from the generated note
+  /** Real go-kart recordings (engine loops cut from an onboard 270cc kart, pass-bys, skids, start-up, pull-up).
+   *  The engine is three seamless loops blended by speed and throttle, the way racing games do it:
+   *  idle when stopped, a part-throttle loop when you lift, a full-throttle loop when you drive. The generated engine stays as the fallback. */
+  loadSamples() {
+    const c = this.ctx; const buf = this.buf = {};
+    const get = async (f) => { try { const r = await fetch(TEX + 'sfx/' + f + '.mp3'); if (!r.ok) return null; const data = await r.arrayBuffer(); return await new Promise((res, rej) => c.decodeAudioData(data, res, rej)); } catch { return null; } };
+    const grab = (names) => Promise.all(names.map(async (n) => { buf[n] = await get(n); }));
+    this.ready = grab(['eng-idle', 'eng-low', 'eng-high', 'eng-electric', 'rev']).then(() => {
+      if (!this.ctx) return;
+      this.bufRev = buf.rev;
+      const L = this.loops = {};
+      for (const n of ['eng-idle', 'eng-low', 'eng-high', 'eng-electric']) if (buf[n]) L[n] = this.loopVoice(buf[n], SFX_LOOPS[n]);
+      if (L['eng-high']) { this.eng.gain.setTargetAtTime(0, c.currentTime, 0.2); this.sampled = true; }   // the recording takes over from the generated note
       this.setPack(this.pack || 'kart');
-    }
+    });
+    if (this.lite) return;   // the garage preview only needs the engine
+    this.ready.then(() => grab(['skid', 'track', 'skid-hit', 'start-pull', 'start-electric', 'lift', 'pass-lr', 'pass-rl', 'pass', 'pullup', 'steer'])).then(() => {
+      if (!this.ctx) return;
+      this.bufPass = buf.pass;
+      if (buf.skid) { this.skidL = this.loopVoice(buf.skid, SFX_LOOPS.skid); this.sk.gain.setTargetAtTime(0, c.currentTime, 0.05); }
+      if (buf.track) this.trackL = this.loopVoice(buf.track, SFX_LOOPS.track);
+      if (buf['eng-high']) this.rivalL = this.loopVoice(buf['eng-high'], SFX_LOOPS['eng-high'], true);   // the nearest rival's engine
+    });
   }
+  /** A looping recording with its own volume (and, for rivals, its own left/right position). Starts silent at a random point. */
+  loopVoice(b, [a, e], panned = false) {
+    const c = this.ctx, src = c.createBufferSource(), g = c.createGain(); g.gain.value = 0;
+    src.buffer = b; src.loop = true; src.loopStart = a; src.loopEnd = Math.min(e, b.duration);
+    let out = g; if (panned && c.createStereoPanner) { const p = c.createStereoPanner(); g.connect(p); out = p; this.rivalPan = p; }
+    src.connect(g); out.connect(this.sfx); src.start(0, a + Math.random() * (src.loopEnd - a)); return { src, g };
+  }
+  /** Engine start on the grid: the pull-start for a petrol kart, the power-up whine for an electric one. The engine is silent until then. */
+  startUp() {
+    this.engineOff = false; this._engineOffAt = 0; if (!this.ctx) return; const t = this.ctx.currentTime, pk = this.pack || 'kart';
+    if (pk === 'kart' && this.buf && this.buf['start-pull']) { this.play(this.buf['start-pull'], { vol: 0.75 }); this._engineOnAt = t + 1.05; }
+    else if (pk === 'electric' && this.buf && this.buf['start-electric']) { this.play(this.buf['start-electric'], { vol: 0.55 }); this._engineOnAt = t + 1.3; }
+    else this._engineOnAt = t;
+  }
+  /** Across the line: a kart pulls up beside you and shuts off, and your own engine dies with it. */
+  pullUp() {
+    if (!this.ctx) return; const t = this.ctx.currentTime;
+    if (this.buf && this.buf.pullup && (this.pack || 'kart') === 'kart') { setTimeout(() => this.play(this.buf.pullup, { vol: 0.6, pan: 0.35 }), 500); this._engineOffAt = t + 4.2; }
+    else this._engineOffAt = t + 3;
+  }
+  /** Steering on the grid or at a crawl: the little whirr of the wheels turning. */
+  steerTick(side, v) { if (!this.buf || !this.buf.steer || v > 6) return; const n = performance.now(); if (this._steerAt && n - this._steerAt < 220) return; this._steerAt = n; this.play(this.buf.steer, { vol: 0.35, pan: side * 0.5, rate: 0.95 + Math.random() * 0.1 }); }
+  /** Spun out or scraping a wall: a real tyre screech. */
+  screech(vol = 0.45) { if (!this.buf || !this.buf['skid-hit']) return false; const n = performance.now(); if (this._scrAt && n - this._scrAt < 900) return true; this._scrAt = n; return this.play(this.buf['skid-hit'], { vol, rate: 0.95 + Math.random() * 0.15 }); }
   play(buf, { vol = 0.6, rate = 1, pan = 0 } = {}) {
     if (!this.ctx || !buf) return false; const c = this.ctx, s = c.createBufferSource(), g = c.createGain(); s.buffer = buf; s.playbackRate.value = rate; g.gain.value = vol;
     if (c.createStereoPanner) { const p = c.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan)); s.connect(g); g.connect(p); p.connect(this.sfx); } else { s.connect(g); g.connect(this.sfx); }
     s.start(); return true;
   }
   /** A kart going past: pan follows the side it passes on, pitch follows how fast it is closing. */
-  passBy(pan, closing) { if (this._passAt && performance.now() - this._passAt < 1400) return; this._passAt = performance.now(); if (!this.play(this.bufPass, { vol: 0.55, rate: Math.max(0.8, Math.min(1.35, 1 + closing / 40)), pan })) this.tone(300, 0.5, 'sawtooth', 0.06, 0, -180); }
+  passBy(pan, closing) { if (this._passAt && performance.now() - this._passAt < 1400) return; this._passAt = performance.now(); const b = this.buf || {}; const pick = pan > 0.15 ? b['pass-lr'] : pan < -0.15 ? b['pass-rl'] : null; const rate = Math.max(0.85, Math.min(1.3, 1 + closing / 45));
+    if (pick ? this.play(pick, { vol: 0.5, rate, pan: pan * 0.35 }) : this.play(this.bufPass, { vol: 0.55, rate, pan })) return; this.tone(300, 0.5, 'sawtooth', 0.06, 0, -180); }
   rev() { if (!this.play(this.bufRev, { vol: 0.5, rate: 1.05 })) this.tone(120, 0.6, 'sawtooth', 0.08, 0, 260); }
   /** Engine sound from the shop: kart (the recording), okada (the motorcycle rev, looped), electric or v8 (generated). */
   setPack(id) {
@@ -1298,7 +1358,7 @@ class KartAudio {
     if (this.pack === 'electric') { this.o1.type = 'sine'; this.o2.type = 'triangle'; }
     else if (this.pack === 'v8') { this.o1.type = 'sawtooth'; this.o2.type = 'square'; }
     else { this.o1.type = 'sawtooth'; this.o2.type = 'square'; }
-    if (this.engS) this.engS.gain.setTargetAtTime(0, t, 0.05);
+    if (this.loops) for (const k in this.loops) this.loops[k].g.gain.setTargetAtTime(0, t, 0.05);
     if (this.okS) this.okS.gain.setTargetAtTime(0, t, 0.05);
     if (this.pack === 'okada' && this.bufRev && !this.okSrc) { this.okS = this.ctx.createGain(); this.okS.gain.value = 0; this.okS.connect(this.sfx); this.okSrc = this.ctx.createBufferSource(); this.okSrc.buffer = this.bufRev; this.okSrc.loop = true; this.okSrc.loopStart = 0.85; this.okSrc.loopEnd = 1.75; this.okSrc.connect(this.okS); this.okSrc.start(0, 0.85); }
   }
@@ -1337,32 +1397,57 @@ class KartAudio {
       if (tu.accel >= 3) { this.turboO.frequency.setTargetAtTime(1600 + r0 * 3200 + (throttle ? 500 : 0), t0, 0.12); this.turbo.gain.setTargetAtTime(!paused && throttle ? 0.006 * (tu.accel - 2) * r0 : 0, t0, 0.1); }
       this._crowdBase = paused ? 0 : (ex.crowd || 0) * 0.14; if (!this._cheerUntil || t0 > this._cheerUntil) this.crowd.gain.setTargetAtTime(this._crowdBase, t0, 0.4);
       // lifting off the throttle at speed: blow-off with a turbo, pops with a tuned engine
-      if (this._thr && !throttle && r0 > 0.55 && !paused && (!this._liftAt || t0 - this._liftAt > 1.4)) { this._liftAt = t0; if (tu.accel >= 3) this.blowOff(); if (tu.engine >= 2) this.pops(1 + Math.floor(Math.random() * Math.min(4, tu.engine))); }
+      if (this._thr && !throttle && r0 > 0.55 && !paused && (!this._liftAt || t0 - this._liftAt > 1.4)) { this._liftAt = t0; if ((this.pack || 'kart') === 'kart' && this.buf && this.buf.lift) this.play(this.buf.lift, { vol: 0.4 }); if (tu.accel >= 3) this.blowOff(); if (tu.engine >= 2) this.pops(1 + Math.floor(Math.random() * Math.min(4, tu.engine))); }
+      if (this.skidL) this.skidL.g.gain.setTargetAtTime(!paused && drifting && v > 12 ? 0.3 : 0, t0, drifting ? 0.04 : 0.12), this.skidL.src.playbackRate.setTargetAtTime(0.92 + r0 * 0.18, t0, 0.1);
+      if (this.trackL) this.trackL.g.gain.setTargetAtTime(paused || !ex.track ? 0 : 0.05 + (ex.crowd || 0) * 0.1, t0, 0.5);
+      if (this.rivalL) { const rv = ex.rival; if (rv && !paused && !this.engineOff) { const near = Math.max(0, 1 - rv.d / 32); this.rivalL.g.gain.setTargetAtTime(0.32 * near * near, t0, 0.1); this.rivalL.src.playbackRate.setTargetAtTime(Math.max(0.55, (22 + 17 * Math.min(1.15, rv.v / 36)) / 36.6 * (1 + rv.closing * 0.006)), t0, 0.1); if (this.rivalPan) this.rivalPan.pan.setTargetAtTime(Math.max(-0.9, Math.min(0.9, rv.pan)), t0, 0.08); } else this.rivalL.g.gain.setTargetAtTime(0, t0, 0.2); }
       this._thr = throttle;
       const pk = this.pack || 'kart';
       if (pk === 'v8') { const f = (26 + r0 * 70 + (throttle ? 4 : 0)) * (1 - 0.03 * tu.engine); this.v8a.frequency.setTargetAtTime(f, t0, 0.05); this.v8b.frequency.setTargetAtTime(f, t0, 0.05); this.v8Lfo.frequency.setTargetAtTime(f / 4, t0, 0.05);
         this.v8F.frequency.setTargetAtTime(260 + r0 * 1300 + (throttle ? 300 : 0) + tu.engine * 60, t0, 0.08); this.v8G.gain.setTargetAtTime(paused ? 0 : (0.16 + r0 * 0.14) * (1 + 0.08 * tu.engine), t0, 0.1); }
       else this.v8G.gain.setTargetAtTime(0, t0, 0.1);
     }
-    this._update(v, throttle, drifting, offroad, paused);
+    this._update(v, throttle, drifting, offroad, paused, ex);
   }
-  _update(v, throttle, drifting, offroad, paused) {
+  _update(v, throttle, drifting, offroad, paused, ex = {}) {
     if (!this.ctx) return; const t = this.ctx.currentTime, r = Math.min(1, v / 40);
     const f = 48 + r * 150 + (throttle ? 8 : 0); this.o1.frequency.setTargetAtTime(f, t, 0.06); this.o2.frequency.setTargetAtTime(f * 2.005, t, 0.06);
     this.engF.frequency.setTargetAtTime(380 + r * 1700 + (throttle ? 250 : 0), t, 0.08);
     const pack = this.pack || 'kart';
     const tu = this.tune || { engine: 0 }, deep = 1 - 0.035 * tu.engine, loud = 1 + 0.07 * tu.engine;
-    if (pack === 'kart' && this.sampled) { this.engSrc.playbackRate.setTargetAtTime((0.6 + r * (0.9 + 0.04 * tu.engine) + (throttle ? 0.05 : 0)) * deep, t, 0.08); this.engS.gain.setTargetAtTime(paused ? 0 : (0.32 + r * 0.3) * loud, t, 0.1); this.eng.gain.setTargetAtTime(0, t, 0.1); }
-    else if (pack === 'okada' && this.okSrc) { this.okSrc.playbackRate.setTargetAtTime((0.7 + r * 0.75) * deep, t, 0.08); this.okS.gain.setTargetAtTime(paused ? 0 : (0.28 + r * 0.25) * loud, t, 0.1); this.eng.gain.setTargetAtTime(0, t, 0.1); }
-    else if (pack === 'v8') { this.eng.gain.setTargetAtTime(paused ? 0 : 0.03 + r * 0.03, t, 0.1); }   // the V8 voice (in update) does the talking; this adds a little top end
+    // the engine is off before the start and after the pull-up
+    const off = paused || this.engineOff || (this._engineOnAt && t < this._engineOnAt) || (this._engineOffAt && t > this._engineOffAt);
+    const L = this.loops || {};
+    if (pack === 'kart' && this.sampled && L['eng-high']) {
+      // firing frequency of the recorded engine: about 28 Hz idling, 37 Hz flat out. A centrifugal clutch keeps the revs up while you pull away.
+      const rs = Math.min(1.3, v / 36), boost = ex.boost ? 2.5 : 0;
+      const F = (throttle ? 27 + 14 * rs : 25 + 13 * rs) * (1 - 0.012 * tu.engine) + boost;   // a recording slowed down too far turns to mud, so a bigger engine is mostly louder, only a little deeper
+      const move = Math.min(1, v / 5), idleW = throttle ? 0 : 1 - move, highW = throttle ? 1 : 0, lowW = throttle ? 0 : move;   // stopped: idle. Gas: full throttle. Lifted while moving: part throttle
+      const set = (n, w, base, rate) => { const l = L[n]; if (!l) return; l.g.gain.setTargetAtTime(off ? 0 : Math.sqrt(w) * base * loud, t, throttle ? 0.07 : 0.12); l.src.playbackRate.setTargetAtTime(Math.max(0.5, Math.min(1.6, rate)), t, 0.09); };
+      set('eng-idle', idleW, 0.34, Math.min(1.25, Math.max(0.85, F / 28)));
+      set('eng-low', lowW, 0.26 + 0.18 * rs, F / 35.4);
+      set('eng-high', highW, 0.3 + 0.28 * rs, F / 36.6);
+      if (L['eng-electric']) L['eng-electric'].g.gain.setTargetAtTime(0, t, 0.05);
+      this.eng.gain.setTargetAtTime(0, t, 0.1);
+    }
+    else if (pack === 'electric' && L['eng-electric']) {
+      // a real electric kart: the motor whine climbs from about 450 Hz to 1.4 kHz with speed, and hums quietly at a standstill
+      const rs = Math.min(1.3, v / 36), l = L['eng-electric'];
+      l.src.playbackRate.setTargetAtTime(Math.max(0.4, (0.42 + 0.95 * rs + (throttle ? 0.03 : 0)) * deep), t, 0.08);
+      l.g.gain.setTargetAtTime(off ? 0 : (v < 1 && !throttle ? 0.05 : (throttle ? 0.16 + 0.2 * rs : 0.07 + 0.1 * rs)) * loud, t, 0.1);
+      for (const n of ['eng-idle', 'eng-low', 'eng-high']) if (L[n]) L[n].g.gain.setTargetAtTime(0, t, 0.05);
+      this.eng.gain.setTargetAtTime(0, t, 0.1);
+    }
+    else if (pack === 'okada' && this.okSrc) { this.okSrc.playbackRate.setTargetAtTime((0.7 + r * 0.75) * deep, t, 0.08); this.okS.gain.setTargetAtTime(off ? 0 : (0.28 + r * 0.25) * loud, t, 0.1); this.eng.gain.setTargetAtTime(0, t, 0.1); }
+    else if (pack === 'v8') { this.eng.gain.setTargetAtTime(off ? 0 : 0.03 + r * 0.03, t, 0.1); }   // the V8 voice (in update) does the talking; this adds a little top end
     else {
       // generated engines: electric is a clean rising whine, V8 a low rough roar
       const mul = pack === 'electric' ? 4.2 : pack === 'v8' ? 0.62 : 1; const fq = f * mul;
       this.o1.frequency.setTargetAtTime(fq, t, 0.06); this.o2.frequency.setTargetAtTime(fq * (pack === 'electric' ? 1.5 : 2.005), t, 0.06);
       this.engF.frequency.setTargetAtTime(pack === 'electric' ? 1800 + r * 3000 : pack === 'v8' ? 260 + r * 900 : 380 + r * 1700, t, 0.08);
-      this.eng.gain.setTargetAtTime(paused ? 0 : (pack === 'v8' ? 0.14 + r * 0.12 : pack === 'electric' ? 0.05 + r * 0.06 : 0.07 + r * 0.09), t, 0.1);
+      this.eng.gain.setTargetAtTime(off ? 0 : (pack === 'v8' ? 0.14 + r * 0.12 : pack === 'electric' ? 0.05 + r * 0.06 : 0.07 + r * 0.09), t, 0.1);
     }
-    this.sk.gain.setTargetAtTime(!paused && drifting && v > 12 ? 0.07 : 0, t, 0.05);
+    this.sk.gain.setTargetAtTime(!this.skidL && !paused && drifting && v > 12 ? 0.07 : 0, t, 0.05);
     this.rum.gain.setTargetAtTime(!paused && offroad && v > 3 ? 0.35 * r + 0.08 : 0, t, 0.08);
   }
   tone(freq, dur, type = 'sine', vol = 0.25, when = 0, slide = 0, out = null) {
@@ -1378,7 +1463,7 @@ class KartAudio {
   }
   beep(go) { this.tone(go ? 880 : 440, go ? 0.55 : 0.22, 'square', 0.14); if (go) this.rev(); }
   boost() { this.noise(0.5, 0.18, 900, 0, 'highpass'); this.rev(); }
-  bump() { this.tone(90, 0.18, 'sine', 0.35, 0, -40); this.noise(0.12, 0.2, 300, 0, 'lowpass'); }
+  bump() { this.tone(90, 0.18, 'sine', 0.35, 0, -40); this.noise(0.12, 0.2, 300, 0, 'lowpass'); this.screech(0.3); }
   lap() { [523, 659, 784].forEach((f, i) => this.tone(f, 0.28, 'triangle', 0.2, i * 0.11)); }
   overtake(up) { this.tone(up ? 660 : 330, 0.16, 'triangle', 0.15); this.tone(up ? 990 : 262, 0.2, 'triangle', 0.15, 0.1); }
   finish(win) { const n = win ? [523, 659, 784, 1047, 784, 1047] : [392, 494, 587, 784]; n.forEach((f, i) => this.tone(f, 0.34, 'triangle', 0.22, i * 0.14)); this.tone(win ? 1047 : 784, 1.2, 'sine', 0.12, n.length * 0.14); }
