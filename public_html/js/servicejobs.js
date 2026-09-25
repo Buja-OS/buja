@@ -43,11 +43,12 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           ${a.about ? `<div class="small" style="color:var(--ink-2);line-height:1.5">${h(a.about)}</div>` : ''}
           ${a.rating && a.rating.top && a.rating.top.length ? `<div class="row" style="gap:6px;flex-wrap:wrap">${a.rating.top.slice(0, 3).map((t) => `<span class="tag">${h(t.tag || t)}</span>`).join('')}</div>` : ''}
           <button class="btn btn-primary" id="askcome" ${a.available ? '' : 'disabled'}>${icon('location-dot')} ${a.available ? 'Ask them to come to me' : 'Not taking jobs right now'}</button>
-          <div class="row" style="gap:8px">${a.phone ? `<a class="btn btn-outline grow" href="tel:${h(a.phone)}">${icon('phone')} Call</a>` : ''}<button class="btn btn-outline grow" id="msg">${icon('message')} Message</button><a class="btn btn-outline" href="#/artisans/${a.id}" style="width:auto">Profile</a></div>
+          <div class="row" style="gap:8px"><button class="btn btn-outline grow" id="icall">${icon('phone')} Call</button><button class="btn btn-outline grow" id="msg">${icon('message')} Message</button><a class="btn btn-outline" href="#/artisans/${a.id}" style="width:auto">Profile</a></div>
           <button class="btn btn-ghost small" id="backlist">Back to everyone nearby</button></div>`;
         sheet.set('half');
         if (map && a.lat != null) map.fit([[a.lng, a.lat], me ? [me.lng, me.lat] : null].filter(Boolean), { bottom: window.innerHeight * 0.5 });
         sheet.body.querySelector('#backlist').addEventListener('click', () => renderList());
+        sheet.body.querySelector('#icall').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const t = (await api.artisanChat(a.id)).threadId; const r = await api.startCall(t, 'audio'); go('/rtc/' + r.call.room); } catch (err) { busy(b, false); failed(el, err); } });
         sheet.body.querySelector('#msg').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.artisanChat(a.id); go('/inbox/' + r.threadId); } catch (err) { busy(b, false); failed(el, err); } });
         sheet.body.querySelector('#askcome')?.addEventListener('click', () => requestForm(a));
       };
@@ -263,7 +264,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
     const pct = (x) => Math.round((x || 0) * 100) + '%';
     return `${topbar('Mechanic dashboard', '/me', `<a class="iconbtn" href="#/artisans/register" aria-label="Edit my profile">${icon('user')}</a>`)}
     <main class="pad stack" style="gap:14px">
-      <div class="card row" style="padding:14px;gap:12px">${a.photo ? `<img src="${h(a.photo)}" alt="" style="width:54px;height:54px;border-radius:27px;object-fit:cover">` : avatar(a.name, 54)}
+      <div class="card row" style="padding:14px;gap:12px">${a.photo ? `<img src="${h(a.photo)}" alt="" data-zoom="${h(a.photo)}" style="width:54px;height:54px;border-radius:27px;object-fit:cover">` : avatar(a.name, 54)}
         <div class="grow" style="min-width:0"><div style="font-size:17px;font-weight:800">${h(a.name)}</div><div class="small muted">${h(a.trade)}${a.verified ? ' · <span style="color:var(--green-dark);font-weight:700">Verified</span>' : a.idSent ? ' · ID sent, awaiting check' : ' · <a href="#/artisans/register">send your ID for the Verified badge</a>'}</div></div></div>
       <div class="card stack" style="padding:16px;gap:10px;background:${a.available ? 'var(--green-tint)' : 'var(--surface)'};border-color:${a.available ? 'var(--green)' : 'var(--line)'}">
         <div class="row" style="gap:12px"><div class="grow"><div style="font-size:16px;font-weight:800">${a.available ? (a.onDuty ? 'You are taking jobs' : 'On, but outside your hours') : 'You are off'}</div>
@@ -401,8 +402,8 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       const render = (j) => {
         job = j; pill.textContent = headline(j);
         const L = j.live, C = j.role === 'customer';
-        const who = `<div class="row" style="gap:12px">${j.other.avatar ? `<img src="${h(j.other.avatar)}" alt="" style="width:48px;height:48px;border-radius:24px;object-fit:cover">` : avatar(j.other.name, 48)}<div class="grow" style="min-width:0"><div style="font-size:16px;font-weight:800">${h(j.other.name)}</div><div class="small muted">${C ? h(j.tradeLabel) + ' · ' : ''}<strong style="color:#B7791F">${stars(j.other.rating)}</strong></div></div>
-          ${j.other.phone ? `<a class="bm-fab" href="tel:${h(j.other.phone)}" aria-label="Call" style="width:46px;height:46px;background:var(--green-tint);color:var(--green-dark);box-shadow:none">${icon('phone')}</a>` : ''}${j.threadId ? `<a class="bm-fab" href="#/inbox/${j.threadId}" aria-label="Message" style="width:46px;height:46px;background:var(--surface);box-shadow:none">${icon('message')}</a>` : ''}</div>`;
+        const who = `<div class="row" style="gap:12px">${j.other.avatar ? `<img src="${h(j.other.avatar)}" alt="" data-zoom="${h(j.other.avatar)}" style="width:48px;height:48px;border-radius:24px;object-fit:cover">` : avatar(j.other.name, 48)}<div class="grow" style="min-width:0"><div style="font-size:16px;font-weight:800">${h(j.other.name)}</div><div class="small muted">${C ? h(j.tradeLabel) + ' · ' : ''}<strong style="color:#B7791F">${stars(j.other.rating)}</strong></div></div>
+          ${j.threadId && ['accepted', 'enroute', 'arrived'].includes(j.status) ? `<button class="bm-fab" data-icall aria-label="Call in Buja" style="width:46px;height:46px;background:var(--green-tint);color:var(--green-dark);box-shadow:none;border:none">${icon('phone')}</button>` : ''}${j.threadId ? `<a class="bm-fab" href="#/inbox/${j.threadId}" aria-label="Message" style="width:46px;height:46px;background:var(--surface);box-shadow:none">${icon('message')}</a>` : ''}</div>`;
         const eta = L && L.etaMin != null && j.status === 'enroute' ? `<div class="row" style="gap:10px"><div class="grow"><div style="font-size:28px;font-weight:900;letter-spacing:-.5px">${L.etaMin <= 1 ? 'Now' : L.etaMin + ' min'}</div><div class="small muted">arriving about ${clock(L.etaAt)} · ${L.metres >= 1000 ? (L.metres / 1000).toFixed(1) + ' km' : L.metres + ' m'} away${L.speedKmh ? ' · ' + L.speedKmh + ' km/h' : ''}</div></div></div>
           ${L.stopped ? `<div class="card" style="padding:10px 12px;background:var(--orange-tint);border-color:var(--orange)"><div class="small"><strong>Stopped for ${L.stoppedMin} min.</strong> ${C ? 'Could be traffic or a quick errand. Call if it goes on.' : 'Your customer can see you have stopped.'}</div></div>` : ''}
           ${L.lost ? `<div class="card" style="padding:10px 12px;background:#FDECEA;border-color:#D92D20"><div class="small"><strong>No location for ${Math.round(L.age / 60)} min.</strong> ${C ? 'Their phone may have locked or lost data. Call them.' : 'Keep Buja open on this screen so your customer can follow you.'}</div></div>` : ''}` : '';
@@ -444,6 +445,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
         sheet.body.querySelector('[data-start]')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); const p = await here(10000); try { const r = await api.jobAct(id, 'start', p || {}); startSharing(); draw(r.job); render(r.job); } catch (err) { busy(b, false); failed(el, err); } });
         bindPrice();
         sheet.body.querySelector('[data-rate]')?.addEventListener('click', () => rateForm());
+        sheet.body.querySelector('[data-icall]')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.startCall(j.threadId, 'audio'); go('/rtc/' + r.call.room); } catch (err) { busy(b, false); failed(el, err); } });   // in-app call, no phone numbers
         sheet.body.querySelector('[data-save]')?.addEventListener('click', async (e) => { const b = e.currentTarget; try { const r = await api.saveArtisan(+b.dataset.save); b.innerHTML = r.saved ? icon('circle-check') + ' Saved to My mechanics' : icon('bookmark') + ' Save to My mechanics'; toast(r.saved ? 'Saved. Find them on the mechanic map next time.' : 'Removed'); } catch (err) { failed(el, err); } });
       };
 

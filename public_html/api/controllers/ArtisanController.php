@@ -9,11 +9,12 @@ final class ArtisanController
 {
     public const TRADES = ['mechanic' => 'Mechanic', 'vulcanizer' => 'Vulcanizer / tyres', 'towing' => 'Towing', 'electrician' => 'Electrician', 'plumber' => 'Plumber', 'mason' => 'Mason / bricklayer', 'carpenter' => 'Carpenter', 'painter' => 'Painter', 'tiler' => 'Tiler', 'welder' => 'Welder', 'ac' => 'AC repair', 'generator' => 'Generator repair', 'solar' => 'Solar & inverter', 'cctv' => 'CCTV installer', 'dstv' => 'DStv / GOtv installer', 'phone' => 'Phone repair', 'laptop' => 'Laptop repair', 'carwash' => 'Car wash', 'laundry' => 'Laundry', 'cleaning' => 'Cleaning', 'errand' => 'Errand / dispatch', 'cook' => 'Cook / caterer', 'hair' => 'Hair & beauty', 'tailor' => 'Tailor', 'gardener' => 'Gardener', 'pest' => 'Pest control', 'locksmith' => 'Locksmith', 'movers' => 'Movers'];
 
-    private function shape(array $a, ?array $at = null): array
+    /** $contact: the artisan's own phone numbers, only for the artisan themselves. Everyone else reaches them inside Buja. */
+    private function shape(array $a, ?array $at = null, bool $contact = false): array
     {
         $u = Db::one('SELECT name, selfie_verified_at, district FROM users WHERE id = ?', [$a['user_id']]);
         $out = ['id' => (int) $a['user_id'], 'name' => $a['business'] ?: explode(' ', trim((string) ($u['name'] ?? 'Artisan')))[0], 'person' => explode(' ', trim((string) ($u['name'] ?? '')))[0],
-            'trade' => $a['trade'], 'tradeLabel' => self::TRADES[$a['trade']] ?? $a['trade'], 'about' => $a['about'], 'phone' => $a['phone'], 'whatsapp' => $a['whatsapp'] ?: $a['phone'],
+            'trade' => $a['trade'], 'tradeLabel' => self::TRADES[$a['trade']] ?? $a['trade'], 'about' => $a['about'], 'phone' => $contact ? $a['phone'] : null, 'whatsapp' => $contact ? ($a['whatsapp'] ?: $a['phone']) : null,
             'district' => $a['base_district'], 'radiusKm' => (int) $a['radius_km'], 'years' => (int) $a['years'], 'available' => (bool) $a['available'],
             'verified' => !empty($a['verified_at']) || !empty($u['selfie_verified_at']), 'bujaVerified' => !empty($a['verified_at']), 'photo' => $a['photo_upload'] ? '/api/uploads/' . (int) $a['photo_upload'] : (Db::one('SELECT 1 AS x FROM avatars WHERE user_id = ?', [$a['user_id']]) ? '/api/avatar/' . (int) $a['user_id'] : null),
             'rating' => RatingController::summary((int) $a['user_id'], 'artisan'), 'jobs' => (int) $a['jobs_done'], 'lat' => $a['lat'] !== null ? (float) $a['lat'] : null, 'lng' => $a['lng'] !== null ? (float) $a['lng'] : null,
@@ -61,7 +62,7 @@ final class ArtisanController
     {
         $u = Auth::require();
         $a = Db::one('SELECT * FROM artisans WHERE user_id = ?', [$u['id']]);
-        Http::json(['artisan' => $a ? $this->shape($a) : null, 'trades' => self::TRADES]);
+        Http::json(['artisan' => $a ? $this->shape($a, null, true) : null, 'trades' => self::TRADES]);
     }
     /**
      * POST /artisans/me : register or update. Everything a customer needs to trust and find them:

@@ -55,7 +55,7 @@ final class CallController
         Db::run('UPDATE threads SET last_message_at = ? WHERE id = ?', [Db::now(), $id]);
         Track::hit($u, 'call', $startsAt ? 'schedule' : 'start');
         $name = explode(' ', trim((string) $u['name']))[0];
-        Notify::user($this->other($t, $u), $kind === 'interview' ? 'work' : 'match',
+        Notify::user($this->other($t, $u), $kind === 'interview' ? 'work' : (in_array($t['kind'], ['friend', 'artisan', 'city'], true) ? 'social' : 'match'),
             $startsAt ? $name . ' booked a ' . $mode . ' call' : $name . ' is calling',
             $startsAt ? 'On ' . date('D j M, H:i', strtotime($startsAt . ' UTC')) . '. Open Buja to join.' : ($mode === 'audio' ? 'Incoming call on Buja' : 'Incoming video call on Buja'),
             $startsAt ? '/#/inbox/' . $id : '/#/rtc/' . $room, true,
@@ -74,7 +74,7 @@ final class CallController
         if (($c['status'] ?? '') === 'declined') Http::json(['error' => 'declined', 'message' => 'That call was declined.'], 410);
         Db::run('UPDATE calls SET joined_at = COALESCE(joined_at, ?) WHERE id = ?', [Db::now(), $c['id']]);
         $o = Db::one('SELECT name FROM users WHERE id = ?', [$this->other($t, $u)]);
-        Http::json(['call' => self::shape($c) + ['threadId' => (int) $c['thread_id'], 'with' => explode(' ', trim((string) ($o['name'] ?? 'Someone')))[0],
+        Http::json(['call' => self::shape($c) + ['threadId' => (int) $c['thread_id'], 'withAvatar' => Auth::picture($this->other($t, $u)), 'with' => explode(' ', trim((string) ($o['name'] ?? 'Someone')))[0],
             'me' => explode(' ', trim((string) $u['name']))[0], 'domain' => (string) Http::config('jitsi_domain', 'meet.jit.si'),
             'caller' => (int) $c['created_by'] === (int) $u['id'], 'ice' => $this->iceServers()]]);
     }
@@ -115,7 +115,7 @@ final class CallController
                       WHERE c.callee = ? AND c.status = 'ringing' AND c.ended_at IS NULL AND c.starts_at IS NULL AND c.created_at > ?
                       ORDER BY c.id DESC LIMIT 1", [$u['id'], gmdate('Y-m-d H:i:s', time() - 45)]);
         if (!$c) Http::json(['call' => null]);
-        Http::json(['call' => self::shape($c) + ['from' => explode(' ', trim((string) $c['name']))[0], 'threadId' => (int) $c['thread_id']]]);
+        Http::json(['call' => self::shape($c) + ['from' => explode(' ', trim((string) $c['name']))[0], 'fromAvatar' => Auth::picture((int) $c['created_by']), 'threadId' => (int) $c['thread_id']]]);
     }
 
     /** POST /call/{room}/decline */

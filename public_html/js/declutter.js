@@ -53,6 +53,7 @@ export function registerDeclutter({ route, go, state, api, ui, DISTRICTS, failed
     <div style="position:relative;height:340px;background:#1C1C22" id="gallery">${l.photos.map((x, i) => `<div data-slide="${i}" style="position:absolute;inset:0;${i ? 'display:none' : ''}">${ph(x.url)}</div>`).join('') || ph(null)}
       <a class="iconbtn" href="#${l.mine ? '/declutter/mine' : '/declutter'}" aria-label="Back" style="position:absolute;top:14px;left:16px;background:rgba(0,0,0,.4);border:none;color:#fff">${icon('arrow-left')}</a>
       ${l.mine ? `<a class="iconbtn" href="#/declutter/edit/${l.id}" aria-label="Edit" style="position:absolute;top:14px;right:16px;background:rgba(0,0,0,.4);border:none;color:#fff">${icon('sliders')}</a>` : `<button class="iconbtn" data-save="${l.id}" aria-label="${l.saved ? 'Unsave' : 'Save'}" style="position:absolute;top:14px;right:16px;background:rgba(0,0,0,.4);border:none;color:${l.saved ? 'var(--orange)' : '#fff'}">${icon(l.saved ? 'heart' : 'regular/heart')}</button>`}
+      ${l.photos.length ? `<span style="position:absolute;right:14px;bottom:22px;background:rgba(0,0,0,.5);color:#fff;border-radius:12px;padding:4px 9px;font:600 12px Inter,system-ui;pointer-events:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap">${icon('camera')} ${l.photos.length} photo${l.photos.length === 1 ? '' : 's'}</span>` : ''}
       ${l.photos.length > 1 ? `<div style="position:absolute;bottom:12px;left:16px;right:16px;display:flex;gap:4px">${l.photos.map((x, i) => `<span data-dot="${i}" style="flex:1;height:3px;border-radius:2px;background:rgba(255,255,255,${i ? .4 : 1})"></span>`).join('')}</div>` : ''}
     </div>
     <main class="pad stack" style="gap:14px;padding-top:16px">
@@ -87,7 +88,13 @@ export function registerDeclutter({ route, go, state, api, ui, DISTRICTS, failed
       });
       bindSaves(el);
       const slides = el.querySelectorAll('[data-slide]'); let i = 0;
-      el.querySelector('#gallery')?.addEventListener('click', (e) => { if (e.target.closest('a,button') || slides.length < 2) return; i = (i + (e.clientX > innerWidth / 2 ? 1 : slides.length - 1)) % slides.length; slides.forEach((s, k) => { s.style.display = k === i ? '' : 'none'; }); el.querySelectorAll('[data-dot]').forEach((d, k) => { d.style.background = `rgba(255,255,255,${k === i ? 1 : .4})`; }); });
+      // tap: open the photos full screen; swipe: next or previous right here
+      const gal = el.querySelector('#gallery'); const urls = [...slides].map((s) => s.querySelector('img')?.src).filter(Boolean);
+      const go2 = (k) => { i = (k + slides.length) % slides.length; slides.forEach((s, n) => { s.style.display = n === i ? '' : 'none'; }); el.querySelectorAll('[data-dot]').forEach((d, n) => { d.style.background = `rgba(255,255,255,${n === i ? 1 : .4})`; }); };
+      let sx = null, sy = 0, swiped = false;
+      gal?.addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; swiped = false; }, { passive: true });
+      gal?.addEventListener('touchend', (e) => { if (sx == null) return; const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; sx = null; if (slides.length > 1 && Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) { swiped = true; go2(i + (dx < 0 ? 1 : -1)); } });
+      gal?.addEventListener('click', (e) => { if (e.target.closest('a,button') || swiped) { swiped = false; return; } if (urls.length) ui.viewImages(urls, i); });
       el.querySelectorAll('[data-chat]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.dChat(b.dataset.chat); go('/inbox/' + r.threadId + (b.dataset.offer ? '?offer=1' : '')); } catch (err) { busy(b, false); failed(el, err); } }));
     }
   });

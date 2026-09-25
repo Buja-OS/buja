@@ -37,14 +37,14 @@ export function registerTags({ route, go, state, api, ui, failed }) {
   /* ---------- Friends ---------- */
   route('/friends', { auth: true, tabs: '' }, async () => {
     const d = await api.friends();
-    const face = (p, size = 44) => p.avatar ? `<img src="${h(p.avatar)}" alt="" style="width:${size}px;height:${size}px;border-radius:${size / 2}px;object-fit:cover;flex-shrink:0">` : avatar(p.name, size);
+    const face = (p, size = 44) => p.avatar ? `<img src="${h(p.avatar)}" alt="${h(p.name)}" data-zoom="${h(p.avatar)}" style="width:${size}px;height:${size}px;border-radius:${size / 2}px;object-fit:cover;flex-shrink:0;cursor:zoom-in">` : avatar(p.name, size);
     const row = (p, actions, sub) => `<div class="item">${face(p)}<a class="grow" href="#/t/${h(p.tag)}" style="min-width:0;color:inherit;text-decoration:none"><div class="t">${h(p.fullName || p.name)}${p.online ? ' <span style="color:var(--green-dark)">●</span>' : ''}</div><div class="s">@${h(p.tag)}${sub ? ' · ' + h(sub) : p.district ? ' · ' + h(p.district) : ''}</div></a><div class="row" style="gap:6px;flex-shrink:0">${actions}</div></div>`;
     return `${topbar('Friends', '/home')}<main class="pad stack" style="gap:14px">
       <div class="card row" style="height:50px;padding:0 14px;gap:8px">${icon('magnifying-glass')}<input id="q" type="search" autocapitalize="off" autocomplete="off" placeholder="Find people by name or @tag" style="flex:1;border:none;background:transparent;outline:none;font-size:16px;color:var(--ink)"></div>
       <div id="found" class="stack" style="gap:8px"></div>
       ${d.requests.length ? `<div class="section">FRIEND REQUESTS (${d.requests.length})</div><div class="card list">${d.requests.map((p) => row(p, `<button class="btn btn-sm btn-primary" data-acc="${p.id}" style="width:auto">Accept</button><button class="btn btn-sm btn-ghost" data-dec="${p.id}" style="width:auto">Not now</button>`)).join('')}</div>` : ''}
       <div class="section">YOUR FRIENDS (${d.friends.length})</div>
-      ${d.friends.length ? `<div class="card list">${d.friends.map((p) => row(p, `<button class="btn btn-sm btn-outline" data-race="${h(p.tag)}" style="width:auto">🏁 Race</button>`)).join('')}</div>` : '<div class="card small muted" style="padding:14px;line-height:1.5">No friends yet. Add people you know from the list below, or search by name or @tag. Friends can race you in Buja Kart and find you faster.</div>'}
+      ${d.friends.length ? `<div class="card list">${d.friends.map((p) => row(p, `<button class="iconbtn" data-fmsg="${p.id}" aria-label="Message ${h(p.name)}" style="width:38px;height:38px">${icon('message')}</button><button class="iconbtn" data-fcall="${p.id}" aria-label="Call ${h(p.name)}" style="width:38px;height:38px;background:var(--green);border-color:var(--green);color:#101014">${icon('phone')}</button><button class="btn btn-sm btn-outline" data-race="${h(p.tag)}" style="width:auto">🏁</button>`)).join('')}</div>` : '<div class="card small muted" style="padding:14px;line-height:1.5">No friends yet. Add people you know from the list below, or search by name or @tag. Friends can race you in Buja Kart and find you faster.</div>'}
       ${d.suggestions.length ? `<div class="section">PEOPLE YOU MAY KNOW</div><div class="card list">${d.suggestions.map((p) => row(p, `<button class="btn btn-sm btn-primary" data-add="${p.id}" style="width:auto">Add</button>`, p.why)).join('')}</div>` : ''}
       ${d.sent.length ? `<div class="section">WAITING FOR THEM</div><div class="card list">${d.sent.map((p) => row(p, `<button class="btn btn-sm btn-ghost" data-cancel="${p.id}" style="width:auto">Cancel</button>`, 'Request sent')).join('')}</div>` : ''}
       <a class="card row" href="#/tag" style="padding:12px 14px;gap:12px"><span style="font-size:20px;font-weight:900;color:var(--orange)">@</span><span class="grow small">Share your Buja Tag so friends can add you</span>${icon('chevron-right')}</a>
@@ -56,6 +56,9 @@ export function registerTags({ route, go, state, api, ui, failed }) {
       el.querySelectorAll('[data-dec]').forEach((b) => b.addEventListener('click', () => act(b, () => api.friendAct(b.dataset.dec, 'decline'), 'Request removed')));
       el.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', () => act(b, () => api.friendAct(b.dataset.cancel, 'cancel'), 'Request cancelled')));
       el.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.friendAdd({ userId: +b.dataset.add }); b.textContent = r.state === 'friends' ? 'Friends' : 'Sent'; b.disabled = true; b.classList.replace('btn-primary', 'btn-ghost'); } catch (err) { busy(b, false); failed(el, err); } }));
+      // friends message and call each other inside Buja
+      el.querySelectorAll('[data-fmsg]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { go('/inbox/' + (await api.friendChat(b.dataset.fmsg)).threadId); } catch (err) { busy(b, false); failed(el, err); } }));
+      el.querySelectorAll('[data-fcall]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const t = (await api.friendChat(b.dataset.fcall)).threadId; const r = await api.startCall(t, 'audio'); go('/rtc/' + r.call.room); } catch (err) { busy(b, false); failed(el, err); } }));
       el.querySelectorAll('[data-race]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.kartNewRoom({}); await api.kartInvite(r.code, b.dataset.race); toast('Challenge sent'); go('/kart/room/' + r.code); } catch (err) { busy(b, false); failed(el, err); } }));
       let timer; const found = el.querySelector('#found');
       el.querySelector('#q').addEventListener('input', (e) => { clearTimeout(timer); const q = e.target.value.trim(); timer = setTimeout(async () => {
@@ -93,6 +96,7 @@ export function registerTags({ route, go, state, api, ui, failed }) {
     const actions = [];
     if (c.artisan) actions.push(`<a class="btn btn-primary" href="#/artisans/${c.id}">${icon('wrench')} ${c.artisan.available ? 'Ask them to come' : 'See their profile'}</a>`);
     if (c.company) actions.push(`<a class="btn btn-primary" href="#/work?q=${encodeURIComponent(c.companyName || c.name)}">${icon('briefcase')} See their ${c.company.openJobs} open job${c.company.openJobs === 1 ? '' : 's'}</a>`);
+    if (!c.self && c.friend === 'friends') actions.push(`<div class="row" style="gap:8px"><button class="btn btn-primary grow" id="fmsg" data-id="${c.id}">${icon('message')} Message</button><button class="btn grow" id="fcall" style="background:var(--green);color:#101014">${icon('phone')} Call</button><button class="btn btn-outline" id="fvid" style="width:auto" aria-label="Video call">${icon('video')}</button></div>`);
     if (!c.self) actions.push(c.friend === 'friends' ? `<div class="tag green" style="align-self:center">You are friends</div>` : c.friend === 'sent' ? `<button class="btn btn-ghost" disabled>Friend request sent</button>` : `<button class="btn btn-primary" id="addfriend">${c.friend === 'received' ? 'Accept friend request' : 'Add friend'}</button>`);
     if (!c.self) actions.push(`<button class="btn btn-outline" id="race">🏁 Race them in Buja Kart</button>`);
     if (c.match) actions.push(`<a class="btn btn-outline" href="#/match/profile/${c.id}">${icon('heart')} See them on Match</a>`);
@@ -100,7 +104,7 @@ export function registerTags({ route, go, state, api, ui, failed }) {
     if (c.self) actions.push(`<a class="btn btn-outline" href="#/tag">This is you. Share or change your tag</a>`);
     return `${topbar('', '/find', `<button class="iconbtn" id="share" aria-label="Share">${icon('paper-plane')}</button>`)}<main class="pad stack" style="gap:14px">
       <div class="card stack" style="padding:20px;gap:10px;align-items:center;text-align:center">
-        ${c.avatar ? `<img src="${h(c.avatar)}" alt="" style="width:88px;height:88px;border-radius:44px;object-fit:cover">` : avatar(c.name, 88)}
+        ${c.avatar ? `<img src="${h(c.avatar)}" alt="${h(c.name)}" data-zoom="${h(c.avatar)}" style="width:104px;height:104px;border-radius:52px;object-fit:cover;cursor:zoom-in;box-shadow:0 0 0 3px var(--card),0 0 0 5px var(--orange)">` : avatar(c.name, 104)}
         <div><div style="font-size:21px;font-weight:800">${h(c.name)}${c.verified ? ' <span style="color:var(--green-dark)">' + icon('circle-check') + '</span>' : ''}</div><div class="tagbig" style="font-size:18px"><span>@</span>${h(c.tag)}</div></div>
         <div class="row" style="gap:6px;flex-wrap:wrap;justify-content:center"><span class="tag">${icon(KIND[c.kind][0])} ${h(c.artisan ? c.artisan.tradeLabel : KIND[c.kind][1])}</span>${c.district ? `<span class="tag">${icon('location-dot')} ${h(c.district)}</span>` : ''}${c.artisan && c.artisan.rating && c.artisan.rating.count ? `<span class="tag">★ ${Number(c.artisan.rating.stars).toFixed(1)}</span>` : ''}${c.kart ? `<span class="tag">🏁 ${Math.floor(c.kart.bestLapMs / 60000)}:${((c.kart.bestLapMs % 60000) / 1000).toFixed(2).padStart(5, '0')}</span>` : ''}</div></div>
       <div class="stack" style="gap:8px">${actions.join('')}</div>
@@ -109,6 +113,11 @@ export function registerTags({ route, go, state, api, ui, failed }) {
     mount(el, { tag }) {
       el.querySelector('#share')?.addEventListener('click', async () => { const t = `@${tag} on Buja: ${location.origin}/#/@${tag}`; if (navigator.share) navigator.share({ text: t }).catch(() => {}); else { try { await navigator.clipboard.writeText(t); toast('Copied'); } catch {} } });
       el.querySelector('#addfriend')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.friendAdd({ tag }); toast(r.state === 'friends' ? 'You are now friends' : 'Friend request sent'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } });
+      const fid = el.querySelector('#fmsg')?.dataset.id;
+      const ring = async (b, mode) => { busy(b, true); try { const t = (await api.friendChat(fid)).threadId; const r = await api.startCall(t, mode); go('/rtc/' + r.call.room); } catch (err) { busy(b, false); failed(el, err); } };
+      el.querySelector('#fmsg')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { go('/inbox/' + (await api.friendChat(fid)).threadId); } catch (err) { busy(b, false); failed(el, err); } });
+      el.querySelector('#fcall')?.addEventListener('click', (e) => ring(e.currentTarget, 'audio'));
+      el.querySelector('#fvid')?.addEventListener('click', (e) => ring(e.currentTarget, 'video'));
       el.querySelector('#race')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.kartNewRoom({ track: 'abuja' }); await api.kartInvite(r.code, tag); toast('Challenge sent'); go('/kart/room/' + r.code); } catch (err) { busy(b, false); failed(el, err); } });
     }
   });

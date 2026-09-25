@@ -244,6 +244,7 @@ export const api = {
   friends:         () => request('GET', '/friends'),
   friendAdd:       (b) => request('POST', '/friends', b),
   friendAct:       (id, action) => request('POST', '/friends/' + id + '/' + action),
+  friendChat:      (id) => request('POST', '/friends/' + id + '/chat'),
   myArtisans:      () => request('GET', '/artisans/mine'),
   saveArtisan:     (id) => request('POST', '/artisans/' + id + '/save'),
   kartGarage:      () => request('GET', '/kart/garage'),

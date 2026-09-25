@@ -155,7 +155,7 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
         <div class="small muted">${h(a.tradeLabel)} · ${h(a.district)}${a.years ? ' · ' + a.years + ' yrs' : ''}</div>
         <div class="row small" style="gap:8px;margin-top:4px">${rating(a.rating)}${a.km != null ? `<strong style="color:var(--green-dark)">${a.km < 1 ? 'under 1 km' : a.km + ' km'} away</strong>` : ''}</div>
       </div>
-      <div class="stack" style="gap:6px"><button type="button" class="iconbtn" data-call="${h(tel(a.phone))}" aria-label="Call" style="background:var(--green);border-color:var(--green);color:#101014;width:38px;height:38px">${icon('phone')}</button><button type="button" class="iconbtn" data-wa="${h(wa(a.whatsapp))}" aria-label="WhatsApp" style="width:38px;height:38px;color:#25D366">${icon('whatsapp')}</button></div></a>`;
+      <div class="stack" style="gap:6px"><button type="button" class="iconbtn" data-icall="${a.id}" aria-label="Call in Buja" style="background:var(--green);border-color:var(--green);color:#101014;width:38px;height:38px">${icon('phone')}</button><button type="button" class="iconbtn" data-imsg="${a.id}" aria-label="Message in Buja" style="width:38px;height:38px">${icon('message')}</button></div></a>`;
   }
   route('/artisans', { auth: true, tabs: '' }, async () => {
     const f = Object.fromEntries(q().entries());
@@ -170,8 +170,9 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
     </main>`;
   }, { mount(el) {
     el.querySelector('#af').addEventListener('submit', (e) => { e.preventDefault(); const p = q(); p.set('q', e.target.q.value); go('/artisans?' + p); });
-    el.querySelectorAll('[data-call]').forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); location.href = b.dataset.call; }));
-    el.querySelectorAll('[data-wa]').forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); window.open(b.dataset.wa, '_blank', 'noopener'); }));
+    // calls and messages stay inside Buja: no phone numbers or WhatsApp links for artisans
+    el.querySelectorAll('[data-icall]').forEach((b) => b.addEventListener('click', async (e) => { e.preventDefault(); e.stopPropagation(); busy(b, true); try { const t = (await api.artisanChat(b.dataset.icall)).threadId; const r = await api.startCall(t, 'audio'); go('/rtc/' + r.call.room); } catch (err) { busy(b, false); failed(el, err); } }));
+    el.querySelectorAll('[data-imsg]').forEach((b) => b.addEventListener('click', async (e) => { e.preventDefault(); e.stopPropagation(); busy(b, true); try { go('/inbox/' + (await api.artisanChat(b.dataset.imsg)).threadId); } catch (err) { busy(b, false); failed(el, err); } }));
   } });
 
   // /artisans/register now lives in servicejobs.js: the full mechanic registration with a map pin.
@@ -180,14 +181,15 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
     const { artisan: a } = await api.artisan(id);
     return `${topbar(a.tradeLabel, '/artisans')}
     <main class="pad stack" style="gap:14px">
-      <div class="card row" style="padding:16px;gap:14px">${a.photo ? `<img src="${a.photo}" alt="" style="width:72px;height:72px;border-radius:18px;object-fit:cover">` : `<div style="width:72px;height:72px;border-radius:18px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center;font-size:26px">${icon(TRADEICON[a.trade] || 'screwdriver-wrench')}</div>`}
+      <div class="card row" style="padding:16px;gap:14px">${a.photo ? `<img src="${a.photo}" alt="" data-zoom="${a.photo}" style="width:72px;height:72px;border-radius:18px;object-fit:cover">` : `<div style="width:72px;height:72px;border-radius:18px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center;font-size:26px">${icon(TRADEICON[a.trade] || 'screwdriver-wrench')}</div>`}
         <div class="grow"><div class="row" style="gap:6px"><span class="h-md">${h(a.name)}</span>${a.verified ? `<span class="tag green">${icon('circle-check')} Verified</span>` : ''}</div><div class="small muted">${a.person && a.person !== a.name ? h(a.person) + ' · ' : ''}${h(a.district)} · travels up to ${a.radiusKm} km${a.years ? ' · ' + a.years + ' years' : ''}</div><div class="small" style="margin-top:4px"><a href="#/people/${a.id}">${rating(a.rating)}</a>${a.km != null ? ` · <strong style="color:var(--green-dark)">${a.km < 1 ? 'under 1 km' : a.km + ' km'} from you</strong>` : ''}</div></div></div>
       ${!a.available ? `<div style="padding:10px 14px;background:var(--surface);border-radius:12px;font-size:13px;color:var(--ink-2)">Marked as not available right now. You can still call.</div>` : ''}
       <div class="row" style="gap:8px">
-        <a class="btn btn-primary grow" href="${tel(a.phone)}" style="background:var(--green);color:#101014">${icon('phone')} Call</a>
-        <a class="btn btn-outline grow" href="${wa(a.whatsapp)}" target="_blank" rel="noopener" style="color:#128C7E">${icon('whatsapp')} WhatsApp</a>
+        <button class="btn btn-primary grow" id="bcall" style="background:var(--green);color:#101014">${icon('phone')} Call</button>
+        <button class="btn btn-outline grow" id="vcall">${icon('video')} Video call</button>
       </div>
-      <div class="row" style="gap:8px"><button class="btn btn-outline grow" id="msg">${icon('message')} Message in Buja</button><button class="btn btn-outline grow" id="bcall">${icon('video')} Buja call</button></div>
+      <button class="btn btn-outline" id="msg">${icon('message')} Message</button>
+      <div class="small muted" style="margin-top:-6px">Calls and messages go through Buja, so your number stays private.</div>
       ${a.about ? `<div><div class="section">ABOUT</div><p style="margin:8px 0 0;font-size:15px;line-height:1.6;color:var(--ink-2);white-space:pre-line">${h(a.about)}</p></div>` : ''}
       ${a.lat ? `<a class="btn btn-outline" href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank" rel="noopener">${icon('location-dot')} Where the shop is</a>` : ''}
       <div class="card stack" style="padding:14px;gap:6px"><div class="h-sm">Before you pay</div><div class="small muted" style="line-height:1.55">Agree the price before work starts. Pay when the job is done. If something goes wrong, rate them here so the next person knows. ${a.rating.count ? '' : 'Nobody has rated this person on Buja yet.'}</div></div>
@@ -198,7 +200,9 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
       if (id === 'register') return;
       const open = async () => { const r = await api.artisanChat(id); return r.threadId; };
       el.querySelector('#msg')?.addEventListener('click', async () => { try { go('/inbox/' + (await open())); } catch (err) { failed(el, err); } });
-      el.querySelector('#bcall')?.addEventListener('click', async () => { try { const t = await open(); const r = await api.startCall(t, 'audio'); go('/rtc/' + r.call.room); } catch (err) { failed(el, err); } });
+      const ring = async (b, mode) => { busy(b, true); try { const t = await open(); const r = await api.startCall(t, mode); go('/rtc/' + r.call.room); } catch (err) { busy(b, false); failed(el, err); } };
+      el.querySelector('#bcall')?.addEventListener('click', (e) => ring(e.currentTarget, 'audio'));
+      el.querySelector('#vcall')?.addEventListener('click', (e) => ring(e.currentTarget, 'video'));
     }
   });
 

@@ -1,7 +1,7 @@
 // Buja app: hash router and Phase 1 screens.
 import { state, setState, subscribe, applyTheme } from './store.js';
 import { api, detectApi, serverInfo } from './api.js';
-import { h, toast, mark, markAuto, topbar, tabbar, field, showErrors, bindEyes, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify } from './ui.js';
+import { h, toast, mark, markAuto, topbar, tabbar, field, showErrors, bindEyes, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify, viewImages } from './ui.js';
 import { registerMessages } from './messages.js';
 import { registerCall } from './call.js';
 import { registerAlerts } from './alerts.js';
@@ -429,7 +429,14 @@ registerCall({ route, go, state, api, ui: { h, toast, topbar, tabbar, field, sho
 /* ---------------- Lazy modules ----------------
    Home, messages, calls and settings load at once. Every other part of Buja loads the first time its screen
    is opened, and all of them download quietly in the background once Home is showing, so later taps are instant. */
-const UI = { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify };
+const UI = { h, toast, topbar, tabbar, field, showErrors, clearOnInput, busy, avatar, icon, attachmentHtml, youtubeEmbed, linkify, viewImages };
+/* Any photo marked data-zoom opens full screen when tapped (profile pictures, listing photos). Same data-zoom-group: swipe through them. */
+document.addEventListener('click', (e) => {
+  const z = e.target.closest('[data-zoom]'); if (!z) return;
+  e.preventDefault(); e.stopPropagation();
+  const g = z.dataset.zoomGroup; const list = g ? [...document.querySelectorAll(`[data-zoom-group="${g}"]`)].map((x) => x.dataset.zoom) : [z.dataset.zoom];
+  viewImages(list, Math.max(0, list.indexOf(z.dataset.zoom)));
+}, true);
 const BASE = { route, go, state, api, ui: UI, DISTRICTS, failed };
 const MODULES = {
   work:        () => import('./work.js').then((m) => m.registerWork({ ...BASE, setState })),

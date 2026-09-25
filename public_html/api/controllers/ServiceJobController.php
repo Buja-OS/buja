@@ -75,7 +75,7 @@ final class ServiceJobController
             'dispatch' => ($j['mode'] ?? '') === 'nearest' ? ['ring' => (int) $j['ring'], 'maxRings' => self::MAX_RINGS, 'alerted' => (int) (Db::one('SELECT COUNT(*) AS n FROM job_offers WHERE job_id = ?', [$j['id']])['n'] ?? 0), 'declined' => (int) (Db::one("SELECT COUNT(*) AS n FROM job_offers WHERE job_id = ? AND status = 'declined'", [$j['id']])['n'] ?? 0)] : null,
             'photo' => $isCustomer && !$pending ? (($p = Db::one('SELECT photo_upload FROM artisans WHERE user_id = ?', [$j['artisan_id']])) && $p['photo_upload'] ? '/api/uploads/' . (int) $p['photo_upload'] : Auth::picture((int) $j['artisan_id'])) : null,
             'other' => ($pending && $isCustomer) ? ['id' => 0, 'name' => 'Finding the nearest ' . strtolower(ArtisanController::TRADES[$j['trade']] ?? 'hand'), 'phone' => null, 'avatar' => null, 'rating' => ['count' => 0]] : ['id' => $other, 'name' => $isCustomer ? ($art['business'] ?: explode(' ', trim((string) ($o['name'] ?? '')))[0]) : explode(' ', trim((string) ($o['name'] ?? '')))[0],
-                'phone' => in_array($j['status'], ['accepted', 'enroute', 'arrived'], true) ? ($isCustomer ? ($art['phone'] ?: $o['phone']) : $o['phone']) : null,
+                'phone' => null,   // calls go through Buja (the chat thread below), never a phone number
                 'avatar' => Auth::picture($other), 'rating' => RatingController::summary($other, $isCustomer ? 'artisan' : null)],
             'live' => $live, 'route' => ($live && $j['route_json']) ? json_decode($j['route_json'], true) : null,
             'threadId' => $j['thread_id'] ? (int) $j['thread_id'] : null, 'rated' => (bool) $j['rated'],

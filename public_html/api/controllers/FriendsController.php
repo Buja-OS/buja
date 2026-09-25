@@ -89,6 +89,19 @@ final class FriendsController
         if ($action === 'accept') { if (self::state($me, $id) !== 'received') Http::json(['error' => 'validation', 'message' => 'No request from them.'], 422); $this->accept($id, $u); Http::json(['state' => 'friends']); }
         if ($action === 'decline') { Db::run("DELETE FROM friendships WHERE user_id = ? AND friend_id = ? AND status = 'pending'", [$id, $me]); Http::json(['state' => 'none']); }
         if ($action === 'cancel') { Db::run("DELETE FROM friendships WHERE user_id = ? AND friend_id = ? AND status = 'pending'", [$me, $id]); Http::json(['state' => 'none']); }
+        if ($action === 'chat') {
+            // friends can message and call each other inside Buja: one chat per pair, reused every time
+            if (self::state($me, $id) !== 'friends') Http::json(['error' => 'forbidden', 'message' => 'Add them as a friend first. When they accept, you can message and call.'], 403);
+            if (self::blocked($me, $id)) Http::json(['error' => 'forbidden', 'message' => 'You cannot message this person.'], 403);
+            $a = min($me, $id); $b = max($me, $id);
+            $t = Db::one("SELECT id FROM threads WHERE kind IN ('friend','artisan','city') AND user_a = ? AND user_b = ? ORDER BY (kind = 'friend') DESC, id DESC LIMIT 1", [$a, $b]);
+            if (!$t) {
+                try { Db::run("INSERT INTO threads (kind, user_a, user_b, last_message_at, created_at) VALUES ('friend', ?, ?, ?, ?)", [$a, $b, Db::now(), Db::now()]); }
+                catch (Throwable $e) { Db::run("INSERT INTO threads (kind, user_a, user_b, last_message_at, created_at) VALUES ('artisan', ?, ?, ?, ?)", [$a, $b, Db::now(), Db::now()]); }   // before migration 041
+                $t = ['id' => Db::lastId()];
+            }
+            Http::json(['threadId' => (int) $t['id']]);
+        }
         if ($action === 'remove') { Db::run('DELETE FROM friendships WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)', [$me, $id, $id, $me]); Http::json(['state' => 'none']); }
         Http::json(['error' => 'not_found'], 404);
     }

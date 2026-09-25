@@ -17,7 +17,7 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
       <video id="remote" autoplay playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:transparent;opacity:0;transition:opacity .4s"></video>
 
       <div id="face" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;transition:opacity .4s">
-        <div id="pulse" style="width:132px;height:132px;border-radius:66px;background:linear-gradient(145deg,#7ED957,#FF7A1A);display:flex;align-items:center;justify-content:center;font-size:48px;font-weight:700;color:#101014;box-shadow:0 0 0 0 rgba(126,217,87,.45)">${initial}</div>
+        <div id="pulse" style="width:132px;height:132px;border-radius:66px;background:linear-gradient(145deg,#7ED957,#FF7A1A);display:flex;align-items:center;justify-content:center;font-size:48px;font-weight:700;color:#101014;box-shadow:0 0 0 0 rgba(126,217,87,.45);overflow:hidden">${c.withAvatar ? `<img src="${h(c.withAvatar)}" alt="" style="width:100%;height:100%;object-fit:cover">` : initial}</div>
         <div style="text-align:center"><div style="font-size:24px;font-weight:700">${h(c.with)}</div><div class="small" id="sub" style="color:#9AA0AB;margin-top:4px">${c.kind === 'interview' ? 'Interview on Buja' : 'Buja call'}</div></div>
       </div>
 
@@ -212,7 +212,7 @@ export function watchIncoming({ api, go, ui, state, ring }) {
     const bar = document.createElement('div');
     bar.id = 'ringing';
     bar.innerHTML = `<div style="position:fixed;left:10px;right:10px;top:calc(10px + var(--safe-t));max-width:460px;margin:0 auto;background:linear-gradient(135deg,#1B1B1F,#2A2F3A);color:#fff;border-radius:20px;padding:14px 14px;display:flex;align-items:center;gap:12px;z-index:80;box-shadow:0 16px 40px rgba(0,0,0,.45);animation:bjdrop .25s ease-out">
-      <span style="width:46px;height:46px;border-radius:23px;background:linear-gradient(145deg,#7ED957,#FF7A1A);display:flex;align-items:center;justify-content:center;color:#101014;font-weight:700;font-size:19px;flex-shrink:0">${h((call.from || '?')[0].toUpperCase())}</span>
+      <span style="width:46px;height:46px;border-radius:23px;background:linear-gradient(145deg,#7ED957,#FF7A1A);display:flex;align-items:center;justify-content:center;color:#101014;font-weight:700;font-size:19px;flex-shrink:0;overflow:hidden">${call.fromAvatar ? `<img src="${h(call.fromAvatar)}" alt="" style="width:100%;height:100%;object-fit:cover">` : h((call.from || '?')[0].toUpperCase())}</span>
       <span style="flex:1;min-width:0"><span style="display:block;font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(call.from)}</span><span class="small" style="color:#AEB4BE">Incoming ${call.mode === 'audio' ? 'Buja call' : 'video call'}</span></span>
       <button id="decl" aria-label="Decline" style="width:46px;height:46px;border-radius:23px;border:none;background:#D92D20;color:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center">${icon('phone-slash')}</button>
       <button id="acc" aria-label="Answer" style="width:46px;height:46px;border-radius:23px;border:none;background:#2FBF4E;color:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;animation:bjpulse 1.5s ease-out infinite">${icon(call.mode === 'audio' ? 'phone' : 'video')}</button>

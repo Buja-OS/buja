@@ -94,3 +94,55 @@ export function youtubeEmbed(text) {
 export function linkify(escaped) {
   return String(escaped).replace(/(https?:\/\/[^\s<]+)/g, (m) => `<a href="${m}" target="_blank" rel="noopener" style="color:var(--orange-dark);word-break:break-all">${m}</a>`);
 }
+
+/**
+ * Full-screen photo viewer: the whole photo, not a crop. Swipe or use the arrows between photos, pinch or double-tap
+ * to zoom, drag to look around while zoomed. The phone's back button closes it.
+ */
+export function viewImages(urls, start = 0) {
+  const list = [...new Set((urls || []).filter(Boolean))]; if (!list.length) return;
+  let i = Math.max(0, Math.min(list.length - 1, start)), scale = 1, tx = 0, ty = 0;
+  const ov = document.createElement('div'); ov.className = 'pv'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Photo');
+  ov.innerHTML = `<div class="pv-stage"><img class="pv-img" alt=""></div>
+    <button class="pv-x" aria-label="Close">${icon('xmark')}</button>
+    ${list.length > 1 ? `<button class="pv-nav pv-prev" aria-label="Previous photo">${icon('chevron-left')}</button><button class="pv-nav pv-next" aria-label="Next photo">${icon('chevron-right')}</button><div class="pv-count"></div>` : ''}`;
+  document.body.appendChild(ov); document.body.style.overflow = 'hidden';
+  const img = ov.querySelector('.pv-img'), count = ov.querySelector('.pv-count');
+  const apply = (anim) => { img.style.transition = anim ? 'transform .22s ease' : 'none'; img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`; };
+  const show = (k, dir = 0) => {
+    i = (k + list.length) % list.length; scale = 1; tx = 0; ty = 0;
+    img.style.opacity = '0'; img.src = list[i]; img.onload = () => { img.style.opacity = '1'; };
+    if (count) count.textContent = `${i + 1} / ${list.length}`; apply(false);
+    // warm the next one so swiping feels instant
+    if (list.length > 1) { const n = new Image(); n.src = list[(i + (dir < 0 ? -1 : 1) + list.length) % list.length]; }
+  };
+  let closed = false;
+  const close = (fromBack) => { if (closed) return; closed = true; ov.remove(); document.body.style.overflow = ''; window.removeEventListener('popstate', onPop); window.removeEventListener('keydown', onKey); if (!fromBack) history.back(); };
+  const onPop = () => close(true);
+  const onKey = (e) => { if (e.key === 'Escape') close(); else if (e.key === 'ArrowRight' && list.length > 1) show(i + 1, 1); else if (e.key === 'ArrowLeft' && list.length > 1) show(i - 1, -1); };
+  history.pushState({ pv: 1 }, ''); window.addEventListener('popstate', onPop); window.addEventListener('keydown', onKey);
+  ov.querySelector('.pv-x').addEventListener('click', () => close());
+  ov.querySelector('.pv-prev')?.addEventListener('click', (e) => { e.stopPropagation(); show(i - 1, -1); });
+  ov.querySelector('.pv-next')?.addEventListener('click', (e) => { e.stopPropagation(); show(i + 1, 1); });
+  // touch: one finger swipes (or pans when zoomed), two fingers pinch; a double tap zooms in or back out
+  const pts = new Map(); let startDist = 0, startScale = 1, startX = 0, startY = 0, startTx = 0, startTy = 0, lastTap = 0, moved = false;
+  const stage = ov.querySelector('.pv-stage');
+  stage.addEventListener('pointerdown', (e) => { stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]); moved = false;
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; startDist = Math.hypot(a[0] - b[0], a[1] - b[1]); startScale = scale; }
+    else { startX = e.clientX; startY = e.clientY; startTx = tx; startTy = ty; } });
+  stage.addEventListener('pointermove', (e) => { if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; scale = Math.max(1, Math.min(5, startScale * Math.hypot(a[0] - b[0], a[1] - b[1]) / (startDist || 1))); moved = true; apply(false); return; }
+    const dx = e.clientX - startX, dy = e.clientY - startY; if (Math.abs(dx) + Math.abs(dy) > 6) moved = true;
+    if (scale > 1) { tx = startTx + dx; ty = startTy + dy; } else { tx = dx; ty = Math.abs(dy) > Math.abs(dx) ? dy : 0; }
+    apply(false); });
+  const up = (e) => { if (!pts.has(e.pointerId)) return; pts.delete(e.pointerId); if (pts.size) return;
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (!moved) { const now = Date.now(); if (now - lastTap < 280) { scale = scale > 1 ? 1 : 2.5; tx = ty = 0; apply(true); lastTap = 0; } else { lastTap = now; setTimeout(() => { if (lastTap === now && scale === 1 && e.target === stage) close(); }, 300); } return; }
+    if (scale <= 1.02) {
+      if (Math.abs(dy) > 110 && Math.abs(dy) > Math.abs(dx)) return close();                 // swipe down to close
+      if (list.length > 1 && Math.abs(dx) > 60) return show(i + (dx < 0 ? 1 : -1), dx < 0 ? 1 : -1);
+      scale = 1; tx = ty = 0; apply(true);
+    } };
+  stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+  show(i);
+}
