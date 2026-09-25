@@ -27,7 +27,7 @@ export function registerCityMore({ route, go, state, api, ui, DISTRICTS, failed 
   }, {
     mount(el) {
       el.querySelectorAll('[data-report]').forEach((b) => b.addEventListener('click', () => {
-        el.querySelector('#sheet').innerHTML = `<div class="card stack" style="padding:16px;gap:12px;position:fixed;left:12px;right:12px;bottom:calc(12px + var(--safe-b));z-index:60;box-shadow:0 16px 40px rgba(0,0,0,.3)"><div class="row"><div class="h-sm grow">${b.dataset.name}</div><button class="iconbtn" id="qx" style="width:34px;height:34px">${icon('xmark')}</button></div>
+        el.querySelector('#sheet').innerHTML = `<div class="card stack" style="padding:16px;gap:12px;position:fixed;left:12px;right:12px;bottom:calc(12px + var(--safe-b));z-index:60;box-shadow:0 16px 40px rgba(0,0,0,.3)"><div class="row"><div class="h-sm grow">${h(b.dataset.name)}</div><button class="iconbtn" id="qx" style="width:34px;height:34px">${icon('xmark')}</button></div>
           <div class="row" style="gap:6px;flex-wrap:wrap" id="qc">${Object.entries(CROWDCOL).map(([k], i) => `<button type="button" class="chip ${i === 1 ? 'on' : ''}" data-c="${k}">${{ empty: 'Walked in', busy: 'Busy', packed: 'Packed', closed: 'Closed' }[k]}</button>`).join('')}</div>
           <div class="field" style="margin:0"><label for="qw">How long did you wait, in minutes?</label><input class="input" id="qw" type="number" inputmode="numeric" placeholder="45"></div>
           <div class="field" style="margin:0"><label for="qn">Tip for the next person (optional)</label><input class="input" id="qn" maxlength="200" placeholder="Come before 8, bring photocopies"></div>

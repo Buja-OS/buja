@@ -98,7 +98,7 @@ async function render() {
   let html;
   try { html = await r.render(params); }
   catch (err) { html = null; if (seq !== renderSeq) return; el.innerHTML = `${topbar('', '/home')}<div class="placeholder"><div class="mi card">${icon('triangle-exclamation')}</div><div class="h-md">${h(friendlyError(err))}</div><a class="btn btn-ink" href="#/home" style="width:auto">Go home</a></div>`; }
-  if (seq !== renderSeq) return;
+  if (seq !== renderSeq || current() !== path) return; // the screen sent us elsewhere while rendering: let that screen draw instead
   if (html !== null) el.innerHTML = html;
   app.innerHTML = '';
   app.appendChild(el);
@@ -466,8 +466,10 @@ const loaded = {};
 function need(name) { if (!loaded[name]) loaded[name] = MODULES[name]().catch((e) => { delete loaded[name]; throw e; }); return loaded[name]; }
 function ensure(path) { const list = LAZY[path.split('/')[1] || '']; return list ? Promise.all(list.map(need)) : Promise.resolve(); }
 function preloadRest() {
+  const c = navigator.connection || {};
+  if (c.saveData || /2g$/.test(c.effectiveType || '')) return; // Data Saver or 2G: each part loads only when it is opened
   const idle = window.requestIdleCallback || ((f) => setTimeout(f, 1200));
-  const names = Object.keys(MODULES);
+  const names = Object.keys(MODULES).filter((n) => n !== 'kart'); // Kart brings a 670 KB 3D engine; fetch it only for people who open the game
   const next = () => { const n = names.shift(); if (!n) return; need(n).then(() => { if (n === 'citysignals' && state.user && window.bujaLightWatch && !window.__lw) { window.__lw = 1; window.bujaLightWatch(); } }).catch(() => {}).finally(() => idle(next)); };
   idle(next);
 }

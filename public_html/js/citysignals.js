@@ -64,7 +64,7 @@ export function registerCitySignals({ route, go, state, api, ui, DISTRICTS, fail
   }, {
     mount(el) {
       el.querySelectorAll('[data-report]').forEach((b) => b.addEventListener('click', () => {
-        el.querySelector('#sheet').innerHTML = `<div class="card stack" style="padding:16px;gap:12px;position:fixed;left:12px;right:12px;bottom:calc(12px + var(--safe-b));z-index:60;box-shadow:0 16px 40px rgba(0,0,0,.3)"><div class="row"><div class="h-sm grow">${b.dataset.name}</div><button class="iconbtn" id="fx" style="width:34px;height:34px">${icon('xmark')}</button></div>
+        el.querySelector('#sheet').innerHTML = `<div class="card stack" style="padding:16px;gap:12px;position:fixed;left:12px;right:12px;bottom:calc(12px + var(--safe-b));z-index:60;box-shadow:0 16px 40px rgba(0,0,0,.3)"><div class="row"><div class="h-sm grow">${h(b.dataset.name)}</div><button class="iconbtn" id="fx" style="width:34px;height:34px">${icon('xmark')}</button></div>
           <div class="row" style="gap:6px;flex-wrap:wrap" id="fq">${Object.entries(QLABEL).map(([k, l], i) => `<button type="button" class="chip ${i === 0 ? 'on' : ''}" data-q="${k}">${l}</button>`).join('')}</div>
           <div class="row" style="gap:8px"><div class="field grow" style="margin:0"><label for="fp">Petrol ₦/litre</label><input class="input" id="fp" type="number" inputmode="numeric" placeholder="1,050"></div><div class="field grow" style="margin:0"><label for="fd">Diesel ₦/litre</label><input class="input" id="fd" type="number" inputmode="numeric" placeholder="optional"></div></div>
           <button class="btn btn-primary" id="fs">Post it</button></div>`;

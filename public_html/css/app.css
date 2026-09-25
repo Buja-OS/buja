@@ -488,3 +488,6 @@ body.kart-on .kart-stage{width:100vw;height:100vh;height:100dvh}
 .kart-fghost img{width:36px;height:36px;border-radius:18px;object-fit:cover;background:var(--line)}
 .kart-item-card.locked{opacity:.7}
 .kart-item-card.locked em{color:var(--muted)}
+
+/* Long unbroken words or pasted links in titles and posts wrap instead of pushing the page wider than the phone */
+.screen { overflow-wrap: break-word; }

@@ -41,6 +41,13 @@ RUN printf '%s\n' \
  '<FilesMatch "\.(html|webmanifest|css|js)$">' \
  '  Header set Cache-Control "no-cache"' \
  '</FilesMatch>' \
+ '<FilesMatch "\.(html|webmanifest|css|js|json)$">' \
+ '  FileETag None' \
+ '  Header unset ETag' \
+ '</FilesMatch>' \
+ '<IfModule mod_deflate.c>' \
+ '  AddOutputFilterByType DEFLATE application/json application/manifest+json image/svg+xml' \
+ '</IfModule>' \
  '<FilesMatch "\.(svg|woff2|png|jpg|webp)$">' \
  '  Header set Cache-Control "public, max-age=604800"' \
  '</FilesMatch>' \

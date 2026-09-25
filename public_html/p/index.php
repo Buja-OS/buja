@@ -51,7 +51,7 @@ function page(string $title, string $description, string $body, array $opts = []
     global $origin, $e;
     $canon = $origin . '/p/' . ltrim((string) ($opts['path'] ?? ''), '/');
     $image = $opts['image'] ?? ($origin . '/assets/icons/icon-512.png');
-    $jsonld = !empty($opts['jsonld']) ? '<script type="application/ld+json">' . json_encode($opts['jsonld'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . '</script>' : '';
+    $jsonld = !empty($opts['jsonld']) ? '<script type="application/ld+json">' . json_encode($opts['jsonld'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) . '</script>' : '';
     $app = $opts['app'] ?? '/#/welcome';
     echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         . '<title>' . $e($title) . ' · Buja</title><meta name="description" content="' . $e($description) . '"><link rel="canonical" href="' . $e($canon) . '">'

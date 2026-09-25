@@ -66,7 +66,7 @@ export function registerEngage({ route, go, state, api, ui, failed, push }) {
         <div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.current ? h(p.current.title) + ' · ' + p.current.done + '/' + p.current.lessons : ''}${p.district ? ' · ' + h(p.district) : ''}</div>
         <div class="small" style="color:${p.idleDays > 7 ? '#D92D20' : p.idleDays > 2 ? 'var(--orange-dark)' : 'var(--green-dark)'}">${p.idleDays === 0 ? 'Active today' : 'Idle ' + p.idleDays + ' day' + (p.idleDays === 1 ? '' : 's')} · ${p.lessons} lessons${p.certificates ? ' · ' + p.certificates + ' certificate' + (p.certificates === 1 ? '' : 's') : ''}</div></div>${icon('chevron-right')}</a>`).join('') || `<div class="small muted" style="padding:20px 0">Nobody matches.</div>`}
     </main>`;
-  }, { mount(el) { el.querySelector('#sf').addEventListener('submit', (e) => { e.preventDefault(); const f = new URLSearchParams(location.hash.split('?')[1] || ''); f.set('q', e.target.q.value); go('/admin/learners?' + f); }); } });
+  }, { mount(el) { el.querySelector('#sf')?.addEventListener('submit', (e) => { e.preventDefault(); const f = new URLSearchParams(location.hash.split('?')[1] || ''); f.set('q', e.target.q.value); go('/admin/learners?' + f); }); } });
 
   /* ---------------- Broadcast ---------------- */
   route('/admin/broadcast', { auth: true, tabs: '' }, async () => {
