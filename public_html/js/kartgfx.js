@@ -343,7 +343,7 @@ function numberTexture(n, bg, fg) {
  */
 export function buildKart(opts) {
   const { tier = 'high', ghost = false } = opts;
-  const lv = { engine: 0, accel: 0, handling: 0, boost: 0, ...(opts.stats || {}) };
+  const lv = { engine: 0, accel: 0, handling: 0, boost: 0, stability: 0, ...(opts.stats || {}) };
   const suit = SUITS[opts.driver] || SUITS.green;
   let colour = opts.colour || suit.suit; const design = ghost ? 'classic' : (opts.design || 'classic'), helm = opts.helmet || 'classic';
   if (design === 'naija') colour = '#008751'; if (design === 'carbon') colour = '#1C1E23'; if (design === 'neon') colour = '#15171C';
@@ -412,6 +412,10 @@ export function buildKart(opts) {
     }
     if (big) glow.push(place(new THREE.BoxGeometry(0.1, 0.04, 0.02), { y: 1.0, z: -0.62, rx: -0.35 }));
   }
+  // Stability: a front splitter (1), side skirts (3), a rear diffuser (5): the kart sits lower and wider
+  if (lv.stability >= 1) carbon.push(place(taperedBox(1.6 + lv.stability * 0.04, 0.04, 0.5, 0.02, 0.2), { y: 0.26, z: 1.92 }));
+  if (lv.stability >= 3) for (const s of [-1, 1]) carbon.push(place(new RoundedBoxGeometry(0.06, 0.1, 1.5, 2, 0.02), { x: s * 1.04, y: 0.3, z: -0.05 }));
+  if (lv.stability >= 5) { carbon.push(place(new THREE.BoxGeometry(1.34, 0.03, 0.4), { y: 0.36, z: -1.8, rx: 0.28 })); for (let i = -2; i <= 2; i++) carbon.push(place(new THREE.BoxGeometry(0.03, 0.09, 0.36), { x: i * 0.3, y: 0.32, z: -1.8, rx: 0.28 })); }
   // headlights and brake light strip (they glow at night and under braking)
   for (const s of [-1, 1]) glow.push(place(new THREE.CircleGeometry(0.07, 12), { x: s * 0.36, y: 0.47, z: 1.86, rx: -0.25 }));
   if (design === 'neon') { const under = new THREE.PlaneGeometry(1.6, 3.2); under.rotateX(-Math.PI / 2); place(under, { y: 0.1 }); g.userData.under = under; }

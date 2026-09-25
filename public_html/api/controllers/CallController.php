@@ -86,7 +86,7 @@ final class CallController
         $c = Db::one('SELECT * FROM calls WHERE room = ?', [$room]); if (!$c) Http::json(['error' => 'not_found'], 404);
         $this->thread((int) $c['thread_id'], $u);
         $b = Http::body();
-        $kind = (string) ($b['kind'] ?? ''); if (!in_array($kind, ['offer', 'answer', 'ice', 'accept', 'busy'], true)) Http::json(['error' => 'validation'], 422);
+        $kind = (string) ($b['kind'] ?? ''); if (!in_array($kind, ['offer', 'answer', 'ice', 'accept', 'busy', 'media'], true)) Http::json(['error' => 'validation'], 422);
         $payload = json_encode($b['payload'] ?? null);
         if (strlen((string) $payload) > 60000) Http::json(['error' => 'validation', 'message' => 'Signal too large.'], 422);
         Db::run('INSERT INTO call_signals (call_id, from_user, kind, payload, created_at) VALUES (?,?,?,?,?)', [$c['id'], $u['id'], $kind, $payload, Db::now()]);

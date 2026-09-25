@@ -12,7 +12,9 @@ final class KartController
     public const TRACKS = ['gp' => 'Abuja Grand Prix Circuit', 'abuja' => 'Abuja city streets', 'gp-r' => 'Grand Prix, reversed', 'abuja-r' => 'City streets, reversed'];
     public const MIN_LAP_MS = 20000;          // anything faster is not a real lap on this track
     public const COLOURS = ['#FF7A1A', '#1F5FBF', '#2E7D1E', '#C2185B', '#7A3E96', '#0E7C86'];
-    public const STATS = ['engine' => 'Speed', 'accel' => 'Acceleration', 'handling' => 'Wheels', 'boost' => 'Nitro'];
+    public const STATS = ['engine' => 'Speed', 'accel' => 'Acceleration', 'handling' => 'Wheels', 'boost' => 'Nitro', 'stability' => 'Stability'];
+    /** The upgrades this database has columns for (Stability arrives with migration 042). */
+    private static function statKeys(?array $p): array { return array_values(array_filter(array_keys(self::STATS), fn($k) => !$p || array_key_exists($k, $p))); }
     public const MAX_LEVEL = 5;
     public const COST = [150, 300, 500, 800, 1200];           // price of level 1..5
     public const PAINTS = ['green' => 0, 'red' => 0, 'yellow' => 0, 'blue' => 0, 'gold' => 600, 'chrome' => 900, 'naija' => 750, 'pink' => 400, 'black' => 500];
@@ -85,7 +87,7 @@ final class KartController
         $p = self::profile($uid); $out = [];
         $owned = count(array_filter(explode(',', (string) ($p['owned'] ?? '')))) + count(array_filter(explode(',', (string) $p['paints'])));
         if ($owned >= 5 && ($a = self::achieve($uid, 'collector'))) $out[] = $a;
-        foreach (array_keys(self::STATS) as $s) if ((int) $p[$s] >= self::MAX_LEVEL) { if ($a = self::achieve($uid, 'maxed')) $out[] = $a; break; }
+        foreach (self::statKeys($p) as $s) if ((int) ($p[$s] ?? 0) >= self::MAX_LEVEL) { if ($a = self::achieve($uid, 'maxed')) $out[] = $a; break; }
         return $out;
     }
     /** Pay last week's tournament: the top 3 on each circuit. Runs once per week, from the scheduler or the leaderboard. */
@@ -126,7 +128,7 @@ final class KartController
         $eq = self::equippedOf($p); $shopReady = array_key_exists('owned', $p);
         $shop = []; foreach (self::SHOP as $cat => $items) foreach ($items as $id => $price) $shop[$cat][] = ['id' => $id, 'price' => $price, 'owned' => $vip || $price === 0 || in_array("$cat:$id", $have, true), 'equipped' => $eq[$cat] === $id];
         return ['coins' => $vip ? 999999 : (int) $p['coins'], 'unlimited' => $vip, 'races' => (int) $p['races'], 'wins' => (int) $p['wins'], 'maxLevel' => self::MAX_LEVEL,
-            'stats' => array_map(fn($k, $label) => ['id' => $k, 'label' => $label, 'level' => (int) $p[$k], 'next' => (int) $p[$k] < self::MAX_LEVEL ? ($vip ? 0 : self::COST[(int) $p[$k]]) : null], array_keys(self::STATS), self::STATS),
+            'stats' => array_map(fn($k) => ['id' => $k, 'label' => self::STATS[$k], 'level' => (int) $p[$k], 'next' => (int) $p[$k] < self::MAX_LEVEL ? ($vip ? 0 : self::COST[(int) $p[$k]]) : null], self::statKeys($p)),
             'paints' => array_map(fn($id, $price) => ['id' => $id, 'price' => $price, 'owned' => $vip || $price === 0 || in_array($id, $owned, true)], array_keys(self::PAINTS), self::PAINTS), 'paint' => $p['paint'],
             'shop' => $shop, 'equipped' => $eq, 'shopReady' => $shopReady, 'streak' => (int) ($p['streak'] ?? 0)];
     }
@@ -137,7 +139,8 @@ final class KartController
     {
         $u = Auth::require(); $stat = (string) (Http::body()['stat'] ?? '');
         if (!isset(self::STATS[$stat])) Http::json(['error' => 'validation', 'message' => 'Which part?'], 422);
-        $p = self::profile((int) $u['id']); $lvl = (int) $p[$stat];
+        $p = self::profile((int) $u['id']); if (!array_key_exists($stat, $p)) Http::json(['error' => 'validation', 'message' => 'Stability is coming very soon. Try again shortly.'], 422);
+        $lvl = (int) $p[$stat];
         if ($lvl >= self::MAX_LEVEL) Http::json(['error' => 'validation', 'message' => 'That is already fully upgraded.'], 422);
         $cost = self::unlimited((int) $u['id']) ? 0 : self::COST[$lvl];
         // pay and level up in one statement, so two taps cannot spend the same coins twice

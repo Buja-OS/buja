@@ -514,3 +514,43 @@ body.kart-on .kart-stage{width:100vw;height:100vh;height:100dvh}
 .pv-count{position:absolute;bottom:calc(18px + var(--safe-b,0px));left:50%;transform:translateX(-50%);color:#fff;font:700 13px Inter,system-ui;background:rgba(255,255,255,.14);padding:5px 12px;border-radius:12px}
 @media (hover:none){.pv-nav{display:none}}
 [data-zoom]{cursor:zoom-in}
+
+/* Buja Kart controls (phase 42): left thumb steers with ◀ ▶ side by side, right thumb rests on GAS with BRAKE beside it,
+   drift and the item sit just above. Each group is one touch pad, so a thumb can slide between its buttons. */
+.kctl{position:absolute;bottom:calc(12px + var(--safe-b,0px));z-index:6;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;transform:translateZ(0)}
+.kctl-steer{left:calc(10px + var(--safe-l,0px));display:flex;gap:8px;padding:6px;margin:-6px}
+.kctl-drive{right:calc(10px + var(--safe-r,0px));display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+.kctl-row{display:flex;gap:8px;align-items:flex-end}
+.kctl-top{display:flex;gap:10px;align-items:flex-end;justify-content:flex-end;min-height:62px}
+.kbtn{border:none;color:#fff;display:flex;align-items:center;justify-content:center;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;box-shadow:inset 0 0 0 2.5px rgba(255,255,255,.85),0 4px 14px rgba(0,0,0,.3);transition:transform .06s,background .06s;padding:0}
+.kbtn.on{transform:scale(.95)}
+.kbtn-steer{width:min(21vw,86px);height:min(13vh,104px);border-radius:24px;background:rgba(16,16,20,.4)}
+.kbtn-steer svg{width:44%;height:44%;fill:none;stroke:#fff;stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.kbtn-steer.on{background:rgba(255,122,26,.8)}
+.kbtn-gas{width:min(25vw,100px);height:min(17vh,138px);border-radius:26px;background:rgba(46,125,30,.72);font:900 16px Inter,system-ui;letter-spacing:1px}
+.kbtn-gas.on{background:#3FB02A}
+.kbtn-brake{width:min(18vw,74px);height:min(11vh,88px);border-radius:22px;background:rgba(160,30,24,.66);font:900 12px Inter,system-ui;letter-spacing:.5px}
+.kbtn-brake.on{background:#D92D20}
+.kbtn-drift{width:60px;height:60px;border-radius:20px;background:rgba(255,122,26,.7);font-size:26px}
+.kbtn-drift.on{background:#FF7A1A}
+.kart-stage .kctl .kart-item{position:static;transform:none;width:62px;height:62px;border-radius:20px;font-size:30px;animation:kpop .35s cubic-bezier(.2,1.6,.4,1)}
+.kart-autogas .kbtn-gas{display:none}
+.kart-autogas .kbtn-brake{width:min(22vw,92px);height:min(13vh,104px)}
+.kart-tiltmode .kctl-steer{opacity:.45}
+.kart-swap .kctl-steer{left:auto;right:calc(10px + var(--safe-r,0px))}
+.kart-swap .kctl-drive{right:auto;left:calc(10px + var(--safe-l,0px));align-items:flex-start}
+.kart-swap .kctl-row{flex-direction:row-reverse}
+.kart-swap .kctl-top{flex-direction:row-reverse;justify-content:flex-start}
+.kart-stage .kart-chatbtn{top:calc(132px + var(--safe-t,0px));bottom:auto;right:12px;left:auto;width:44px;height:44px;border-radius:22px}
+.kart-stage .kart-chatbox{bottom:calc(200px + var(--safe-b,0px))}
+@media (orientation: landscape){
+  .kctl{bottom:calc(10px + var(--safe-b,0px))}
+  .kctl-steer{left:calc(14px + var(--safe-l,0px))}
+  .kctl-drive{right:calc(14px + var(--safe-r,0px))}
+  .kbtn-steer{width:min(12vw,100px);height:min(30vh,118px)}
+  .kbtn-gas{width:min(13vw,108px);height:min(40vh,150px)}
+  .kbtn-brake{width:min(10vw,84px);height:min(26vh,100px)}
+  .kbtn-drift{width:56px;height:56px}
+  .kart-stage .kctl .kart-item{width:56px;height:56px;font-size:28px}
+  .kart-stage .kart-chatbox{bottom:calc(140px + var(--safe-b,0px));left:25%;right:25%}
+}

@@ -61,8 +61,9 @@ final class OpsController
         $m039 = $has('SELECT 1 FROM kart_perf LIMIT 1') && $has('SELECT 1 FROM kart_achievements LIMIT 1') && $has('SELECT 1 FROM kart_prizes LIMIT 1');
         $m040 = $has('SELECT 1 FROM live_tracks LIMIT 1') && $has('SELECT kind, ready_at FROM service_jobs LIMIT 1') && $has('SELECT drop_lat FROM escrow_orders LIMIT 1');
         $m041 = (function () { try { $r = Db::one("SELECT COLUMN_TYPE AS t FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'threads' AND COLUMN_NAME = 'kind'"); return !$r || str_contains((string) $r['t'], 'friend'); } catch (Throwable $e) { return true; } })();
-        $checks[] = ['id' => 'migrations', 'title' => 'Database up to date', 'ok' => $m036 && $m037 && $m038 && $m039 && $m040 && $m041, 'weight' => 3,
-            'detail' => ($m036 && $m037 && $m038 && $m039 && $m040 && $m041) ? 'Migrations 036 to 041 are in (friends, escrow, kart shop, kart competition, order tracking, friend chats).' : 'Missing: ' . implode(' and ', array_filter([$m036 ? '' : '036 (friends, saved mechanics, garage)', $m037 ? '' : '037 (escrow)', $m038 ? '' : '038 (kart shop)', $m039 ? '' : '039 (kart competition)', $m040 ? '' : '040 (order tracking)', $m041 ? '' : '041 (friend chats)'])) . '.',
+        $m042 = $has('SELECT stability FROM kart_profiles LIMIT 1');
+        $checks[] = ['id' => 'migrations', 'title' => 'Database up to date', 'ok' => $m036 && $m037 && $m038 && $m039 && $m040 && $m041 && $m042, 'weight' => 3,
+            'detail' => ($m036 && $m037 && $m038 && $m039 && $m040 && $m041 && $m042) ? 'Migrations 036 to 042 are in (friends, escrow, kart shop, kart competition, order tracking, friend chats, kart stability).' : 'Missing: ' . implode(' and ', array_filter([$m036 ? '' : '036 (friends, saved mechanics, garage)', $m037 ? '' : '037 (escrow)', $m038 ? '' : '038 (kart shop)', $m039 ? '' : '039 (kart competition)', $m040 ? '' : '040 (order tracking)', $m041 ? '' : '041 (friend chats)', $m042 ? '' : '042 (kart stability)'])) . '.',
             'fix' => 'In TiDB Cloud, SQL Editor: run the missing migration file from the migrations folder on GitHub.'];
         $wh = $one('SELECT v FROM app_keys WHERE k = ?', ['paystack_webhook_last']);
         $mock = (bool) Http::config('paystack_mock');

@@ -15,6 +15,7 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
     return `
     <div id="callui" style="position:fixed;inset:0;background:radial-gradient(120% 80% at 50% 0%, #1E2430 0%, #0B0B0E 60%);color:#fff;z-index:70;overflow:hidden">
       <video id="remote" autoplay playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:transparent;opacity:0;transition:opacity .4s"></video>
+      <video id="rscreen" autoplay playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:none"></video>
 
       <div id="face" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;transition:opacity .4s">
         <div id="pulse" style="width:132px;height:132px;border-radius:66px;background:linear-gradient(145deg,#7ED957,#FF7A1A);display:flex;align-items:center;justify-content:center;font-size:48px;font-weight:700;color:#101014;box-shadow:0 0 0 0 rgba(126,217,87,.45);overflow:hidden">${c.withAvatar ? `<img src="${h(c.withAvatar)}" alt="" style="width:100%;height:100%;object-fit:cover">` : initial}</div>
@@ -26,6 +27,17 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
       <div style="position:absolute;left:0;right:0;top:0;padding:calc(18px + var(--safe-t)) 20px 30px;background:linear-gradient(180deg,rgba(0,0,0,.55),transparent);display:flex;align-items:center;gap:12px">
         <button id="back" aria-label="Back" style="width:36px;height:36px;border-radius:18px;border:none;background:rgba(255,255,255,.14);color:#fff">${icon('chevron-left')}</button>
         <div style="flex:1;min-width:0"><div style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(c.with)}</div><div class="small" id="state" style="color:#C9C9D1">${c.caller ? 'Ringing…' : 'Connecting…'}</div></div>
+      </div>
+
+      <div id="sharebar" style="position:absolute;left:50%;transform:translateX(-50%);top:calc(78px + var(--safe-t));display:none;align-items:center;gap:10px;background:rgba(255,122,26,.95);color:#101014;border-radius:22px;padding:7px 8px 7px 14px;font-size:13px;font-weight:700;white-space:nowrap;z-index:3;box-shadow:0 6px 18px rgba(0,0,0,.35)">${icon('display')}<span>You are sharing your screen</span><button id="stopshare" style="border:none;background:#101014;color:#fff;border-radius:16px;padding:6px 12px;font-weight:700;font-size:12px">Stop</button></div>
+      <div id="sharepick" style="position:absolute;inset:0;z-index:5;display:none;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.5)">
+        <div style="background:#1B1E26;border-radius:22px 22px 0 0;padding:20px 18px calc(22px + var(--safe-b));width:100%;max-width:480px;display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:17px;font-weight:700">Share your screen</div>
+          <div class="small" style="color:#AEB4BF;line-height:1.45;margin-bottom:4px">${h(c.with)} will see your screen. You can keep your camera on in a small window, or turn it off while you share.</div>
+          <button class="sp-opt" data-cam="1">${icon('video')}<span><b>Share with my camera on</b><em>They see your screen and your face</em></span></button>
+          <button class="sp-opt" data-cam="0">${icon('video-slash')}<span><b>Share with my camera off</b><em>They see only your screen</em></span></button>
+          <button id="spcancel" style="border:none;background:none;color:#C9C9D1;font-weight:600;padding:10px">Cancel</button>
+        </div>
       </div>
 
       <div style="position:absolute;left:0;right:0;bottom:0;padding:26px 18px calc(28px + var(--safe-b));background:linear-gradient(0deg,rgba(0,0,0,.72) 40%,transparent)">
@@ -49,6 +61,13 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
         .rtcb.on > svg{background:#fff;color:#101014}
         .rtcb[disabled]{opacity:.35}
         #pulse.ring{animation:bjring 1.6s ease-out infinite}
+        .sp-opt{display:flex;align-items:center;gap:14px;text-align:left;border:none;border-radius:16px;background:rgba(255,255,255,.08);color:#fff;padding:14px}
+        .sp-opt svg{width:20px;height:20px;flex-shrink:0}
+        .sp-opt b{display:block;font-size:15px} .sp-opt em{display:block;font-style:normal;font-size:12px;color:#AEB4BF;margin-top:2px}
+        #callui.rshare #remote{inset:auto !important;left:14px !important;top:calc(84px + var(--safe-t)) !important;width:96px !important;height:132px !important;border-radius:16px;border:2px solid rgba(255,255,255,.28);z-index:2;box-shadow:0 8px 24px rgba(0,0,0,.4);background:#000 !important}
+        #callui.rcamoff #remote{opacity:0 !important}
+        #callui.rcamoff:not(.rshare) #face{opacity:1 !important}
+        #callui.rshare #face{opacity:0 !important}
         @keyframes bjring{0%{box-shadow:0 0 0 0 rgba(126,217,87,.45)}70%{box-shadow:0 0 0 28px rgba(126,217,87,0)}100%{box-shadow:0 0 0 0 rgba(126,217,87,0)}}
       </style>
     </div>`;
@@ -60,6 +79,7 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
       const say = (t) => { const n = $('#state'); if (n) n.textContent = t; };
       const wantVideo = c.mode !== 'audio';
       let pc = null, local = null, since = 0, poll = null, timer = null, started = 0, closed = false, facing = 'user', camTrack = null;
+      let screenTx = null, screenTrack = null, sharing = false;   // screen sharing rides on its own video channel, so your camera can stay on beside it
 
       $('#pulse')?.classList.add('ring');
       if (c.caller) ringBack.start('outgoing');
@@ -70,7 +90,7 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
         if (closed) return; closed = true;
         ringBack.stop();
         clearInterval(poll); clearInterval(timer);
-        try { local?.getTracks().forEach((t) => t.stop()); } catch {}
+        try { local?.getTracks().forEach((t) => t.stop()); screenTrack?.stop(); } catch {}
         try { pc?.close(); } catch {}
         if (tellServer) { try { await api.endCall(room); } catch {} }
         go('/inbox/' + c.threadId);
@@ -83,10 +103,16 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
 
       pc = new RTCPeerConnection({ iceServers: c.ice, iceCandidatePoolSize: 2 });
       local.getTracks().forEach((t) => pc.addTrack(t, local));
-      const remoteStream = new MediaStream();
-      const remoteEl = $('#remote'); remoteEl.srcObject = remoteStream;
+      // the caller opens a second video channel up front for screen sharing, so sharing later needs no new handshake
+      if (c.caller && wantVideo) { try { screenTx = pc.addTransceiver('video', { direction: 'sendrecv' }); } catch {} }
+      const remoteStream = new MediaStream(), remoteScreen = new MediaStream();
+      const remoteEl = $('#remote'); remoteEl.srcObject = remoteStream; $('#rscreen').srcObject = remoteScreen;
+      const videoTx = () => pc.getTransceivers().filter((t) => t.receiver.track && t.receiver.track.kind === 'video');
+      const camSender = () => { const t = videoTx().find((x) => x !== screenTx); return t ? t.sender : null; };
       pc.ontrack = (e) => {
-        e.streams[0].getTracks().forEach((t) => { remoteStream.addTrack(t); });
+        const vids = videoTx();
+        if (e.track.kind === 'video' && vids.length > 1 && e.transceiver === vids[1]) { remoteScreen.addTrack(e.track); return; }   // their screen channel
+        if (!remoteStream.getTracks().includes(e.track)) remoteStream.addTrack(e.track);
         if (remoteStream.getVideoTracks().length) { remoteEl.style.opacity = '1'; $('#face').style.opacity = '0'; }
       };
       pc.onicecandidate = (e) => { if (e.candidate) api.callSignal(room, 'ice', e.candidate.toJSON()).catch(() => {}); };
@@ -117,6 +143,7 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
           try {
             if (s.kind === 'offer' && !c.caller) {
               await pc.setRemoteDescription(new RTCSessionDescription(s.payload));
+              if (wantVideo && !screenTx) { const v = videoTx(); if (v.length > 1) { screenTx = v[1]; try { screenTx.direction = 'sendrecv'; } catch {} } }
               for (const cand of pendingIce.splice(0)) await pc.addIceCandidate(cand).catch(() => {});
               const ans = await pc.createAnswer(); await pc.setLocalDescription(ans);
               await api.callSignal(room, 'answer', { sdp: ans.sdp, type: ans.type });
@@ -124,6 +151,7 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
               await pc.setRemoteDescription(new RTCSessionDescription(s.payload));
               for (const cand of pendingIce.splice(0)) await pc.addIceCandidate(cand).catch(() => {});
             } else if (s.kind === 'accept' && c.caller) { say('Connecting…'); }
+            else if (s.kind === 'media') showRemote(s.payload || {});
             else if (s.kind === 'ice') {
               const cand = new RTCIceCandidate(s.payload);
               if (pc.remoteDescription) await pc.addIceCandidate(cand).catch(() => {}); else pendingIce.push(cand);
@@ -141,13 +169,26 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
         b.querySelector('svg').outerHTML = icon(t.enabled ? 'microphone' : 'microphone-slash');
         b.querySelector('span').textContent = t.enabled ? 'Mute' : 'Unmute';
       });
-      $('#cam')?.addEventListener('click', (e) => {
-        const t = local.getVideoTracks()[0]; if (!t) return; t.enabled = !t.enabled;
-        const b = e.currentTarget; b.classList.toggle('on', t.enabled);
-        b.querySelector('svg').outerHTML = icon(t.enabled ? 'video' : 'video-slash');
-        b.querySelector('span').textContent = t.enabled ? 'Camera' : 'Camera off';
-        $('#local').style.opacity = t.enabled ? '1' : '.35';
-      });
+      // tell the other phone what we are sending (screen on or off, camera on or off) so it can lay the call out
+      const sendMedia = () => api.callSignal(room, 'media', { share: sharing, cam: !!(camTrack && camTrack.enabled), fallback: sharing && !screenTx }).catch(() => {});
+      const setCam = (on, tell = true) => {
+        const t = camTrack; if (!t) return; t.enabled = on;
+        const b = $('#cam'); b.classList.toggle('on', on);
+        b.querySelector('svg').outerHTML = icon(on ? 'video' : 'video-slash');
+        b.querySelector('span').textContent = on ? 'Camera' : 'Camera off';
+        $('#local').style.opacity = on ? '1' : '.35';
+        if (tell) sendMedia();
+      };
+      $('#cam')?.addEventListener('click', () => setCam(!(camTrack && camTrack.enabled)));
+      let lastShare = false;
+      function showRemote(p) {
+        const ui = $('#callui'); if (!ui) return;
+        const share = !!p.share && !p.fallback;
+        ui.classList.toggle('rshare', share); ui.classList.toggle('rcamoff', p.cam === false);
+        $('#rscreen').style.display = share ? 'block' : 'none';
+        remoteEl.style.objectFit = p.share && p.fallback ? 'contain' : 'cover';
+        if (p.share && !lastShare) toast(c.with + ' is sharing their screen'); lastShare = !!p.share;
+      }
       // Speaker: browsers route a call to the earpiece by default on some phones. setSinkId moves it.
       let loud = true;
       $('#spk').classList.add('on');
@@ -170,31 +211,50 @@ export function registerRtc({ route, go, state, api, ui, failed }) {
         try {
           const ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
           const track = ns.getVideoTracks()[0];
-          const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
-          if (sender) await sender.replaceTrack(track);
+          const on = !camTrack || camTrack.enabled; track.enabled = on;
+          const sender = camSender();
+          if (sender && !(sharing && !screenTx)) await sender.replaceTrack(track);
           local.getVideoTracks().forEach((t) => { local.removeTrack(t); t.stop(); });
           local.addTrack(track); camTrack = track; $('#local').srcObject = local;
         } catch { toast('This phone has only one camera.'); }
       });
-      // Screen sharing, for interviews mostly. Only shown where the browser supports it.
-      if (navigator.mediaDevices?.getDisplayMedia && wantVideo) {
+      // Screen sharing. Computers can share; most phones can watch a shared screen but cannot share their own yet.
+      if (wantVideo) {
         const sh = $('#share'); sh.style.display = '';
-        let sharing = false;
-        sh.addEventListener('click', async () => {
-          const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video'); if (!sender) return;
-          if (sharing) { await sender.replaceTrack(camTrack); sharing = false; sh.classList.remove('on'); sh.querySelector('span').textContent = 'Share'; return; }
-          try {
-            const ds = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            const track = ds.getVideoTracks()[0];
-            await sender.replaceTrack(track);
-            sharing = true; sh.classList.add('on'); sh.querySelector('span').textContent = 'Sharing';
-            track.onended = async () => { await sender.replaceTrack(camTrack); sharing = false; sh.classList.remove('on'); sh.querySelector('span').textContent = 'Share'; };
-          } catch { toast('Screen sharing was not allowed.'); }
+        const canShare = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+        const label = () => { sh.classList.toggle('on', sharing); sh.querySelector('span').textContent = sharing ? 'Stop' : 'Share'; $('#sharebar').style.display = sharing ? 'flex' : 'none'; };
+        const stopShare = async () => {
+          if (!sharing) return; sharing = false;
+          try { if (screenTx) await screenTx.sender.replaceTrack(null); else { const cs = camSender(); if (cs) await cs.replaceTrack(camTrack); } } catch {}
+          try { screenTrack && screenTrack.stop(); } catch {} screenTrack = null;
+          label(); sendMedia();
+        };
+        const startShare = async (camOn) => {
+          $('#sharepick').style.display = 'none';
+          let ds; try { ds = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 15, max: 24 } }, audio: false }); }
+          catch { toast('Screen sharing was not allowed.'); return; }
+          const track = ds.getVideoTracks()[0]; if (!track) return;
+          try { track.contentHint = 'detail'; } catch {}
+          try { if (screenTx) await screenTx.sender.replaceTrack(track); else { const cs = camSender(); if (!cs) throw new Error('no sender'); await cs.replaceTrack(track); } }
+          catch { track.stop(); toast('Screen sharing could not start on this call.'); return; }
+          screenTrack = track; sharing = true;
+          track.addEventListener('ended', stopShare);   // the browser's own "Stop sharing" button
+          setCam(camOn, false); label(); sendMedia();
+        };
+        sh.addEventListener('click', () => {
+          if (sharing) { stopShare(); return; }
+          if (!canShare) { toast('Screen sharing works from a computer browser (Chrome, Edge, Firefox or Safari). On this phone you can still watch when the other person shares.'); return; }
+          if (pc.connectionState !== 'connected') { toast('Wait for the call to connect, then share.'); return; }
+          $('#sharepick').style.display = 'flex';
         });
+        el.querySelectorAll('.sp-opt').forEach((b) => b.addEventListener('click', () => startShare(b.dataset.cam === '1')));
+        $('#spcancel').addEventListener('click', () => { $('#sharepick').style.display = 'none'; });
+        $('#sharepick').addEventListener('click', (e) => { if (e.target.id === 'sharepick') e.target.style.display = 'none'; });
+        $('#stopshare').addEventListener('click', stopShare);
       }
       $('#hang').addEventListener('click', () => stop());
       $('#back').addEventListener('click', () => stop());
-      window.addEventListener('hashchange', () => { if (!closed) { closed = true; clearInterval(poll); clearInterval(timer); try { local?.getTracks().forEach((t) => t.stop()); pc?.close(); } catch {} api.endCall(room).catch(() => {}); } }, { once: true });
+      window.addEventListener('hashchange', () => { if (!closed) { closed = true; clearInterval(poll); clearInterval(timer); try { local?.getTracks().forEach((t) => t.stop()); screenTrack?.stop(); pc?.close(); } catch {} api.endCall(room).catch(() => {}); } }, { once: true });
     }
   });
 }

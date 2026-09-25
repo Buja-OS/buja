@@ -61,7 +61,7 @@ const DRIVERS = {
 const PAINTS = { green: '#1E9E55', red: '#E0342B', yellow: '#F2B51C', blue: '#2459D6', gold: '#D4A93A', chrome: '#C9CED6', naija: '#008751', pink: '#E85D9E', black: '#17171C' };
 const PAINT_NAMES = { green: 'Amaka green', red: 'Tunde red', yellow: 'Ngozi yellow', blue: 'Musa blue', gold: 'Gold', chrome: 'Chrome', naija: 'Naija green', pink: 'Hot pink', black: 'Midnight' };
 /** What each upgrade level does: small, steady gains so racing skill still matters most. */
-const UPGRADE = { engine: (l) => ({ topMul: 1 + 0.03 * l }), accel: (l) => ({ accMul: 1 + 0.08 * l }), handling: (l) => ({ turnMul: 1 + 0.05 * l, offBonus: l }), boost: (l) => ({ boostMul: 1 + 0.12 * l }) };
+const UPGRADE = { engine: (l) => ({ topMul: 1 + 0.03 * l }), accel: (l) => ({ accMul: 1 + 0.08 * l }), handling: (l) => ({ turnMul: 1 + 0.05 * l, offBonus: l }), boost: (l) => ({ boostMul: 1 + 0.12 * l }), stability: (l) => ({ stab: l }) };
 const myDriver = () => { try { const d = localStorage.getItem('buja_kart_driver'); return DRIVERS[d] ? d : 'green'; } catch { return 'green'; } };
 const TEX = '/assets/kart/';
 /** What the shop sells. Prices live on the server; these are the names and blurbs. */
@@ -110,10 +110,10 @@ export function registerKart({ route, go, state, api, ui, failed }) {
         <div class="small muted">Invite friends by their Buja Tag. Chat while you race.</div></div>
       <div class="card row" style="padding:12px 14px;gap:10px"><div class="grow"><div style="font-weight:700">Graphics</div><div class="small muted">Auto picks what your phone can run smoothly</div></div><select class="input" id="gfx" style="width:auto;height:40px">${['auto', 'low', 'medium', 'high'].map((g) => `<option value="${g}" ${((() => { try { return localStorage.getItem('buja_kart_gfx'); } catch { return null; } })() || 'auto') === g ? 'selected' : ''}>${g[0].toUpperCase() + g.slice(1)}</option>`).join('')}</select></div>
       <div class="card stack" style="padding:12px 14px;gap:10px">
-        ${[['buja_kart_orient', 'Screen', [['portrait', 'Upright'], ['landscape', 'Sideways']], 'portrait'], ['buja_kart_steer', 'Steering', [['buttons', 'Buttons'], ['tilt', 'Tilt the phone']], 'buttons'], ['buja_kart_gas', 'Accelerate', [['pedal', 'GAS button'], ['auto', 'Automatic']], 'pedal'], ['buja_kart_sfx', 'Sound effects', [['1', 'On'], ['0', 'Off']], '1'], ['buja_kart_music', 'Music', [['1', 'On'], ['0', 'Off']], '1']].map(([key, label, opts, def]) => { const cur = (() => { try { return localStorage.getItem(key) || def; } catch { return def; } })(); return `<div class="row" style="gap:10px"><div class="grow" style="font-weight:600">${label}</div><select class="input" data-set="${key}" style="width:auto;height:38px">${opts.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`; }).join('')}
+        ${[['buja_kart_orient', 'Screen', [['portrait', 'Upright'], ['landscape', 'Sideways']], 'portrait'], ['buja_kart_steer', 'Steering', [['buttons', 'Buttons'], ['tilt', 'Tilt the phone']], 'buttons'], ['buja_kart_hand', 'Steering side', [['l', 'Left thumb'], ['r', 'Right thumb']], 'l'], ['buja_kart_gas', 'Accelerate', [['pedal', 'GAS button'], ['auto', 'Automatic']], 'pedal'], ['buja_kart_sfx', 'Sound effects', [['1', 'On'], ['0', 'Off']], '1'], ['buja_kart_music', 'Music', [['1', 'On'], ['0', 'Off']], '1']].map(([key, label, opts, def]) => { const cur = (() => { try { return localStorage.getItem(key) || def; } catch { return def; } })(); return `<div class="row" style="gap:10px"><div class="grow" style="font-weight:600">${label}</div><select class="input" data-set="${key}" style="width:auto;height:38px">${opts.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`; }).join('')}
       </div>
       <div class="small muted" style="line-height:1.5">The circuit follows real central Abuja streets (Independence Avenue, Herbert Macaulay Way, Sani Abacha Way, Tafawa Balewa Way), compressed for a raceable lap. Road data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, ODbL. Engine and drive-by sounds recorded by alex_jauk and kontraa.</div>
-      <div class="small muted" style="line-height:1.5">Controls: right thumb on GAS and ▶, left thumb on BRAKE and ◀. Holding ◀ or ▶ keeps the gas on through corners; let go of everything to coast. Hold a turn at speed to drift, let go for a boost. Keyboard: arrows, space to drift. The kart drives itself forward; hold 🔥 while turning to drift, and let go for a boost. Drive through a ? box for an item, then tap it to use it (E on a keyboard). On a keyboard: arrow keys and space.</div>
+      <div class="small muted" style="line-height:1.5">Controls: your left thumb steers with ◀ ▶ (slide between them without lifting), your right thumb rests on GAS with BRAKE beside it. Holding ◀ or ▶ keeps the gas on through corners; let go of everything to coast. Short taps make small corrections; hold a turn to turn harder. Hold 🔥 while turning to drift, let go for a boost. Drive through a ? box for an item, then tap it (above GAS) to use it. Prefer steering with your right thumb? Change Steering side above. Keyboard: arrow keys, space to drift, E for the item.</div>
     </main>`;
   }, {
     mount(el) {
@@ -139,7 +139,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
   route('/kart/garage', { auth: true, tabs: '' }, async () => {
     const { garage: g } = await api.kartGarage();
     const tab = new URLSearchParams(location.hash.split('?')[1] || '').get('tab') || 'perf';
-    const desc = { engine: 'Higher top speed', accel: 'Faster off the line and out of corners', handling: 'Grippier wheels: tighter turns, less slowdown on grass', boost: 'Stronger, longer nitro from pads, drifts and pepper' };
+    const desc = { stability: 'Steadier steering at speed, softer bumps, straighter out of corners', engine: 'Higher top speed', accel: 'Faster off the line and out of corners', handling: 'Grippier wheels: tighter turns, less slowdown on grass', boost: 'Stronger, longer nitro from pads, drifts and pepper' };
     const coins = g.unlimited ? '∞' : g.coins.toLocaleString('en-NG');
     const TABS = [['perf', 'Performance'], ['paint', 'Paint'], ['design', 'Design'], ['helmet', 'Helmet'], ['env', 'World'], ['sound', 'Sound']];
     const ENV_SWATCH = { day: 'linear-gradient(#6DB7EC,#BFE0F7 60%,#7FA65A 61%)', sunset: 'linear-gradient(#3B3F7A,#F08A4B 55%,#5C4A3A 56%)', harmattan: 'linear-gradient(#D9C39C,#E8D8BA 60%,#9C8E6A 61%)', night: 'linear-gradient(#070B16,#18233F 60%,#1B2230 61%)' };
@@ -264,15 +264,13 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       <button class="kart-quit" id="pause" aria-label="Pause">❚❚</button>
       <div class="kart-lines" id="lines"></div>
       <div class="kart-splat" id="splat"></div><div class="kart-dark" id="dark"><b>NEPA took light!</b></div>
-      <button class="kart-item" id="ki" aria-label="Use item" style="display:none"></button>
       <div class="kart-wrong" id="wrong">WRONG WAY</div>
       <div class="kart-callout" id="callout"></div>
       <div class="kart-pause" id="pausebox"></div>
       <button class="kart-chatbtn" id="chatbtn" aria-label="Chat" style="display:none">${icon('message')}</button>
       <div class="kart-speed"><b id="spd">0</b><span>km/h</span><i id="boostbar"></i></div>
-      <div class="kart-col kart-col-l"><button class="kart-pedal kart-brake" id="kb" aria-label="Brake">BRAKE</button><button class="kart-steer" id="kl" aria-label="Steer left">◀</button></div>
-      <div class="kart-col kart-col-r"><button class="kart-pedal kart-gas" id="kg" aria-label="Accelerate">GAS</button><button class="kart-steer" id="kr" aria-label="Steer right">▶</button></div>
-      <div class="kart-mid"><button id="kd" class="kart-drift" aria-label="Drift and boost">🔥</button></div>
+      <div class="kctl kctl-steer" id="padsteer"><button class="kbtn kbtn-steer" id="kl" aria-label="Steer left"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button><button class="kbtn kbtn-steer" id="kr" aria-label="Steer right"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button></div>
+      <div class="kctl kctl-drive" id="paddrive"><div class="kctl-top"><button id="kd" class="kbtn kbtn-drift" aria-label="Drift and boost">🔥</button><button class="kart-item" id="ki" aria-label="Use item" style="display:none"></button></div><div class="kctl-row"><button class="kbtn kbtn-brake" id="kb" aria-label="Brake">BRAKE</button><button class="kbtn kbtn-gas" id="kg" aria-label="Accelerate">GAS</button></div></div>
       <div class="kart-chatbox" id="chatbox"></div>
       <div class="kart-result" id="result"></div>
     </div>`, {
@@ -641,12 +639,23 @@ class Race {
 
   /* ------------------------------ controls ------------------------------ */
   bindControls() {
-    const hold = (id, key) => { const b = this.el.querySelector('#' + id); const on = (e) => { e.preventDefault(); this.input[key] = 1; b.classList.add('on'); }; const off = (e) => { e && e.preventDefault(); this.input[key] = 0; b.classList.remove('on'); };
-      b.addEventListener('touchstart', on, { passive: false }); b.addEventListener('touchend', off); b.addEventListener('touchcancel', off); b.addEventListener('mousedown', on); b.addEventListener('mouseup', off); b.addEventListener('mouseleave', off); };
-    hold('kl', 'l'); hold('kr', 'r'); hold('kb', 'brake'); hold('kd', 'drift'); hold('kg', 'gas');
+    // mouse (desktop): press and hold each button
+    const hold = (id, key, touch = false) => { const b = this.el.querySelector('#' + id); const on = (e) => { e.preventDefault(); this.input[key] = 1; b.classList.add('on'); }; const off = (e) => { e && e.preventDefault(); this.input[key] = 0; b.classList.remove('on'); };
+      if (touch) { b.addEventListener('touchstart', on, { passive: false }); b.addEventListener('touchend', off); b.addEventListener('touchcancel', off); }
+      b.addEventListener('mousedown', on); b.addEventListener('mouseup', off); b.addEventListener('mouseleave', off); };
+    hold('kl', 'l'); hold('kr', 'r'); hold('kb', 'brake'); hold('kg', 'gas'); hold('kd', 'drift', true);
+    // touch: each thumb owns a pad. The button under the thumb is the one that counts, so you can slide from ◀ to ▶
+    // (or from GAS to BRAKE) without lifting, and a thumb that lands in the gap still presses the nearest button.
+    const pad = (id, pairs) => { const el = this.el.querySelector('#' + id); const btns = pairs.map(([bid, key]) => [this.el.querySelector('#' + bid), key]);
+      const upd = (e) => { if (e.cancelable) e.preventDefault(); const act = new Set();
+        for (const t of e.touches) { if (!el.contains(t.target) || (t.target.closest && t.target.closest('#kd,#ki'))) continue; let best = null, bd = 1e9; for (const [b, key] of btns) { if (!b.offsetParent) continue; const r = b.getBoundingClientRect(); const dx = Math.max(r.left - t.clientX, 0, t.clientX - r.right), dy = Math.max(r.top - t.clientY, 0, t.clientY - r.bottom); const d = dx * dx + dy * dy; if (d < bd) { bd = d; best = key; } } if (best && bd < 70 * 70) act.add(best); }
+        for (const [b, key] of btns) { const was = !!this.input[key], now = act.has(key); if (now && !was) { try { navigator.vibrate && navigator.vibrate(8); } catch {} } this.input[key] = now ? 1 : 0; b.classList.toggle('on', now); } };
+      ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach((ev) => el.addEventListener(ev, upd, { passive: false })); };
+    pad('padsteer', [['kl', 'l'], ['kr', 'r']]); pad('paddrive', [['kb', 'brake'], ['kg', 'gas']]);
+    try { if (localStorage.getItem('buja_kart_hand') === 'r') this.el.classList.add('kart-swap'); } catch {}
     this.autoGas = (() => { try { return localStorage.getItem('buja_kart_gas') === 'auto'; } catch { return false; } })(); if (this.autoGas) this.el.classList.add('kart-autogas');
     // after a rotation, make sure the layout and the controls are redrawn
-    this._rot = () => setTimeout(() => { this.resize(); this.el.querySelectorAll('.kart-col,.kart-mid').forEach((c) => { c.style.display = 'none'; void c.offsetHeight; c.style.display = ''; }); }, 250); window.addEventListener('orientationchange', this._rot); screen.orientation && screen.orientation.addEventListener && screen.orientation.addEventListener('change', this._rot);
+    this._rot = () => setTimeout(() => { this.resize(); this.el.querySelectorAll('.kctl').forEach((c) => { c.style.display = 'none'; void c.offsetHeight; c.style.display = ''; }); }, 250); window.addEventListener('orientationchange', this._rot); screen.orientation && screen.orientation.addEventListener && screen.orientation.addEventListener('change', this._rot);
     const wake = () => this.audio.wake(); this.el.addEventListener('touchstart', wake, { passive: true }); this.el.addEventListener('mousedown', wake);
     this.el.querySelector('#pause').addEventListener('click', () => this.togglePause());
     const use = (e) => { e && e.preventDefault(); if (this.phase === 'race') this.useItem(this.player); }; const ki = this.el.querySelector('#ki'); ki.addEventListener('touchstart', use, { passive: false }); ki.addEventListener('mousedown', use);
@@ -668,13 +677,30 @@ class Race {
     if (k.spin > 0) { k.spin -= dt; steer = 0; drift = false; top = Math.min(top, 8); }
     const accel = brake ? -28 : !gas ? (k.v > 0 ? -5 : 0) : (k.v < top ? 13 * (k.accMul || 1) : -9);   // off the gas: the kart coasts down
     k.v = Math.max(0, Math.min(k.boost > 0 ? BOOST_V : top + 2, k.v + accel * dt));
-    const grip = drift && Math.abs(steer) > 0 ? 1.55 : 1;
-    const turn = steer * grip * (0.9 + 0.8 * Math.min(1, k.v / 18)) * dt * (k.v > 1 ? 1 : k.v);
-    k.h += turn * 1.05 * (k.turnMul || 1);
+    if (isAI) {
+      const grip = drift && Math.abs(steer) > 0 ? 1.55 : 1;
+      const turn = steer * grip * (0.9 + 0.8 * Math.min(1, k.v / 18)) * dt * (k.v > 1 ? 1 : k.v);
+      k.h += turn * 1.05 * (k.turnMul || 1);
+    } else {
+      // Your kart: a tap is a nudge, holding builds to full lock in a quarter of a second, letting go straightens up.
+      // Less lock the faster you go, and a light hand keeps you lined up with the road. Stability makes that straightening stronger, softens knocks and keeps more speed off the walls.
+      const st = k.stab || 0, want = Math.max(-1, Math.min(1, steer));
+      const rate = Math.abs(want) > Math.abs(k.steerNow || 0) && Math.sign(want) === Math.sign(k.steerNow || want) ? 4 : 8;
+      k.steerNow = (k.steerNow || 0) + Math.max(-rate * dt, Math.min(rate * dt, want - (k.steerNow || 0)));
+      const sp = Math.min(1, k.v / MAX_V);
+      const maxYaw = (1.6 - 0.6 * sp) * (k.turnMul || 1);            // rad/s: about 92°/s slow, 57°/s flat out
+      const grip = drift && Math.abs(k.steerNow) > 0.2 ? 1.3 : 1;
+      k.h += k.steerNow * maxYaw * grip * dt * Math.min(1, k.v / 3);
+      if (Math.abs(want) < 0.01 && k.v > 4) {
+        const t = this.tangents[on.i]; let d = Math.atan2(t.x, t.z) - k.h; d = Math.atan2(Math.sin(d), Math.cos(d));
+        if (Math.abs(d) < 0.5) k.h += d * Math.min(1, (0.9 + st * 0.35) * dt);           // lane assist: only when nearly lined up already
+      }
+      steer = k.steerNow;
+    }
     if (!isAI) { if (drift && Math.abs(steer) > 0 && k.v > 14) k.drift = Math.min(2.2, k.drift + dt); else if (k.drift > 0.55) { k.boost = Math.min(1.6, k.drift * 0.7) * (k.boostMul || 1); k.drift = 0; this.buzz(20); this._drifts = (this._drifts || 0) + 1; } else k.drift = 0; }
     k.position.x += Math.sin(k.h) * k.v * dt; k.position.z += Math.cos(k.h) * k.v * dt;
     // walls: slide along instead of stopping dead
-    if (Math.abs(on.lateral) > ROAD_W / 2 + 9) { const t = this.tangents[on.i], back = Math.sign(on.lateral) * (Math.abs(on.lateral) - (ROAD_W / 2 + 9)); k.position.x += t.z * back; k.position.z -= t.x * back; if (!isAI && k.v > 8 && !k._hit) { this.audio.bump(); this.shake = 0.35; this.buzz(30); } k._hit = true; k.v *= 0.9; } else k._hit = false;
+    if (Math.abs(on.lateral) > ROAD_W / 2 + 9) { const t = this.tangents[on.i], back = Math.sign(on.lateral) * (Math.abs(on.lateral) - (ROAD_W / 2 + 9)); k.position.x += t.z * back; k.position.z -= t.x * back; if (!isAI && k.v > 8 && !k._hit) { this.audio.bump(); this.shake = 0.35 * (1 - (k.stab || 0) * 0.12); this.buzz(30); } k._hit = true; k.v *= 0.9 + (k.stab || 0) * 0.012; } else k._hit = false;
     if (this.pads.some((p) => Math.abs(p - on.i) < 4) && Math.abs(on.lateral) < 3) { if (!isAI && k.boost <= 0) this.audio.boost(); k.boost = Math.max(k.boost, 1.1 * (k.boostMul || 1)); }
     // lean into turns, dip under braking, front wheels steer
     const lean = -steer * Math.min(1, k.v / 22) * (drift ? 0.11 : 0.07); k.lean += (lean - k.lean) * 0.15;
@@ -724,8 +750,9 @@ class Race {
     if (this.paused) { this.audio.update(0, false, false, false, true); this.draw(); requestAnimationFrame(this.loop); return; }
     if (this.phase === 'race' || this.phase === 'done') {
       // automatic drift: a turn held for half a second at speed, timed in real time so slow phones behave like fast ones
-      if ((this.input.l || this.input.r) && this.player.v > 17) this._steerSince = this._steerSince || now; else this._steerSince = 0;
-      const autoDrift = !!this._steerSince && now - this._steerSince > 450;
+      // auto-drift only on a deliberate long hold at real speed, so a quick correction never throws the kart sideways
+      if ((this.input.l || this.input.r) && this.player.v > 22) this._steerSince = this._steerSince || now; else this._steerSince = 0;
+      const autoDrift = !!this._steerSince && now - this._steerSince > 850 + (this.player.stab || 0) * 60;
       const btn = (this.input.l ? 1 : 0) - (this.input.r ? 1 : 0);
       const steer = this.steerMode === 'tilt' && !btn ? Math.max(-1, Math.min(1, this.tilt)) : btn;
       if (this.phase === 'race') {
@@ -782,8 +809,8 @@ class Race {
     }
   }
   separate() {
-    const all = [this.player, ...this.bots];
-    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) { const a = all[i], b = all[j]; const dx = b.position.x - a.position.x, dz = b.position.z - a.position.z, d = Math.hypot(dx, dz); if (d > 0 && d < 2.6) { const push = (2.6 - d) / 2; a.position.x -= dx / d * push; a.position.z -= dz / d * push; b.position.x += dx / d * push; b.position.z += dz / d * push; a.v *= 0.985; b.v *= 0.985; } }
+    const all = [this.player, ...this.bots];   // karts touching push apart; a stable kart gets shoved less
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) { const a = all[i], b = all[j]; const dx = b.position.x - a.position.x, dz = b.position.z - a.position.z, d = Math.hypot(dx, dz); if (d > 0 && d < 2.6) { const wa = a === this.player ? 1 - (a.stab || 0) * 0.1 : 1, wb = b === this.player ? 1 - (b.stab || 0) * 0.1 : 1, gap = 2.6 - d, pa = gap * wa / (wa + wb), pb = gap - pa; a.position.x -= dx / d * pa; a.position.z -= dz / d * pa; b.position.x += dx / d * pb; b.position.z += dz / d * pb; a.v *= 0.985; b.v *= 0.985; } }
   }
   flagWave(now) { if (this.flags) this.flags.forEach((f, i) => { const p = f.geometry.attributes.position; for (let j = 0; j < p.count; j++) { const x = p.getX(j); p.setZ(j, Math.sin(now / 260 + x * 1.3 + i) * 0.25 * (x + 3) / 6); } p.needsUpdate = true; }); }
 
@@ -1166,7 +1193,7 @@ const LEVELS = ['low', 'medium', 'high'];
 function botLook(id, i, avg) {
   const designs = ['stripes', 'flames', 'naija', 'carbon'], helmets = ['chevron', 'naija', 'gold', 'carbon'];
   const lvl = Math.max(0, Math.min(5, Math.round(avg + (i - 1))));
-  return { driver: id, design: designs[(i + id.length) % designs.length], helmet: helmets[(i * 3 + id.length) % helmets.length], stats: { engine: lvl, accel: Math.max(0, lvl - 1), handling: lvl, boost: Math.min(5, lvl + 1) } };
+  return { driver: id, design: designs[(i + id.length) % designs.length], helmet: helmets[(i * 3 + id.length) % helmets.length], stats: { engine: lvl, accel: Math.max(0, lvl - 1), handling: lvl, boost: Math.min(5, lvl + 1), stability: lvl } };
 }
 function pickTier() {
   const saved = (() => { try { return localStorage.getItem('buja_kart_gfx'); } catch { return null; } })();
