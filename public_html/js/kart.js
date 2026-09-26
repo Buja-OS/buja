@@ -4,6 +4,7 @@ import * as THREE from './vendor/three.module.min.js';
 import { Sky } from './vendor/three-sky.js';
 import { buildKart, loadEnvironment, makePost, buildSky, foliageGeometries, foliageMaterial } from './kartgfx.js';
 import { buildExpressway, buildAds, adTextures, routeLandmarks, laneLines } from './kartroads.js';
+import { buildLife, surfaceMaterial } from './kartlife.js';
 
 let LAPS = 3;
 let ROAD_W = 16;                       // metres; the expressway routes are wider (set from the circuit)
@@ -21,6 +22,8 @@ TRACKS['gp-r'] = { url: '/assets/kart/abuja-gp.json', reverse: true, name: 'Gran
 TRACKS.aminu = { url: '/assets/kart/route-aminu.json', route: true, name: 'Aminu Kano Crescent', blurb: 'Wuse 2: Banex Plaza, shop rows, billboards and footbridges' };
 TRACKS.airport = { url: '/assets/kart/route-airport.json', route: true, name: 'Airport Road', blurb: 'Ten lanes past the City Gate and the National Stadium, under three flyovers' };
 TRACKS.kubwa = { url: '/assets/kart/route-kubwa.json', route: true, name: 'Kubwa Expressway', blurb: 'Zuba to the Central Area: the widest road, rail bridges, Zuma Rock behind you' };
+TRACKS.bush = { url: '/assets/kart/route-bush.json', route: true, name: 'Bush path', blurb: 'Red laterite past a Gbagyi village: cattle, huts, baobabs and jumps' };
+TRACKS.runway = { url: '/assets/kart/route-runway.json', route: true, name: 'Airport runway', blurb: 'Race down runway 04/22 at Nnamdi Azikiwe Airport, planes coming in overhead' };
 /** The garage's turntable: the real kart model, slowly turning, restyled as you browse. */
 function turntable(canvas, colour, look) {
   const w = canvas.clientWidth || 340, hgt = canvas.clientHeight || 200;
@@ -128,7 +131,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       ${b.me ? `<div class="card row" style="padding:12px 14px;gap:10px"><span style="font-size:22px">🏁</span><div class="grow"><div style="font-weight:700">Your best lap this week: ${fmt(b.me.best)}</div><div class="small muted">${b.me.rank ? ord(b.me.rank) + ' in Abuja this week' : 'Set a time to get on the board'}</div></div><a class="btn btn-sm btn-outline" href="#/kart/board" style="width:auto">Board</a></div>` : ''}
       <a class="card row" href="#/kart/garage" style="padding:12px 14px;gap:12px"><span style="font-size:26px">🔧</span><span class="grow"><b>Garage</b><br><span class="small muted">Upgrade your engine, acceleration, handling and boost; buy paint</span></span><span class="tag" id="coins">🪙 …</span></a>
       <div class="kart-tracks">${Object.entries(TRACKS).filter(([, t]) => !t.route).map(trackBtn).join('')}</div>
-      <div class="h-sm" style="margin:2px 2px -6px">Abuja expressways</div>
+      <div class="h-sm" style="margin:2px 2px -6px">Routes to unlock</div>
       <div class="kart-tracks">${Object.entries(TRACKS).filter(([, t]) => t.route).map(trackBtn).join('')}</div>
       <button class="kart-btn kart-btn-gp" id="gpstart"><b>🏆 Grand Prix</b><span>Four races: city streets, the Grand Prix circuit, then both reversed. Points for every finish.</span></button>
       <button class="kart-btn kart-btn-go" data-go="/kart/play?mode=bots"><b>Race</b><span>Three Abuja drivers, item boxes: 🌶️ pepper, 🍌 banana, 🥤 zobo, ⚡ NEPA</span></button>
@@ -147,7 +150,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       </div>
       <div class="small muted" style="line-height:1.5">The circuit follows real central Abuja streets (Independence Avenue, Herbert Macaulay Way, Sani Abacha Way, Tafawa Balewa Way), compressed for a raceable lap. Road data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, ODbL. Engine and drive-by sounds recorded by alex_jauk and kontraa.</div>
       <div class="small muted" style="line-height:1.5">The expressway routes are laid out after Kubwa Expressway (Zuba to the Central Area), the Umaru Musa Yar'Adua Expressway (Airport Road, past the City Gate and the National Stadium) and Aminu Kano Crescent in Wuse 2, compressed into raceable loops. Unlock them by racing. Race music: "Besieged Castle" by ED Music Productions.</div>
-      <div class="small muted" style="line-height:1.5">Controls: your left thumb steers with ◀ ▶ (slide between them without lifting), your right thumb rests on GAS with BRAKE beside it. Holding ◀ or ▶ keeps the gas on through corners; let go of everything to coast. Short taps make small corrections; hold a turn to turn harder. Hold 🔥 while turning to drift, let go for a boost. Drive through a ? box for an item, then tap it (above GAS) to use it. Prefer steering with your right thumb? Change Steering side above. Keyboard: arrow keys, space to drift, E for the item.</div>
+      <div class="small muted" style="line-height:1.5">Controls: your left thumb steers with ◀ ▶ (slide between them without lifting), your right thumb rests on GAS with BRAKE beside it. Holding ◀ or ▶ keeps the gas on through corners; let go of everything to coast. Short taps make small corrections; hold a turn to turn harder. Hold 🔥 while turning to drift, let go for a boost. Hit a yellow ramp to jump; hold 🔥 (or steer) in the air to spin a stunt, and land straight for a boost and coins. Grab the gold coins on the road (2 each in your garage). Watch for cattle wandering across, slow down at the police checkpoint drums, and if the police chase you, keep ahead for 20 seconds. Drive through a ? box for an item, then tap it (above GAS) to use it. Prefer steering with your right thumb? Change Steering side above. Keyboard: arrow keys, space to drift, E for the item.</div>
     </main>`;
   }, {
     mount(el) {
@@ -376,6 +379,7 @@ class Race {
     this.buildTrack(); if (this.circuit.twin) buildExpressway(this, { mergeGeos, rockGeometry, foliageGeometries, foliageMaterial, flagTexture });
     this.buildWorld(); this.buildLandmarks(); this.buildBarriers(); if (!this.circuit.noGate) this.buildCityGate(); if (this.circuit.id === 'gp') this.buildGrandPrix();
     try { await buildAds(this, { roadW: ROAD_W, twin: !!this.circuit.twin, clearOfTrack: (x, z, r) => this.clearOfTrack(x, z, r) }); } catch (e) { console.warn('ads', e); }
+    try { buildLife(this, { mergeGeos, rockGeometry, flagTexture, roadW: ROAD_W, BOOST_V }); } catch (e) { console.error('life', e); }
     this.bakeStatic();   // fuse everything that never moves into one object per material: far fewer draw calls
     this.fx = new KartFX(this.scene, this.tier);
     this.items = this.mode === 'bots' || this.mode === 'gp'; if (this.items) this.buildItemBoxes();
@@ -421,7 +425,7 @@ class Race {
     // choppy on Auto: next race one level lower, and say so
     if (auto && fpsAvg < 24 && this.tier !== 'low') { try { localStorage.setItem('buja_kart_autodown', JSON.stringify({ gpu: gpuName(), tier: LEVELS[LEVELS.indexOf(this.tier) - 1] })); } catch {} this._lowered = true; }
   }
-  stop() { this.reportPerf(); window.removeEventListener('orientationchange', this._rot); try { screen.orientation && screen.orientation.removeEventListener && screen.orientation.removeEventListener('change', this._rot); } catch {} this.audio.stop(); try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch {} try { if (document.fullscreenElement) document.exitFullscreen(); } catch {} window.removeEventListener('deviceorientation', this._tilt); document.removeEventListener('visibilitychange', this._vis); this.running = false; window.removeEventListener('resize', this._onResize); window.removeEventListener('keydown', this._kd); window.removeEventListener('keyup', this._ku); try { if (this.post) this.post.dispose(); this.renderer.dispose(); } catch {} }
+  stop() { if (this.lifeStop) this.lifeStop(); this.reportPerf(); window.removeEventListener('orientationchange', this._rot); try { screen.orientation && screen.orientation.removeEventListener && screen.orientation.removeEventListener('change', this._rot); } catch {} this.audio.stop(); try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch {} try { if (document.fullscreenElement) document.exitFullscreen(); } catch {} window.removeEventListener('deviceorientation', this._tilt); document.removeEventListener('visibilitychange', this._vis); this.running = false; window.removeEventListener('resize', this._onResize); window.removeEventListener('keydown', this._kd); window.removeEventListener('keyup', this._ku); try { if (this.post) this.post.dispose(); this.renderer.dispose(); } catch {} }
   resize() { const w = this.el.clientWidth || innerWidth, hgt = this.el.clientHeight || innerHeight; this.renderer.setSize(w, hgt, false); if (this.post) this.post.setSize(w, hgt); this.camera.aspect = w / hgt; this.camera.updateProjectionMatrix(); }
   /** One frame: through bloom and grading when the phone can take it, straight to the screen when it cannot. */
   draw() { if (this.post) this.post.render(this.player && this.player.boost > 0 ? 1 : 0); else this.renderer.render(this.scene, this.camera); }
@@ -445,11 +449,12 @@ class Race {
     };
     this.ribbon = ribbon;
     const asphalt = new THREE.MeshStandardMaterial({ map: this.tex.asphalt, normalMap: this.tex.asphaltN, normalScale: new THREE.Vector2(0.9, 0.9), roughnessMap: this.tex.asphaltR, roughness: this.env && this.env.night ? 0.62 : 0.95, metalness: 0, envMapIntensity: 0.55 });
-    const road = new THREE.Mesh(ribbon(-ROAD_W / 2, ROAD_W / 2, 0.02), asphalt); road.receiveShadow = true; this.scene.add(road); this.roadMat = asphalt;
-    const XW = !!C.expressway, TW = !!C.twin;
+    const SURF = C.surface || 'asphalt'; const roadMat = SURF === 'asphalt' ? asphalt : surfaceMaterial(SURF, this.tex);
+    const road = new THREE.Mesh(ribbon(-ROAD_W / 2, ROAD_W / 2, 0.02), roadMat); road.receiveShadow = true; this.scene.add(road); this.roadMat = roadMat;
+    const XW = !!C.expressway, TW = !!C.twin, PLAIN = SURF !== 'asphalt';   // bush and runway: no kerbs, pavements or painted lanes
     // kerbs: red and white blocks, slightly raised
     const kc = [], kp = [], ki = [];
-    for (const side of TW ? [1] : [-1, 1]) for (let i = 0; i < SAMPLES; i += 1) {   // on an expressway the median has its own kerb
+    for (const side of PLAIN ? [] : TW ? [1] : [-1, 1]) for (let i = 0; i < SAMPLES; i += 1) {   // on an expressway the median has its own kerb
       const a = this.samples[i], b = this.samples[(i + 1) % SAMPLES], t = this.tangents[i], nx = -t.z, nz = t.x, o1 = side * ROAD_W / 2, o2 = side * (ROAD_W / 2 + 1.2), v = kp.length / 3;
       kp.push(a.x + nx * o1, 0.08, a.z + nz * o1, a.x + nx * o2, 0.08, a.z + nz * o2, b.x + nx * o1, 0.08, b.z + nz * o1, b.x + nx * o2, 0.08, b.z + nz * o2);
       const c = XW ? (i % 2 ? [0.62, 0.61, 0.58] : [0.72, 0.71, 0.68]) : Math.floor(i / 1) % 2 ? [0.78, 0.1, 0.1] : [0.95, 0.95, 0.95]; for (let q = 0; q < 4; q++) kc.push(...c);   // concrete kerbs on the expressways
@@ -459,12 +464,12 @@ class Race {
     this.scene.add(new THREE.Mesh(kg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 })));
     // pavements beyond the kerbs, then the city begins
     const pave = new THREE.MeshStandardMaterial({ map: this.tex.pave, normalMap: this.tex.paveN, roughness: 0.9, envMapIntensity: 0.5 });
-    for (const [a, b] of TW ? [[ROAD_W / 2 + 1.2, ROAD_W / 2 + 4]] : [[ROAD_W / 2 + 1.2, ROAD_W / 2 + 6], [-ROAD_W / 2 - 6, -ROAD_W / 2 - 1.2]]) { const m = new THREE.Mesh(ribbon(a, b, 0.12), pave); m.receiveShadow = true; this.scene.add(m); }
+    for (const [a, b] of PLAIN ? [] : TW ? [[ROAD_W / 2 + 1.2, ROAD_W / 2 + 4]] : [[ROAD_W / 2 + 1.2, ROAD_W / 2 + 6], [-ROAD_W / 2 - 6, -ROAD_W / 2 - 1.2]]) { const m = new THREE.Mesh(ribbon(a, b, 0.12), pave); m.receiveShadow = true; this.scene.add(m); }
     // painted lines: a dashed centre line and solid edge lines, as separate crisp quads
     const lp = [], li = [];
     const quad = (a, b, off, w) => { const t = a.clone().sub(b).normalize(), nx = -t.z, nz = t.x, v = lp.length / 3; for (const p of [a, b]) lp.push(p.x + nx * (off - w), 0.05, p.z + nz * (off - w), p.x + nx * (off + w), 0.05, p.z + nz * (off + w)); li.push(v, v + 2, v + 1, v + 1, v + 2, v + 3); };
-    if (!C.lanes) for (let i = 0; i < SAMPLES; i++) { const a = this.samples[i], b = this.samples[(i + 1) % SAMPLES]; quad(a, b, ROAD_W / 2 - 0.6, 0.12); quad(a, b, -ROAD_W / 2 + 0.6, 0.12); if (i % 3 === 0) quad(a, this.samples[(i + 2) % SAMPLES], 0, 0.14); }
-    else { laneLines(this, 0, ROAD_W, C.lanes); lp.push(0, 0, 0, 0, 0, 0, 0, 0, 0); li.push(0, 1, 2); }   // lanes: three across, dashed between
+    if (!C.lanes && !PLAIN) for (let i = 0; i < SAMPLES; i++) { const a = this.samples[i], b = this.samples[(i + 1) % SAMPLES]; quad(a, b, ROAD_W / 2 - 0.6, 0.12); quad(a, b, -ROAD_W / 2 + 0.6, 0.12); if (i % 3 === 0) quad(a, this.samples[(i + 2) % SAMPLES], 0, 0.14); }
+    else { if (C.lanes) laneLines(this, 0, ROAD_W, C.lanes); lp.push(0, 0, 0, 0, 0, 0, 0, 0, 0); li.push(0, 1, 2); }   // lanes: three across, dashed between
     const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3)); lg.setIndex(li); lg.computeVertexNormals();
     this.scene.add(new THREE.Mesh(lg, new THREE.MeshStandardMaterial({ color: '#F2F2EC', roughness: 0.5 })));
     // start/finish: chequered strip and a gantry (the Grand Prix circuit has its own, with lights)
@@ -510,13 +515,13 @@ class Race {
     const T = this.tier;
     const gt = this.tex.grass; gt.repeat.set(380, 380); if (this.tex.grassN) this.tex.grassN.repeat.set(380, 380);
     // a subdivided plane a little below the road: one huge fan of triangles loses depth precision on some phones and shows through the road
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(6400, 6400, 40, 40), new THREE.MeshStandardMaterial({ map: gt, normalMap: this.tex.grassN, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 1, envMapIntensity: 0.45 })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.04; ground.receiveShadow = true; this.scene.add(ground);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(6400, 6400, 40, 40), new THREE.MeshStandardMaterial({ map: gt, normalMap: this.tex.grassN, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 1, envMapIntensity: 0.45 })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.04; ground.receiveShadow = true; if (this.circuit.surface === 'dirt') ground.material.color.set('#F2DDA2'); this.scene.add(ground);   // dry savanna on the bush path
     const clearOfTrack = (x, z, r) => this.clearOfTrack(x, z, r); const TW = !!this.circuit.twin;
     const CLEAR = { assembly: 135, mosque: 105, eagle: 90, christian: 80, nnpc: 75, cbn: 70, tower: 60, millennium: 70, stadium: 150, citygate: 55, banex: 70, wuse: 70, airport: 170 }; // each landmark's own space
     const inNoBuild = (x, z) => (this.circuit.noBuild || []).some(([cx, cz, r]) => (x - cx) ** 2 + (z - cz) ** 2 < r * r);
     const nearLandmark = (x, z) => inNoBuild(x, z) || this.circuit.landmarks.some((l) => l.id !== 'aso' && (l.x - x) ** 2 + (l.z - z) ** 2 < (CLEAR[l.id] || 85) ** 2);
     // Buildings: one instanced mesh, facades from a texture sheet, floors and bays repeating to each building's real size.
-    const sparse = !!this.circuit.sparse; const N = Math.round((T === 'low' ? 140 : T === 'medium' ? 240 : 340) * (sparse ? 0.45 : 1));
+    const sparse = !!this.circuit.sparse, noCity = !!this.circuit.noCity; const N = noCity ? 1 : Math.round((T === 'low' ? 140 : T === 'medium' ? 240 : 340) * (sparse ? 0.45 : 1));
     const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, 0);
     const style = new Float32Array(N);
     const mat = new THREE.MeshStandardMaterial({ map: this.tex.facades, roughness: 0.55, metalness: 0.15, envMapIntensity: 0.9 });
@@ -542,7 +547,7 @@ class Race {
     mat.customProgramCacheKey = () => 'facade' + (nightTex ? 'n' : 'd');
     const bm = new THREE.InstancedMesh(geo, mat, N); bm.castShadow = T === 'high'; bm.receiveShadow = true;
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(); let n = 0, tries = 0;
-    while (n < N && tries < N * 12) {
+    while (n < N && tries < N * 12 && !noCity) {
       tries++; const s = Math.floor(Math.random() * SAMPLES), side = Math.random() < 0.5 ? -1 : 1, off = side * (ROAD_W / 2 + (sparse ? 55 : 14) + Math.random() * (sparse ? 110 : 70));
       const p = this.samples[s], t = this.tangents[s], x = p.x - t.z * off, z = p.z + t.x * off;
       const w = 16 + Math.random() * 22, d = 14 + Math.random() * 20;
@@ -560,7 +565,7 @@ class Race {
     const trunkM = new THREE.MeshStandardMaterial({ color: '#8C7A5E', roughness: 0.9, map: this.tex.rock }), palmF = foliageMaterial('palm'), leafF = foliageMaterial('leaves'); const leafM = palmF.m, neemM = leafF.m;
     const pt = new THREE.InstancedMesh(palmTrunk, trunkM, TN), pf = new THREE.InstancedMesh(frond, leafM, TN), nt = new THREE.InstancedMesh(neemTrunk, trunkM, TN), nc = new THREE.InstancedMesh(neem, neemM, TN);
     let np = 0, nn = 0; const col = new THREE.Color();
-    for (let s = 0; s < SAMPLES; s += 3) for (const side of TW ? [1] : [-1, 1]) {   // the median has its own trees
+    for (let s = 0; s < SAMPLES; s += 3) for (const side of this.circuit.airfield ? [] : TW ? [1] : [-1, 1]) {   // the median has its own trees; an airfield has none
       const p = this.samples[s], t = this.tangents[s], off = side * (ROAD_W / 2 + 8.5), x = p.x - t.z * off, z = p.z + t.x * off;
       if (!clearOfTrack(x, z, ROAD_W / 2 + 7.5) || inNoBuild(x, z)) continue;
       const sc = 0.85 + Math.random() * 0.35; m4.compose(new THREE.Vector3(x, 0, z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * 6), new THREE.Vector3(sc, sc, sc));
@@ -571,7 +576,7 @@ class Race {
     const pole = new THREE.CylinderGeometry(0.12, 0.16, 9, 6); pole.translate(0, 4.5, 0); const arm = new THREE.BoxGeometry(0.12, 0.12, 2.6); arm.translate(0, 9, 1.2); const lamp = new THREE.BoxGeometry(0.5, 0.18, 0.9); lamp.translate(0, 8.9, 2.4);
     const lampG = mergeGeos([pole, arm, lamp]); const LN = Math.floor(SAMPLES / 8) + 2;
     const lm = new THREE.InstancedMesh(lampG, new THREE.MeshStandardMaterial({ color: '#5A5F66', roughness: 0.45, metalness: 0.7 }), LN); let nl = 0;
-    for (let s = 0; s < SAMPLES && nl < LN && !TW; s += 8) { const side = (s / 8) % 2 ? 1 : -1; const p = this.samples[s], t = this.tangents[s], off = side * (ROAD_W / 2 + 3); const x = p.x - t.z * off, z = p.z + t.x * off; if (!clearOfTrack(x, z, ROAD_W / 2 + 2)) continue; m4.compose(new THREE.Vector3(x, 0, z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(t.x, t.z) + (side > 0 ? Math.PI / 2 : -Math.PI / 2)), new THREE.Vector3(1, 1, 1)); lm.setMatrixAt(nl++, m4); }
+    for (let s = 0; s < SAMPLES && nl < LN && !TW && !noCity; s += 8) { const side = (s / 8) % 2 ? 1 : -1; const p = this.samples[s], t = this.tangents[s], off = side * (ROAD_W / 2 + 3); const x = p.x - t.z * off, z = p.z + t.x * off; if (!clearOfTrack(x, z, ROAD_W / 2 + 2)) continue; m4.compose(new THREE.Vector3(x, 0, z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(t.x, t.z) + (side > 0 ? Math.PI / 2 : -Math.PI / 2)), new THREE.Vector3(1, 1, 1)); lm.setMatrixAt(nl++, m4); }
     if (this.env && this.env.night && nl) { // glowing lamp heads, one draw call
       const glow = new THREE.InstancedMesh(new THREE.SphereGeometry(0.42, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color('#FFE2A0').multiplyScalar(9), toneMapped: false }), nl), mm = new THREE.Matrix4(), v = new THREE.Vector3();
       const pc = document.createElement('canvas'); pc.width = pc.height = 128; const px = pc.getContext('2d'); const pg = px.createRadialGradient(64, 64, 0, 64, 64, 64); pg.addColorStop(0, 'rgba(255,214,150,.55)'); pg.addColorStop(0.5, 'rgba(255,196,120,.18)'); pg.addColorStop(1, 'rgba(255,180,100,0)'); px.fillStyle = pg; px.fillRect(0, 0, 128, 128);
@@ -719,9 +724,10 @@ class Race {
   /* ------------------------------ physics ------------------------------ */
   drive(k, dt, steer, brake, drift, isAI = false, gas = true) {
     const on = this.nearest(k.position.x, k.position.z, k.idx); k.idx = on.i;
-    const off = Math.abs(on.lateral) > ROAD_W / 2 + 1.2;
+    const off = !k.air && Math.abs(on.lateral) > ROAD_W / 2 + 1.2;
     const sm = this.speedMul || 1; let top = off ? OFF_V + (k.offBonus || 0) : MAX_V * sm * (isAI ? k.skill : 1) * (k.topMul || 1); if (k.boost > 0) { top = BOOST_V * sm * (k.topMul || 1); k.boost -= dt; }
     if (k.slow > 0) { k.slow -= dt; top *= 0.6; k.boost = 0; }
+    if (k.held > 0) { k.held -= dt; top = 0; k.v = 0; k.boost = 0; }   // stopped by the police
     if (k.spin > 0) { k.spin -= dt; steer = 0; drift = false; top = Math.min(top, 8); }
     const accel = brake ? -28 : !gas ? (k.v > 0 ? -5 : 0) : (k.v < top ? 13 * sm * (k.accMul || 1) : -9);   // off the gas: the kart coasts down
     k.v = Math.max(0, Math.min(k.boost > 0 ? BOOST_V * sm : top + 2, k.v + accel * dt));
@@ -748,7 +754,7 @@ class Race {
     if (!isAI) { if (drift && Math.abs(steer) > 0 && k.v > 14) k.drift = Math.min(2.2, k.drift + dt); else if (k.drift > 0.55) { k.boost = Math.min(1.6, k.drift * 0.7) * (k.boostMul || 1); k.drift = 0; this.buzz(20); this._drifts = (this._drifts || 0) + 1; } else k.drift = 0; }
     k.position.x += Math.sin(k.h) * k.v * dt; k.position.z += Math.cos(k.h) * k.v * dt;
     // walls: slide along instead of stopping dead
-    const wall = on.lateral < 0 && this.circuit.twin ? ROAD_W / 2 - 0.7 : ROAD_W / 2 + 9;   // the median kerb stops you on an expressway
+    const wall = on.lateral < 0 && this.circuit.twin ? ROAD_W / 2 - 0.7 : (this.wallAt && this.wallAt(on.lateral)) || ROAD_W / 2 + 9;   // the median kerb stops you on an expressway
     if (Math.abs(on.lateral) > wall) { const t = this.tangents[on.i], back = Math.sign(on.lateral) * (Math.abs(on.lateral) - wall); k.position.x += t.z * back; k.position.z -= t.x * back; if (!isAI && k.v > 8 && !k._hit) { this.audio.bump(); this.shake = 0.35 * (1 - (k.stab || 0) * 0.12); this.buzz(30); } k._hit = true; k.v *= 0.9 + (k.stab || 0) * 0.012; } else k._hit = false;
     if (this.pads.some((p) => Math.abs(p - on.i) < 4) && Math.abs(on.lateral) < 3) { if (!isAI && k.boost <= 0) this.audio.boost(); k.boost = Math.max(k.boost, 1.1 * (k.boostMul || 1)); }
     // lean into turns, dip under braking, front wheels steer
@@ -758,10 +764,11 @@ class Race {
     if (this.fx && (isAI ? Math.random() < 0.3 : true)) {
       const back = -1.15, sx = Math.sin(k.h), cz = Math.cos(k.h), px = Math.cos(k.h), pz = -Math.sin(k.h);
       const drifting = drift && Math.abs(steer) > 0 && k.v > 12;
-      if (drifting || (off && k.v > 6)) for (const side of [-0.95, 0.95]) {
+      const dust = this.circuit.surface === 'dirt' && k.v > 10 && !k.air && Math.random() < 0.5;   // red dust behind you on the laterite
+      if (drifting || dust || (off && k.v > 6)) for (const side of [-0.95, 0.95]) {
         const x = k.position.x + sx * back + px * side, z = k.position.z + cz * back + pz * side;
-        if (Math.random() < (drifting ? 0.8 : 0.5)) this.fx.puff(x, 0.35, z, off ? [0.62, 0.43, 0.28] : [0.88, 0.88, 0.88], off ? 1.6 : 1.3, off ? 0.8 : 1.4);
-        if (drifting && !off) this.fx.mark(x, z, k.h);
+        if (Math.random() < (drifting ? 0.8 : 0.5)) this.fx.puff(x, 0.35, z, off || dust ? [0.66, 0.4, 0.25] : [0.88, 0.88, 0.88], off || dust ? 1.6 : 1.3, off ? 0.8 : 1.4);
+        if (drifting && !off && !dust) this.fx.mark(x, z, k.h);
       }
       if (!isAI) { k._drifting = drifting; k._off = off; }
     }
@@ -770,11 +777,14 @@ class Race {
     // laps: must pass the far side before the line counts
     const prog = on.i / SAMPLES; if (prog > 0.45 && prog < 0.55) k.passedHalf = true;
     if (k.lastProg != null && k.lastProg > 0.9 && prog < 0.1 && k.passedHalf) { k.passedHalf = false; k.lapEvent = true; }
-    k.lastProg = prog; k.s = (k.lap - 1) + prog; return on;
+    k.lastProg = prog; k.s = (k.lap - 1) + prog;
+    if (this.jumpTick) this.jumpTick(k, dt, isAI);   // ramps and flight
+    return on;
   }
   aiDrive(k, dt) {
     const look = (k.idx + 5 + Math.floor(k.v / 6)) % SAMPLES, p = this.samples[look], t = this.tangents[look];
-    const tx = p.x - t.z * k.lane, tz = p.z + t.x * k.lane;
+    const lane = this.avoidLane ? (k._lane = (k._lane ?? k.lane) + (this.avoidLane(k) - (k._lane ?? k.lane)) * Math.min(1, dt * 3)) : k.lane;   // steer round cows and drums
+    const tx = p.x - t.z * lane, tz = p.z + t.x * lane;
     const want = Math.atan2(tx - k.position.x, tz - k.position.z); let diff = want - k.h; while (diff > Math.PI) diff -= 2 * Math.PI; while (diff < -Math.PI) diff += 2 * Math.PI;
     const lead = k.s - this.player.s; k.skill = Math.max(0.86, Math.min(1.04, k.baseSkill ?? (k.baseSkill = k.skill)) - (lead > 0.25 ? 0.05 : lead < -0.25 ? -0.04 : 0)); // gentle rubber band
     this.drive(k, dt, Math.max(-1, Math.min(1, diff * 2.2)), false, false, true);
@@ -842,6 +852,7 @@ class Race {
     }
     this.flagWave(now);
     if (this.adTick) this.adTick(now);
+    if (this.lifeTick && (this.phase === 'race' || this.phase === 'done' || this.phase === 'count')) this.lifeTick(now, dt);
     if (this.trafficTick) this.trafficTick(dt);
     this.chase(dt);
     if (this.skyFx) this.skyFx.update(dt);
@@ -852,11 +863,11 @@ class Race {
   }
   chase(dt) {
     const k = this.player, back = 9.5 + k.v * 0.07, up = 4.6 + k.v * 0.03;
-    const want = new THREE.Vector3(k.position.x - Math.sin(k.h) * back, up, k.position.z - Math.cos(k.h) * back);
+    const want = new THREE.Vector3(k.position.x - Math.sin(k.h) * back, up + (k.position.y || 0) * 0.8, k.position.z - Math.cos(k.h) * back);
     this.camera.position.lerp(want, 1 - Math.pow(0.001, dt));
     if (this.shake > 0) { this.shake = Math.max(0, this.shake - dt); const s = this.shake * 0.6; this.camera.position.x += (Math.random() - 0.5) * s; this.camera.position.y += (Math.random() - 0.5) * s; }
     if (this.sun.castShadow) { this.sun.position.copy(k.position).addScaledVector(this.sunDir, 300); this.sun.target.position.copy(k.position); } // shadows follow the kart
-    this.camera.lookAt(k.position.x + Math.sin(k.h) * 12, 1.2, k.position.z + Math.cos(k.h) * 12);
+    this.camera.lookAt(k.position.x + Math.sin(k.h) * 12, 1.2 + (k.position.y || 0) * 0.7, k.position.z + Math.cos(k.h) * 12);
     const fov = 62 + Math.min(14, k.v * 0.3) + (k.boost > 0 ? 6 : 0); if (Math.abs(fov - this.camera.fov) > 0.3) { this.camera.fov += (fov - this.camera.fov) * 0.1; this.camera.updateProjectionMatrix(); }
     const t = performance.now() / 1000;
     for (const o of [k, ...this.bots, ...Object.values(this.remotes).map((r) => r.kart).filter(Boolean)]) {
@@ -901,13 +912,14 @@ class Race {
         ${bonus && bonus.coinsEarned ? `<div class="kart-coins">+${bonus.coinsEarned} 🪙 Grand Prix bonus</div>` : ''}</div>`;
       this._gpNext = done ? null : GP_ROUNDS[st.round];
     }
-    try { this.reportPerf(); saved = await this.api.kartSaveTime({ place: this.mode === 'solo' ? 1 : place, track: this.trackId, lapMs: this.bestLap, raceMs, mode: this.mode, ghost: this.bestPath, stats: { drifts: this._drifts || 0, bananaHits: this._bananaHits || 0, ghostFriend: this.ghostWho === 'friend' ? this.ghostFriend : 0 } }); } catch {}
+    try { this.reportPerf(); saved = await this.api.kartSaveTime({ place: this.mode === 'solo' ? 1 : place, track: this.trackId, lapMs: this.bestLap, raceMs, mode: this.mode, ghost: this.bestPath, pickups: this.life ? this.life.pickups : 0, stats: { stunts: this.life ? this.life.stunts : 0, drifts: this._drifts || 0, bananaHits: this._bananaHits || 0, ghostFriend: this.ghostWho === 'friend' ? this.ghostFriend : 0 } }); } catch {}
     if (this.mode === 'room') { try { await this.api.kartFinish(this.code, raceMs); } catch {} }
     const r = this.el.querySelector('#result');
     r.innerHTML = `<div class="kart-card"><div class="kart-place"><img class="kart-face" src="/assets/kart/driver-${this.driver}.jpg" alt="" style="--c:${DRIVERS[this.driver].colour}"><span>${this.mode === 'solo' ? '🏁' : place === 1 ? '🏆' : '🏁'}</span></div>
       <div class="kart-big">${this.mode === 'solo' ? 'Race complete' : this.ord(place) + ' place'}</div>
       <div class="kart-row"><span>Race</span><b>${this.fmt(raceMs)}</b></div><div class="kart-row"><span>Best lap</span><b>${this.fmt(this.bestLap)}</b></div>
       ${saved ? `<div class="kart-row"><span>Abuja ranking, all time</span><b>${this.ord(saved.rank)}</b></div>${saved.personalBest ? '<div class="kart-pb">New personal best!</div>' : `<div class="kart-sub">Your best: ${this.fmt(saved.previousBest)}</div>`}` : ''}
+      ${this.life && this.life.pickups ? `<div class="kart-row"><span>🪙 Coins picked up${this.life.stunts ? ' · 🤸 ' + this.life.stunts + ' stunt' + (this.life.stunts > 1 ? 's' : '') : ''}</span><b>${this.life.pickups}${saved && saved.pickupCoins ? ' (+' + saved.pickupCoins + ')' : ''}</b></div>` : ''}
       ${saved && saved.routesUnlocked && saved.routesUnlocked.length ? saved.routesUnlocked.map((o) => `<div class="kart-pb">🛣️ Unlocked: ${this.h(o.name)}</div>`).join('') : ''}
       ${saved && saved.coinsEarned ? `<div class="kart-coins">+${saved.coinsEarned} 🪙 <span>${saved.coins} in the garage</span></div>` : ''}
       ${saved && saved.achievements && saved.achievements.length ? `<div class="kart-ach-new">${saved.achievements.map((a) => `<div>🏆 <b>${this.h(a.title)}</b><span>+${a.coins}</span></div>`).join('')}</div>` : ''}
@@ -1159,7 +1171,7 @@ class Race {
   /** Guard rails where the track edge stops you: red and white Armco panels, one draw call. */
   buildBarriers() {
     const pos = [], col = [], idx = []; const off = ROAD_W / 2 + 9.4; const XW = !!this.circuit.expressway;
-    for (const side of this.circuit.twin ? [1] : [-1, 1]) for (let i = 0; i < SAMPLES; i++) {
+    for (const side of this.circuit.surface && this.circuit.surface !== 'asphalt' ? [] : this.circuit.twin ? [1] : [-1, 1]) for (let i = 0; i < SAMPLES; i++) {
       const a = this.samples[i], b = this.samples[(i + 1) % SAMPLES], t = this.tangents[i], nx = -t.z * side * off, nz = t.x * side * off, v = pos.length / 3;
       if (this.nearest(a.x + nx, a.z + nz).dist < off - 3) continue;   // where another part of the track comes close, no rail across it
       pos.push(a.x + nx, 0.35, a.z + nz, a.x + nx, 1.15, a.z + nz, b.x + nx, 0.35, b.z + nz, b.x + nx, 1.15, b.z + nz);

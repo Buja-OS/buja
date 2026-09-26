@@ -10,7 +10,7 @@ declare(strict_types=1);
 final class KartController
 {
     public const TRACKS = ['gp' => 'Abuja Grand Prix Circuit', 'abuja' => 'Abuja city streets', 'gp-r' => 'Grand Prix, reversed', 'abuja-r' => 'City streets, reversed',
-        'aminu' => 'Aminu Kano Crescent', 'airport' => 'Airport Road', 'kubwa' => 'Kubwa Expressway'];
+        'aminu' => 'Aminu Kano Crescent', 'airport' => 'Airport Road', 'kubwa' => 'Kubwa Expressway', 'bush' => 'Bush path', 'runway' => 'Airport runway'];
     /**
      * The expressway routes are earned. Each rule: races finished (any track), wins against rivals, and races on
      * another route. Players on the kart_unlimited list (femiayor@gmail.com by default) have them all.
@@ -19,6 +19,8 @@ final class KartController
         'aminu'   => ['races' => 3],
         'airport' => ['races' => 8, 'wins' => 1],
         'kubwa'   => ['races' => 15, 'wins' => 3, 'on' => ['airport', 2]],
+        'bush'    => ['races' => 5],
+        'runway'  => ['races' => 10, 'wins' => 2],
     ];
     /** Which routes this player has, and what is left to do for the others. */
     public static function routes(int $uid, ?array $p = null): array
@@ -314,6 +316,8 @@ final class KartController
         Track::hit($u, 'kart', 'race_' . $mode);
         $place = max(1, min(8, (int) ($b['place'] ?? 4))); $pb = !$prev || !$prev['b'] || $lap < (int) $prev['b'];
         $earned = ($mode === 'solo' ? 40 : [1 => 120, 2 => 80, 3 => 60][$place] ?? 40) + ($mode === 'room' ? 30 : 0) + ($pb ? 50 : 0);
+        // coins picked up on the track (and stunt and police-escape bonuses), 2 each, capped so a race cannot be farmed
+        $pickupCoins = 2 * max(0, min(60, (int) ($b['pickups'] ?? 0))); $earned += $pickupCoins;
         self::profile((int) $u['id']);
         Db::run('UPDATE kart_profiles SET coins = coins + ?, races = races + 1, wins = wins + ?, updated_at = ? WHERE user_id = ?', [$earned, $place === 1 && $mode !== 'solo' ? 1 : 0, Db::now(), $u['id']]);
         // First race of the day: 100 coins, 25 more for each day in a row (up to a week). Abuja's calendar day.
@@ -345,7 +349,7 @@ final class KartController
         $routesAfter = self::routes((int) $u['id']); $opened = [];
         foreach ($routesAfter as $id => $r) if ($r['unlocked'] && !$routesBefore[$id]['unlocked']) $opened[] = ['id' => $id, 'name' => self::TRACKS[$id]];
         foreach ($opened as $o) Notify::user((int) $u['id'], 'social', '🛣️ New Buja Kart route: ' . $o['name'], 'You unlocked it by racing. Pick it on the Buja Kart screen.', '/#/kart', true);
-        Http::json(['routesUnlocked' => $opened, 'personalBest' => $pb, 'previousBest' => $prev && $prev['b'] ? (int) $prev['b'] : null, 'rank' => $rank, 'coinsEarned' => $earned + $bonusCoins, 'daily' => $daily, 'achievements' => $got, 'coins' => (int) (Db::one('SELECT coins FROM kart_profiles WHERE user_id = ?', [$u['id']])['coins'] ?? 0)], 201);
+        Http::json(['pickupCoins' => $pickupCoins, 'routesUnlocked' => $opened, 'personalBest' => $pb, 'previousBest' => $prev && $prev['b'] ? (int) $prev['b'] : null, 'rank' => $rank, 'coinsEarned' => $earned + $bonusCoins, 'daily' => $daily, 'achievements' => $got, 'coins' => (int) (Db::one('SELECT coins FROM kart_profiles WHERE user_id = ?', [$u['id']])['coins'] ?? 0)], 201);
     }
 
     /** POST /kart/gp { place } : a bonus for finishing all four Grand Prix races (a real Grand Prix takes 6 minutes or more) */

@@ -274,6 +274,10 @@ body.kart-on .tabbar{display:none}
 .kart-stage canvas#kc{position:absolute;inset:0;width:100%;height:100%;display:block}
 .kart-hud{position:absolute;top:calc(10px + var(--safe-t,0px));left:12px;right:12px;display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;pointer-events:none;padding-left:52px}
 .kart-chip{background:rgba(16,16,20,.72);color:#fff;border-radius:12px;padding:7px 11px;font:800 14px Inter,system-ui,sans-serif;letter-spacing:.3px}
+.kart-chip.kart-coins{background:rgba(120,84,0,.8);color:#FFE38A} .kart-chip.kart-coins.pop{animation:kcoin .35s ease-out}
+@keyframes kcoin{0%{transform:scale(1.35)}100%{transform:scale(1)}}
+.kart-stage.kart-police::after{content:'';position:absolute;inset:0;pointer-events:none;z-index:3;box-shadow:inset 0 0 0 6px rgba(255,40,40,.0);animation:kpolice .36s steps(1) infinite}
+@keyframes kpolice{0%{box-shadow:inset 0 0 38px 10px rgba(255,40,40,.55)}50%{box-shadow:inset 0 0 38px 10px rgba(40,90,255,.55)}}
 .kart-time{font-family:ui-monospace,Menlo,monospace}
 .kart-hud #mini{margin-left:auto;width:96px;height:96px}
 .kart-quit,.kart-chatbtn{position:absolute;top:calc(10px + var(--safe-t,0px));left:12px;width:42px;height:42px;border-radius:21px;border:none;background:rgba(16,16,20,.72);color:#fff;display:flex;align-items:center;justify-content:center}
