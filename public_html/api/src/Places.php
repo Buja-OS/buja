@@ -26,7 +26,7 @@ final class Places
     {
         if (self::$http) return (self::$http)($url);
         $ch = curl_init($url);
-        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_USERAGENT => self::UA, CURLOPT_FOLLOWLOCATION => true]);
+        curl_setopt_array($ch, [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_USERAGENT => self::UA, CURLOPT_FOLLOWLOCATION => true]);
         $body = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
         return $code === 200 && is_string($body) ? $body : null;
     }
@@ -114,11 +114,12 @@ final class Places
     {
         $out = [];
         $last = Db::one("SELECT v FROM app_keys WHERE k = 'places_import_at'");
-        if (!$last || strtotime((string) $last['v'] . ' UTC') < time() - 3 * 3600) {
+        // One category, one quarter of the FCT per run (about every hour), so no run waits on a huge query.
+        if (!$last || strtotime((string) $last['v'] . ' UTC') < time() - 50 * 60) {
             $i = Db::one("SELECT v FROM app_keys WHERE k = 'places_import_i'"); $n = $i ? (int) $i['v'] : 0;
-            $cat = Osm::IMPORT_ORDER[$n % count(Osm::IMPORT_ORDER)];
+            $nt = count(Osm::TILES); $cat = Osm::IMPORT_ORDER[intdiv($n, $nt) % count(Osm::IMPORT_ORDER)]; $tile = $n % $nt;
             foreach ([['places_import_at', Db::now()], ['places_import_i', (string) ($n + 1)]] as [$k, $v]) { Db::run('DELETE FROM app_keys WHERE k = ?', [$k]); Db::run('INSERT INTO app_keys (k, v) VALUES (?,?)', [$k, $v]); }
-            try { $out['import'] = ['category' => $cat] + Osm::importCategory($cat); } catch (Throwable $e) { $out['import'] = ['category' => $cat, 'error' => $e->getMessage()]; }
+            try { $out['import'] = ['category' => $cat, 'tile' => $tile] + Osm::importCategory($cat, 3000, $tile); } catch (Throwable $e) { $out['import'] = ['category' => $cat, 'error' => $e->getMessage()]; }
             $out['photos'] = self::photoBatch(10, 6.0);
         } else $out['photos'] = self::photoBatch(40, 20.0);
         return $out;

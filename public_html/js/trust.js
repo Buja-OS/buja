@@ -111,11 +111,38 @@ export function registerTrust({ route, go, state, setState, api, ui, failed }) {
 
   route('/admin/spots', { auth: true, tabs: 'Me' }, async () => {
     const g = guard(); if (g) return g; const { items } = await api.adminSpots();
-    return `${topbar('Places to verify', '/admin')}<div class="pad" style="padding-bottom:0"><div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Fill the directory from OpenStreetMap</div><div class="small muted" style="line-height:1.5">Pulls every named place of a category across the FCT. Real places, real coordinates, marked as unreviewed until somebody rates them. Run each once; running again only adds what is new.</div><div class="row" style="gap:6px;flex-wrap:wrap">${['food', 'lounge', 'worship', 'health', 'hotel', 'shopping', 'relax', 'nightlife', 'culture', 'kids', 'services'].map((c) => `<button class="btn btn-sm btn-outline" data-import="${c}" style="width:auto">${c}</button>`).join('')}</div><div class="small" id="importres"></div><div class="row" style="gap:8px;margin-top:4px"><button class="btn btn-sm btn-ink" id="fuelimport" style="width:auto">Import fuel stations</button><span class="small muted">for the Fuel board</span></div></div></div>
+    return `${topbar('Places to verify', '/admin')}<div class="pad" style="padding-bottom:0"><div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Fill the directory from OpenStreetMap</div><div class="small muted" style="line-height:1.5">Pulls every named place of a category across the FCT. Real places, real coordinates, marked as unreviewed until somebody rates them. Run each once; running again only adds what is new.</div><button class="btn btn-primary" id="importall">Import everything</button><div class="small muted" style="margin-top:-4px">All 11 kinds of place, in four parts of the FCT each. Keep this screen open; it can take 10 to 20 minutes. Or do one kind:</div><div class="row" style="gap:6px;flex-wrap:wrap">${['food', 'lounge', 'worship', 'health', 'hotel', 'shopping', 'relax', 'nightlife', 'culture', 'kids', 'services'].map((c) => `<button class="btn btn-sm btn-outline" data-import="${c}" style="width:auto">${c}</button>`).join('')}</div><div class="small" id="importres" style="line-height:1.5;white-space:pre-line"></div><div class="row" style="gap:8px;margin-top:4px"><button class="btn btn-sm btn-ink" id="fuelimport" style="width:auto">Import fuel stations</button><span class="small muted">for the Fuel board</span></div></div></div>
     <main class="pad stack" style="gap:12px">${items.length ? items.map((i) => `<div class="card stack" style="padding:14px;gap:8px" data-s="${i.id}"><div class="h-sm">${h(i.name)}</div><div class="small muted">${i.category} · ${h(i.district)}${i.area ? ' · ' + h(i.area) : ''} · added by ${h(i.addedBy || 'Buja')} · ${i.createdAt.slice(0, 10)}</div><div class="small" style="line-height:1.5">${h(i.description)}</div>${i.tags.length ? `<div class="row" style="flex-wrap:wrap;gap:6px">${i.tags.map((t) => `<span class="tag" style="background:var(--surface);color:var(--ink-2)">${h(t)}</span>`).join('')}</div>` : ''}<div class="row" style="gap:8px"><button class="btn btn-sm btn-ink" data-act="verify" style="flex:1">${icon('circle-check')} Verify</button><button class="btn btn-sm btn-outline" data-act="remove" style="flex:1">Remove</button></div></div>`).join('') : `<div class="placeholder" style="padding:50px 0"><div class="h-md">Nothing to verify</div></div>`}</main>`;
   }, { mount(el) {
-      el.querySelector('#fuelimport')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); el.querySelector('#importres').textContent = 'Asking the map server…'; try { const r = await api.fuelImport(); el.querySelector('#importres').textContent = r.result.error ? 'Map server said: ' + r.result.error : `${r.result.added} new stations (${r.result.seen} found). ${r.total} on the board.`; } catch (err) { el.querySelector('#importres').textContent = (err && err.message) || 'Failed'; } busy(e.currentTarget, false); });
-      el.querySelectorAll('[data-import]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); el.querySelector('#importres').textContent = 'Asking the map server, up to 30 seconds…'; try { const r = await api.importSpots(b.dataset.import); el.querySelector('#importres').textContent = r.result.error ? 'Map server said: ' + r.result.error + '. Try again in a minute.' : `${r.result.added} new ${b.dataset.import} places added (${r.result.seen} found). Directory now has ${r.total}.`; } catch (err) { el.querySelector('#importres').textContent = (err && err.message) || 'Failed'; } busy(b, false); }));
+      // Each kind of place is fetched in four parts of the FCT, one request each, so a busy map server never has to answer one huge query.
+      const PARTS = ['south-west', 'south-east', 'north-west', 'north-east'];
+      const out = (t) => { const r = el.querySelector('#importres'); if (r) r.textContent = t; };
+      let running = false;
+      const runKind = async (cat, log) => {
+        let added = 0, seen = 0; const bad = [];
+        for (let t = 0; t < 4; t++) {
+          out(log.concat(`${cat}: part ${t + 1} of 4 (${PARTS[t]})…`).join('\n'));
+          let r = null;
+          for (let attempt = 0; attempt < 2 && !(r && !r.result.error); attempt++) {
+            if (attempt) { out(log.concat(`${cat}: part ${t + 1} busy, trying again in 20 s…`).join('\n')); await new Promise((ok) => setTimeout(ok, 20000)); }
+            try { r = cat === 'fuel' ? await api.fuelImport(t) : await api.importSpots(cat, t); } catch (err) { r = { result: { added: 0, seen: 0, error: (err && err.message) || 'request failed' } }; }
+          }
+          added += r.result.added || 0; seen += r.result.seen || 0; if (r.result.error) bad.push(`part ${t + 1}: ${r.result.error}`);
+          var total = r.total;
+        }
+        const line = `${cat}: ${added} new, ${seen} found${bad.length ? `. ${bad.length} of 4 parts failed` : ''}.`;
+        return { line, bad, total };
+      };
+      const go1 = async (btn, cats) => {
+        if (running) { toast('An import is already running'); return; } running = true; busy(btn, true);
+        const log = []; const errs = [];
+        for (const c of cats) { const r = await runKind(c, log); log.push(r.line); r.bad.forEach((x) => { const i = x.indexOf('): '); (i > 0 ? x.slice(i + 3) : x).split(/; | \| /).forEach((m) => { if (!errs.includes(m)) errs.push(m); }); }); out(log.join('\n') + (r.total != null ? `\n${c === 'fuel' ? 'Fuel board' : 'Directory'} now has ${r.total}.` : '')); }
+        if (errs.length) out(log.join('\n') + '\n\nWhat the map servers said:\n' + errs.slice(0, 8).join('\n') + '\n\nRun it again later to fill the gaps; places already in are skipped.');
+        busy(btn, false); running = false;
+      };
+      el.querySelector('#fuelimport')?.addEventListener('click', (e) => go1(e.currentTarget, ['fuel']));
+      el.querySelector('#importall')?.addEventListener('click', (e) => go1(e.currentTarget, ['food', 'lounge', 'worship', 'health', 'hotel', 'shopping', 'relax', 'nightlife', 'culture', 'kids', 'services']));
+      el.querySelectorAll('[data-import]').forEach((b) => b.addEventListener('click', () => go1(b, [b.dataset.import])));
        el.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => { const card = b.closest('[data-s]'); busy(b, true); try { await api.adminDecideSpot(card.dataset.s, b.dataset.act); card.remove(); toast('Done'); } catch (err) { busy(b, false); failed(el, err); } })); } });
 
   /* ---------- Users ---------- */

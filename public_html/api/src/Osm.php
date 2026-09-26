@@ -8,8 +8,52 @@ declare(strict_types=1);
  */
 final class Osm
 {
-    private const ENDPOINTS = ['https://overpass.kumi.systems/api/interpreter', 'https://overpass-api.de/api/interpreter'];
-    private const UA = 'BujaApp/1.0 (Abuja city app; contact hello@buja.ng)';
+    /** Public Overpass servers, freshest first. The last two answer from older copies of the map, which is still
+     *  better than nothing for places that rarely move. A server that cannot be reached is skipped for the rest of the run. */
+    private const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://z.overpass-api.de/api/interpreter', 'https://lz4.overpass-api.de/api/interpreter',
+        'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+    private const UA = 'BujaApp/1.1 (Abuja city directory; https://buja.onrender.com; contact hello@buja.ng)';
+    /** The FCT's built-up area in four pieces [south, west, north, east], so each query stays light enough for a busy public server. */
+    public const TILES = [[8.85, 7.15, 9.05, 7.40], [8.85, 7.40, 9.05, 7.65], [9.05, 7.15, 9.25, 7.40], [9.05, 7.40, 9.25, 7.65]];
+    public const TILE_NAMES = ['south-west (Kuje, Gwagwalada side)', 'south-east (airport, Lugbe, Apo)', 'north-west (Kubwa, Dutse, Gwarinpa)', 'north-east (city centre, Maitama, Bwari)'];
+    /** For tests: replaces the network call. fn(string $url, string $query, int $timeout): array [code, body, curlErrno, curlError] */
+    public static $http = null;
+
+    /**
+     * Runs one Overpass query, trying each public server in turn until one gives real map data. Busy pages,
+     * "runtime error" remarks inside a 200, timeouts and refused connections all count as failures, and each
+     * one is written to $errors in plain words so the admin screen can show exactly what happened.
+     */
+    public static function overpass(string $query, int $timeout, array &$errors = [], float $budget = 120.0): ?array
+    {
+        static $dead = [];
+        $t0 = microtime(true);
+        foreach (self::ENDPOINTS as $url) {
+            $host = (string) parse_url($url, PHP_URL_HOST);
+            if (isset($dead[$host])) continue;
+            $left = $budget - (microtime(true) - $t0); if ($left < 5) { $errors[] = 'stopped after ' . round($budget) . ' s'; break; }
+            $t = (int) max(5, min($timeout, $left));
+            if (self::$http) { [$code, $body, $cno, $cerr] = (self::$http)($url, $query, $t); }
+            else {
+                $ch = curl_init($url);
+                curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => $t, CURLOPT_CONNECTTIMEOUT => 6,
+                    CURLOPT_POSTFIELDS => http_build_query(['data' => $query]), CURLOPT_USERAGENT => self::UA, CURLOPT_ENCODING => '',
+                    CURLOPT_HTTPHEADER => ['Accept: application/json, */*;q=0.8', 'Accept-Language: en'], CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]);
+                $body = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); $cno = curl_errno($ch); $cerr = curl_error($ch); curl_close($ch);
+            }
+            if ($code === 200 && is_string($body)) {
+                $j = json_decode($body, true);
+                if (!is_array($j)) { $errors[] = $host . ': busy, sent a page instead of map data'; continue; }
+                $remark = (string) ($j['remark'] ?? '');
+                if ($remark !== '' && preg_match('/error|timed out|out of memory|runtime/i', $remark)) { $errors[] = $host . ': ' . mb_substr($remark, 0, 90); continue; }
+                return $j['elements'] ?? [];
+            }
+            if ($code === 0 && in_array((int) $cno, [6, 7, 35, 51, 60], true)) $dead[$host] = true;   // cannot resolve, connect or agree TLS
+            $errors[] = $host . ': ' . ($code ? 'HTTP ' . $code . ($code === 429 ? ' (too many requests)' : ($code === 504 ? ' (server overloaded)' : '')) : ((int) $cno === 28 ? 'no answer in ' . $t . ' s' : ($cerr ?: 'no answer')));
+            error_log('[buja osm] ' . end($errors));
+        }
+        return null;
+    }
     /** Plain words to search Nominatim with, when Overpass is unavailable. */
     private const WORDS = ['food' => 'restaurant', 'lounge' => 'bar', 'nightlife' => 'nightclub', 'relax' => 'park', 'shopping' => 'supermarket', 'kids' => 'playground', 'worship' => 'church', 'hotel' => 'hotel', 'culture' => 'museum', 'services' => 'bank', 'health' => 'hospital'];
     /** Which OSM tags to ask for, per Buja category. */
@@ -91,16 +135,9 @@ final class Osm
         if (!isset(self::TAGS[$category])) return [];
         $clauses = self::clauses($category, sprintf('around:%d,%F,%F', $radiusM, $lat, $lng));
         // Nobody should wait on a slow map server. Short timeouts, one retry, then a different source.
-        $query = '[out:json][timeout:5];(' . $clauses . ');out center ' . ($limit * 3) . ';';
-        $raw = null;
-        foreach (self::ENDPOINTS as $url) {
-            $ch = curl_init($url);
-            curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 6, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_POSTFIELDS => 'data=' . rawurlencode($query), CURLOPT_USERAGENT => self::UA]);
-            $body = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-            if ($code === 200 && $body) { $raw = $body; break; }
-            error_log('[buja osm] overpass ' . parse_url($url, PHP_URL_HOST) . ' returned ' . $code);
-        }
-        $els = $raw !== null ? (json_decode($raw, true)['elements'] ?? []) : self::viaNominatim($category, $lat, $lng, $radiusM, $limit);
+        $query = '[out:json][timeout:6];(' . $clauses . ');out center ' . ($limit * 3) . ';';
+        $errs = []; $found = self::overpass($query, 6, $errs, 9.0);
+        $els = $found !== null ? $found : self::viaNominatim($category, $lat, $lng, $radiusM, $limit);
         if (!$els) return [];
         $out = [];
         foreach ($els as $e) {
@@ -121,7 +158,7 @@ final class Osm
             'viewbox' => ($lng - $d) . ',' . ($lat + $d) . ',' . ($lng + $d) . ',' . ($lat - $d), 'bounded' => 1,
         ]);
         $ch = curl_init($url);
-        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 6, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_USERAGENT => self::UA, CURLOPT_HTTPHEADER => ['Accept-Language: en']]);
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 6, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4, CURLOPT_USERAGENT => self::UA, CURLOPT_HTTPHEADER => ['Accept-Language: en']]);
         $body = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
         if ($code !== 200 || !$body) { error_log('[buja osm] nominatim returned ' . $code); return []; }
         $out = [];
@@ -133,22 +170,23 @@ final class Osm
         return $out;
     }
 
-    /** Imports every named place of a category across the city in one pass. Returns how many were new. */
-    public static function importCategory(string $category, int $limit = 3000): array
+    /**
+     * Imports every named place of a category across the city. With $tile (0 to 3) it does one quarter of the
+     * FCT, which is what the admin screen and the hourly job use, so no single request waits on a huge query.
+     * Returns how many were new, how many were seen, and in plain words what went wrong with any quarter.
+     */
+    public static function importCategory(string $category, int $limit = 3000, ?int $tile = null): array
     {
         if (!isset(self::TAGS[$category])) return ['added' => 0, 'seen' => 0, 'error' => 'unknown category'];
-        // The FCT's built-up area, roughly: Bwari and Kubwa in the north to Kuje and the airport in the south.
-        $query = '[out:json][timeout:25];(' . self::clauses($category, '8.85,7.15,9.25,7.65') . ');out center ' . $limit . ';';
-        $raw = null; $err = '';
-        foreach (self::ENDPOINTS as $url) {
-            $ch = curl_init($url);
-            curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_POSTFIELDS => 'data=' . urlencode($query), CURLOPT_USERAGENT => self::UA]);
-            $body = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-            if ($code === 200 && $body) { $raw = $body; break; }
-            $err = 'overpass ' . parse_url($url, PHP_URL_HOST) . ' returned ' . $code;
+        $tiles = $tile === null ? array_keys(self::TILES) : [max(0, min(3, $tile))];
+        $added = 0; $seen = 0; $failed = [];
+        foreach ($tiles as $i) {
+            $box = implode(',', self::TILES[$i]); $errs = [];
+            $els = self::overpass('[out:json][timeout:55];(' . self::clauses($category, $box) . ');out center ' . $limit . ';', 60, $errs, 130.0);
+            if ($els === null) { $failed[] = self::TILE_NAMES[$i] . ': ' . implode('; ', array_slice(array_unique($errs), 0, 4)); continue; }
+            $r = self::saveAll($els, $category); $added += $r['added']; $seen += $r['seen'];
         }
-        if ($raw === null) return ['added' => 0, 'seen' => 0, 'error' => $err ?: 'no map server answered'];
-        return self::saveAll(json_decode($raw, true)['elements'] ?? [], $category);
+        return ['added' => $added, 'seen' => $seen, 'error' => $failed ? implode(' | ', $failed) : null];
     }
 
     /** Saves a batch of OSM elements; returns counts. Split out so it can be tested without a network. */
@@ -160,29 +198,26 @@ final class Osm
     }
 
     /** Every fuel station in the FCT, for the fuel board. */
-    public static function importFuelStations(): array
+    public static function importFuelStations(?int $tile = null): array
     {
-        $query = '[out:json][timeout:25];(node["amenity"="fuel"](8.85,7.15,9.25,7.65);way["amenity"="fuel"](8.85,7.15,9.25,7.65););out center 600;';
-        $raw = null; $err = '';
-        foreach (self::ENDPOINTS as $url) {
-            $ch = curl_init($url);
-            curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_POSTFIELDS => 'data=' . urlencode($query), CURLOPT_USERAGENT => self::UA]);
-            $body = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-            if ($code === 200 && $body) { $raw = $body; break; }
-            $err = 'overpass returned ' . $code;
+        $els = []; $failed = [];
+        foreach ($tile === null ? array_keys(self::TILES) : [max(0, min(3, $tile))] as $i) {
+            [$so, $we, $no, $ea] = self::TILES[$i]; $box = "$so,$we,$no,$ea"; $errs = [];
+            $got = self::overpass('[out:json][timeout:40];(node["amenity"="fuel"](' . $box . ');way["amenity"="fuel"](' . $box . '););out center 600;', 45, $errs, 100.0);
+            if ($got === null) $failed[] = self::TILE_NAMES[$i] . ': ' . implode('; ', array_slice(array_unique($errs), 0, 4)); else $els = array_merge($els, $got);
         }
-        if ($raw === null) return ['added' => 0, 'seen' => 0, 'error' => $err ?: 'no map server answered'];
+        if (!$els && $failed) return ['added' => 0, 'seen' => 0, 'error' => implode(' | ', $failed)];
         $added = 0; $seen = 0;
-        foreach (json_decode($raw, true)['elements'] ?? [] as $e) {
+        foreach ($els as $e) {
             $plat = (float) ($e['lat'] ?? $e['center']['lat'] ?? 0); $plng = (float) ($e['lon'] ?? $e['center']['lon'] ?? 0); if (!$plat || !$plng) continue;
             $seen++; $t = $e['tags'] ?? []; $osmId = ($e['type'] ?? 'node') . '/' . ($e['id'] ?? '');
             if (Db::one('SELECT id FROM fuel_stations WHERE osm_id = ?', [$osmId])) continue;
             $brand = $t['brand'] ?? $t['operator'] ?? null;
-            $name = trim((string) ($t['name'] ?? '')) ?: (($brand ?: 'Filling station') . ($t['addr:street'] ? ', ' . $t['addr:street'] : ''));
+            $name = trim((string) ($t['name'] ?? '')) ?: (($brand ?: 'Filling station') . (!empty($t['addr:street']) ? ', ' . $t['addr:street'] : ''));
             Db::run('INSERT INTO fuel_stations (name, brand, district, lat, lng, osm_id, created_at) VALUES (?,?,?,?,?,?,?)', [mb_substr($name, 0, 90), $brand ? mb_substr((string) $brand, 0, 40) : null, self::districtFor($plat, $plng) ?: 'Abuja', $plat, $plng, $osmId, Db::now()]);
             $added++;
         }
-        return ['added' => $added, 'seen' => $seen, 'error' => null];
+        return ['added' => $added, 'seen' => $seen, 'error' => $failed ? implode(' | ', $failed) : null];
     }
 
     /**

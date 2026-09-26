@@ -134,8 +134,9 @@ final class CityController
     public function fuelImport(): void
     {
         $u = Auth::require(); if (empty($u['is_admin']) && !in_array($u['role'] ?? '', ['admin', 'moderator'], true)) Http::json(['error' => 'forbidden'], 403);
-        set_time_limit(60);
-        $r = Osm::importFuelStations();
+        @set_time_limit(0); ignore_user_abort(true);
+        $b = Http::body();
+        $r = Osm::importFuelStations(isset($b['tile']) && $b['tile'] !== '' ? (int) $b['tile'] : null);
         Http::json(['result' => $r, 'total' => (int) (Db::one('SELECT COUNT(*) AS n FROM fuel_stations')['n'] ?? 0)]);
     }
 

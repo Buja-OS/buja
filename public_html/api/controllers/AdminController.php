@@ -277,9 +277,9 @@ final class AdminController
     public function importSpots(): void
     {
         $this->staff();
-        set_time_limit(60);
-        $cat = (string) (Http::body()['category'] ?? '');
-        $r = Osm::importCategory($cat);
+        @set_time_limit(0); ignore_user_abort(true);
+        $b = Http::body(); $cat = (string) ($b['category'] ?? '');
+        $r = Osm::importCategory($cat, 3000, isset($b['tile']) && $b['tile'] !== '' ? (int) $b['tile'] : null);
         $total = (int) (Db::one('SELECT COUNT(*) AS n FROM spots WHERE active = 1')['n'] ?? 0);
         Http::json(['result' => $r, 'category' => $cat, 'total' => $total]);
     }
