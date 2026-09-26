@@ -265,7 +265,7 @@ final class EscrowController
         Http::json(['held' => (int) $held['s'], 'owed' => (int) $owed['s'], 'transfersOn' => (bool) Http::config('paystack_transfers', false),
             'disputes' => array_map($shape, $rows("SELECT * FROM escrow_orders WHERE status = 'disputed' ORDER BY updated_at")),
             'payouts' => array_map($shape, $rows("SELECT o.* FROM escrow_orders o JOIN payouts p ON p.order_id = o.id WHERE p.status IN ('queued','failed','sending') ORDER BY p.created_at")),
-            'recent' => array_map($shape, $rows("SELECT * FROM escrow_orders WHERE status <> 'pending' ORDER BY id DESC LIMIT 30"))]);
+            'recent' => array_map($shape, $rows("SELECT * FROM escrow_orders WHERE status <> 'pending' ORDER BY id DESC LIMIT 30")), 'orders' => OrderPay::adminList()]);
     }
 
     /** POST /admin/escrow/{id}/{action} : release or refund a dispute; mark a payout paid by hand; retry a transfer */
@@ -279,6 +279,9 @@ final class EscrowController
         else Http::json(['error' => 'not_found'], 404);
         Http::json(['ok' => true]);
     }
+
+    /** POST /admin/order-pay/{id}/{action} : the same decisions for food and shop orders paid in the app */
+    public function adminOrderAct(int $id, string $action): void { $admin = self::admin(); OrderPay::adminAct($id, $action, $admin); Http::json(['ok' => true]); }
 
     /** Paystack transfer webhooks keep payouts honest. */
     public static function transferEvent(string $event, array $data): void

@@ -148,6 +148,7 @@ export function registerEscrow({ route, go, state, api, ui, failed }) {
     const row = (o, btns) => `<div class="card stack" style="padding:12px 14px;gap:8px"><div class="row" style="gap:10px">${thumb(o)}<span class="grow"><b>#${o.id} ${h(o.listing ? o.listing.title : '')}</b><br><span class="small muted">${h(o.buyer.name)} → ${h(o.seller.name)} · ${naira(o.price)} · paid ${naira(o.total)}</span></span>${badge(o.status)}</div>
       ${o.note ? `<div class="small" style="line-height:1.4">"${h(o.note)}"</div>` : ''}${o.sellerBank ? `<div class="small muted">${icon('building-columns')} ${h(o.sellerBank)}</div>` : o.payout ? '<div class="small" style="color:#D92D20">The seller has not added a bank account yet</div>' : ''}
       ${o.payout && o.payout.error ? `<div class="small muted">Payout: ${h(o.payout.status)} · ${h(o.payout.error)}</div>` : ''}<div class="row" style="gap:8px;flex-wrap:wrap">${btns}</div></div>`;
+    const opRow = (o, line, btns) => `<div class="card stack" style="padding:12px 14px;gap:8px"><div><b>${h(o.business)}</b> <span class="small muted">· order #${o.jobId || '?'} · ${h(o.customer)} paid ${naira(o.total)}</span></div><div class="small" style="line-height:1.4">${h(line)}</div>${o.bank ? `<div class="small muted">${icon('building-columns')} ${h(o.bank)}</div>` : '<div class="small" style="color:#D92D20">The business has not added a bank account yet.</div>'}<div class="row" style="gap:8px;flex-wrap:wrap">${btns}</div></div>`;
     return `${topbar('Escrow', '/admin')}<main class="pad stack" style="gap:12px">
       <div class="row" style="gap:10px"><div class="card grow" style="padding:12px 14px"><div class="small muted">Held for buyers</div><div style="font:800 20px Inter">${naira(d.held)}</div></div><div class="card grow" style="padding:12px 14px"><div class="small muted">Owed to sellers</div><div style="font:800 20px Inter">${naira(d.owed)}</div></div></div>
       <div class="small muted">${d.transfersOn ? 'Payouts go out automatically by Paystack transfer.' : 'Automatic payouts are off: pay sellers from your bank app, then tap Mark paid. Set PAYSTACK_TRANSFERS=1 in Render to send them automatically.'}</div>
@@ -155,11 +156,21 @@ export function registerEscrow({ route, go, state, api, ui, failed }) {
       ${d.disputes.map((o) => row(o, `<button class="btn btn-sm btn-primary" data-a="release" data-id="${o.id}" style="width:auto">Pay the seller</button><button class="btn btn-sm btn-outline" data-a="refund" data-id="${o.id}" style="width:auto">Refund the buyer</button>`)).join('') || '<div class="small muted">None.</div>'}
       <div class="section">PAYOUTS WAITING (${d.payouts.length})</div>
       ${d.payouts.map((o) => row(o, `<button class="btn btn-sm btn-primary" data-a="paid" data-id="${o.id}" style="width:auto">Mark paid</button>${d.transfersOn ? `<button class="btn btn-sm btn-outline" data-a="retry" data-id="${o.id}" style="width:auto">Retry transfer</button>` : ''}`)).join('') || '<div class="small muted">None.</div>'}
+      ${d.orders ? `<div class="section">FOOD AND SHOP ORDERS PAID IN THE APP</div>
+      <div class="card" style="padding:12px 14px"><div class="small muted">Held for customers</div><div style="font:800 20px Inter">${naira(d.orders.held)}</div></div>
+      ${d.orders.disputes.map((o) => opRow(o, 'Problem: ' + (o.note || ''), `<button class="btn btn-sm btn-primary" data-op="release" data-id="${o.id}" style="width:auto">Pay the business</button><button class="btn btn-sm btn-outline" data-op="refund" data-id="${o.id}" style="width:auto">Refund the customer</button>`)).join('')}
+      ${d.orders.payouts.map((o) => opRow(o, 'Owed to the business: ' + naira(o.owed) + (o.payoutError ? ' · ' + o.payoutError : ''), `<button class="btn btn-sm btn-primary" data-op="paid" data-id="${o.id}" style="width:auto">Mark paid</button>${d.transfersOn ? `<button class="btn btn-sm btn-outline" data-op="retry" data-id="${o.id}" style="width:auto">Try transfer again</button>` : ''}`)).join('')}
+      ${d.orders.recent.length ? `<div class="card list">${d.orders.recent.map((o) => `<a class="item" href="#/jobs/${o.jobId || ''}"><div class="grow"><div class="t">${h(o.customer)} → ${h(o.business)} · ${naira(o.total)}</div><div class="s">${h(o.status)}${o.payout && o.payout !== 'none' ? ' · payout ' + h(o.payout) : ''}</div></div></a>`).join('')}</div>` : '<div class="small muted">No paid orders yet.</div>'}` : ''}
       <div class="section">RECENT</div>
       ${d.recent.map((o) => `<a class="card row" href="#/orders/${o.id}" style="padding:10px 12px;gap:10px"><span class="grow small"><b>#${o.id}</b> ${h(o.listing ? o.listing.title : '')}<br><span class="muted">${h(o.buyer.name)} → ${h(o.seller.name)} · ${naira(o.total)}</span></span>${badge(o.status)}</a>`).join('') || '<div class="small muted">No orders yet.</div>'}
     </main>`;
   }, {
     mount(el) {
+      el.querySelectorAll('[data-op]').forEach((b) => b.addEventListener('click', async () => {
+        const words = { release: 'Pay the business for this order?', refund: 'Refund the customer in full?', paid: 'Confirm you have paid this business from your bank?', retry: 'Try the transfer again?' };
+        if (!confirm(words[b.dataset.op])) return; busy(b, true);
+        try { await api.adminOrderPayAct(b.dataset.id, b.dataset.op); toast('Done'); location.reload(); } catch (err) { busy(b, false); failed(el, err); }
+      }));
       el.querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', async () => {
         const words = { release: 'Pay the seller for this order?', refund: 'Refund the buyer in full?', paid: 'Confirm you have paid this seller from your bank?', retry: 'Try the transfer again?' };
         if (!confirm(words[b.dataset.a])) return; busy(b, true);

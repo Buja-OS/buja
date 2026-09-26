@@ -17,7 +17,9 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
   const far = (km) => km == null ? '' : km < 1 ? Math.round(km * 1000 / 10) * 10 + ' m away' : km + ' km away';
   const tel = (p) => 'tel:' + String(p).replace(/[^\d+]/g, '');
 
-  const SUGGEST = ['Late-night suya near me', 'Good restaurant near me', 'Church near me', 'Pharmacy open now', 'Serene place to relax', 'Cheapest lounge in Jabi', 'Where can kids play on Sunday'];
+  const SUGGEST = ['Late-night suya near me', 'Good restaurant near me', 'Church near me', 'Pharmacy open now', 'Where I fit buy suya near here?', 'Ina masallaci kusa da ni?', 'Nibo ni ile iwosan nitosi mi?', 'Serene place to relax'];
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const VOICE_LANGS = [['en-NG', 'English or Pidgin'], ['ha-NG', 'Hausa'], ['yo-NG', 'Yoruba']];
 
   /** A real photo when Buja has one (a resident's, or a matched Wikimedia Commons photo); otherwise the map, labelled as a map. */
   function thumbHtml(s, size = 64) {
@@ -45,6 +47,7 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
         </div></a>
       <div class="row ask-acts">
         ${s.lat != null ? `<a class="btn btn-sm btn-primary" href="${h(way(s))}">${icon('route')} Find the way${s.driveMin ? ` <span style="opacity:.8;font-weight:600">· ${s.walkMin ? s.walkMin + ' min walk' : s.driveMin + ' min drive'}</span>` : ''}</a>` : ''}
+        ${s.business && s.business.orderable ? `<a class="btn btn-sm btn-outline" href="#/artisans/${s.business.id}?menu=1" style="border-color:var(--orange);color:var(--orange-dark)">${icon('bag-shopping')} Order</a>` : s.business ? `<button class="btn btn-sm btn-outline" data-msg="${s.business.id}">${icon('message')} Message</button>` : ''}
         ${s.phone ? `<a class="btn btn-sm btn-outline" href="${tel(s.phone)}" aria-label="Call ${h(s.name)}">${icon('phone')} Call</a>` : ''}
       </div>
       ${s.photo && !(s.photos && s.photos.length) ? `<div class="ask-credit">${h(s.photo.credit)}</div>` : ''}
@@ -71,9 +74,10 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
       <div class="row" style="gap:10px;align-items:flex-start"><div class="ask-bot">${icon('wand-magic-sparkles')}</div><div class="card" style="padding:12px 14px;font-size:14px;line-height:1.5;border-radius:4px 16px 16px 16px">Ask for anything nearby: food, a church or mosque, a pharmacy, somewhere to relax. I answer only from real places on the map and on Buja, with how far they are, whether they are open by their listed hours, and the way there.</div></div>
       <div class="row" style="gap:8px;flex-wrap:wrap" id="suggest">${SUGGEST.map((s) => `<button class="chip" data-q="${h(s)}">${h(s)}</button>`).join('')}</div>
     </main>
-    <form id="ask" class="row" style="gap:10px;padding:10px 16px calc(10px + var(--safe-b));background:var(--card);border-top:1px solid var(--line);position:sticky;bottom:0">
+    <form id="ask" class="row" style="gap:10px;padding:10px 16px;background:var(--card);border-top:1px solid var(--line);position:sticky;bottom:calc(var(--tab-h) + var(--safe-b));z-index:15">
       <label for="qq" style="position:absolute;left:-9999px">Ask Buja</label>
-      <input class="input" id="qq" placeholder="Late-night suya, a pharmacy, a quiet park…" autocomplete="off" style="height:46px;border-radius:23px;flex:1">
+      <input class="input" id="qq" placeholder="Ask in English, Pidgin, Hausa or Yoruba" autocomplete="off" style="height:46px;border-radius:23px;flex:1;min-width:0">
+      ${SR ? `<button class="iconbtn ask-mic" type="button" id="mic" aria-label="Ask by voice" style="width:46px;height:46px;flex-shrink:0">${icon('microphone')}</button>` : ''}
       <button class="iconbtn" type="submit" aria-label="Ask" style="background:var(--orange);border-color:var(--orange);color:#fff;width:46px;height:46px">${icon('paper-plane')}</button>
     </form>`, {
     mount(el) {
@@ -95,7 +99,8 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
           const r = await api.ask(q, null, await here());
           if (r.where && r.where.source !== 'gps') showWhere(`Searching around ${r.where.label}. Tap to use your location`, false); else if (r.where) showWhere('Searching near you · ' + r.where.label.replace(/^you \(|\)$/g, ''), true);
           think.innerHTML = `${bot}<div class="grow stack" style="gap:10px;min-width:0">
-            <div class="card" style="padding:12px 14px;font-size:14px;line-height:1.55;border-radius:4px 16px 16px 16px">${h(r.answer)}</div>
+            ${r.understood ? `<div class="small muted" style="margin-bottom:-4px">${icon('language')} Understood from ${h(r.understood.lang)}: “${h(r.understood.as)}”</div>` : ''}
+            <div class="card row" style="padding:12px 14px;font-size:14px;line-height:1.55;border-radius:4px 16px 16px 16px;gap:8px;align-items:flex-start"><span class="grow">${h(r.answer)}</span>${'speechSynthesis' in window ? `<button class="iconbtn" data-say="${h(r.answer)}" aria-label="Read it out" style="width:32px;height:32px;flex-shrink:0">${icon('volume-high')}</button>` : ''}</div>
             ${(r.providers || []).length ? `<div class="section" style="margin:4px 0 0">ON BUJA · ORDER OR BOOK IN THE APP</div>${r.providers.map(providerCard).join('')}` : ''}
             ${r.spots.length ? `${(r.providers || []).length ? '<div class="section" style="margin:4px 0 0">PLACES ON THE MAP</div>' : ''}${r.spots.map(spotCard).join('')}` : ''}
             <div class="small muted row" style="gap:6px;align-items:flex-start;line-height:1.45">${icon('circle-info')} <span>Places come from OpenStreetMap, Overture Maps business listings and Buja residents. Hours and "open now" are only shown when the place lists them. See something wrong? Open the place and tell us.</span></div>
@@ -105,9 +110,32 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
       };
       el.addEventListener('click', async (e) => {
         const c = e.target.closest('[data-q]'); if (c) { send(c.dataset.q); return; }
+        const sayB = e.target.closest('[data-say]'); if (sayB) { try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(sayB.dataset.say); u.lang = 'en-NG'; u.rate = 1; speechSynthesis.speak(u); } catch {} return; }
         const m = e.target.closest('[data-msg]'); if (m) { busy(m, true); try { const r = await api.artisanChat(m.dataset.msg); go('/inbox/' + r.threadId); } catch (err) { busy(m, false); failed(el, err); } }
       });
       el.querySelector('#ask').addEventListener('submit', (e) => { e.preventDefault(); send(input.value); });
+      // Speak instead of typing. A long press (or right click) changes the language the phone listens for.
+      const mic = el.querySelector('#mic');
+      if (mic && SR) {
+        let lang = 0; try { lang = Math.max(0, VOICE_LANGS.findIndex((x) => x[0] === localStorage.getItem('buja_voice_lang'))); } catch {}
+        let rec = null, listening = false, pressT = null;
+        const setLang = (i) => { lang = i; try { localStorage.setItem('buja_voice_lang', VOICE_LANGS[i][0]); } catch {} toast('Listening in ' + VOICE_LANGS[i][1] + '. Hold the microphone to change.'); };
+        const stop = () => { listening = false; mic.classList.remove('on'); try { rec && rec.stop(); } catch {} };
+        const start = () => {
+          try { rec = new SR(); } catch { toast('Voice is not available in this browser'); return; }
+          rec.lang = VOICE_LANGS[lang][0]; rec.interimResults = true; rec.maxAlternatives = 1; rec.continuous = false;
+          let finalText = '';
+          rec.onresult = (ev) => { let t = ''; for (let i = 0; i < ev.results.length; i++) { t += ev.results[i][0].transcript; if (ev.results[i].isFinal) finalText = t; } input.value = t; };
+          rec.onerror = (ev) => { stop(); if (ev.error === 'language-not-supported') { toast(VOICE_LANGS[lang][1] + ' voice is not supported on this phone. Type it instead, or switch to English.'); setLang(0); } else if (ev.error === 'not-allowed') toast('Allow the microphone for Buja to ask by voice'); else if (ev.error !== 'no-speech' && ev.error !== 'aborted') toast('Could not hear that. Try again.'); };
+          rec.onend = () => { const was = listening; stop(); if (was && (finalText || input.value).trim()) send(finalText || input.value); };
+          listening = true; mic.classList.add('on'); input.placeholder = 'Listening in ' + VOICE_LANGS[lang][1] + '…';
+          try { rec.start(); } catch { stop(); }
+        };
+        mic.addEventListener('click', () => { if (pressT === 'long') { pressT = null; return; } if (listening) stop(); else start(); });
+        mic.addEventListener('pointerdown', () => { pressT = setTimeout(() => { pressT = 'long'; setLang((lang + 1) % VOICE_LANGS.length); }, 650); });
+        ['pointerup', 'pointerleave'].forEach((ev) => mic.addEventListener(ev, () => { if (pressT && pressT !== 'long') { clearTimeout(pressT); pressT = null; } }));
+        mic.addEventListener('contextmenu', (e) => { e.preventDefault(); });
+      }
       const pre = new URLSearchParams(location.hash.split('?')[1] || '').get('q'); if (pre) send(pre);
     }
   });
@@ -115,7 +143,8 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
   /* ---------- Place ---------- */
   route('/ask/place/:id', { auth: true, tabs: 'Ask' }, async ({ id }) => {
     const at = await here();
-    const { spot: s, reviews } = await api.spot(id, at);
+    const { spot: s, reviews, myClaim } = await api.spot(id, at);
+    window.__bujaSpot = s;
     return `${topbar(s.name, '/ask')}
     <main class="pad stack" style="gap:14px">
       ${s.photos && s.photos.length ? `<div class="row" id="gal" style="gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px">${s.photos.map((p) => `<div style="position:relative;flex-shrink:0"><img src="${p.url}" alt="" loading="lazy" style="width:${s.photos.length === 1 ? '100%' : '176px'};height:132px;object-fit:cover;border-radius:14px;display:block"><button data-delphoto="${p.id}" aria-label="Remove photo" style="position:absolute;right:6px;top:6px;width:26px;height:26px;border-radius:13px;border:none;background:rgba(0,0,0,.55);color:#fff;font-size:11px">${icon('xmark')}</button></div>`).join('')}</div>` : ''}
@@ -131,12 +160,32 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
       ${s.website ? `<a class="small" href="${h(s.website)}" target="_blank" rel="noopener" style="color:var(--orange-dark);font-weight:650">${icon('arrow-up-right-from-square')} ${h(s.website.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</a>` : ''}
       <p style="margin:0;font-size:14px;line-height:1.55;color:var(--ink-2)">${h(s.description)}</p>
       ${s.tags.length ? `<div class="row" style="flex-wrap:wrap;gap:6px">${s.tags.map((t) => `<span class="tag" style="background:var(--surface);color:var(--ink-2)">${h(t)}</span>`).join('')}</div>` : ''}
+      ${s.business ? `<div class="card stack" style="padding:14px;gap:10px;border-color:var(--orange)"><div class="row" style="gap:10px"><span style="width:40px;height:40px;border-radius:12px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon('store')}</span><div class="grow"><div style="font-weight:750">Run by the owner on Buja</div><div class="small muted">${h(s.business.trade)}${s.business.orderable ? (s.business.available ? ' · taking orders now' : ' · not taking orders right now') : ''}</div></div></div>
+        <div class="row" style="gap:8px">${s.business.orderable ? `<a class="btn btn-primary grow" href="#/artisans/${s.business.id}?menu=1">${icon('bag-shopping')} See menu and order</a>` : `<a class="btn btn-primary grow" href="#/artisans/${s.business.id}">${icon('store')} Their Buja page</a>`}<button class="btn btn-outline" data-bmsg="${s.business.id}" style="width:auto">${icon('message')} Message</button></div></div>` : ''}
+      ${s.mine ? `<div class="card stack" style="padding:14px;gap:10px"><div class="row"><div class="h-sm grow">Manage your listing</div><span class="tag green">${icon('circle-check')} Yours</span></div>
+          <div class="field" style="margin:0"><label>Opening hours</label><div id="ohours"></div><div class="error" data-error="hours"></div></div>
+          <div class="field" style="margin:0"><label for="ophone">Phone</label><input class="input" id="ophone" inputmode="tel" value="${h(s.phone || '')}" placeholder="0803 000 0000"></div>
+          <div class="field" style="margin:0"><label for="oweb">Website or Instagram (optional)</label><input class="input" id="oweb" value="${h(s.website || '')}" placeholder="instagram.com/yourplace"></div>
+          <div class="field" style="margin:0"><label for="odesc">About the place</label><textarea class="input" id="odesc" maxlength="400" style="height:84px;padding:12px 14px;resize:none">${h(s.description || '')}</textarea><div class="error" data-error="description"></div></div>
+          <button class="btn btn-primary" id="osave">Save changes</button>${s.business ? '' : `<a class="btn btn-outline" href="#/artisans/register?spot=${s.id}">${icon('store')} Take orders and messages on Buja</a>`}</div>`
+        : `<div class="card stack" style="padding:14px;gap:8px"><div class="row" style="gap:10px"><span class="grow"><span class="h-sm" style="display:block">${s.hours ? 'Hours look wrong?' : 'Know when it opens?'}</span><span class="small muted">Tell Buja and everyone sees "open now" correctly.</span></span><button class="btn btn-sm btn-outline" id="hsug" style="width:auto">${icon('clock')} ${s.hours ? 'Fix hours' : 'Add hours'}</button></div>
+          <div id="hsbox" hidden><div id="hpick"></div><button class="btn btn-sm btn-primary" id="hsend" style="margin-top:8px">Send these hours</button></div>
+          <div class="row small" style="gap:14px;flex-wrap:wrap"><button class="linkbtn" id="phsug">${s.phone ? 'Wrong phone number?' : 'Add the phone number'}</button><button class="linkbtn" id="closedsug">Has it closed down?</button></div></div>`}
       <a class="btn btn-outline" href="#/waka?toq=${encodeURIComponent(s.wakaTo)}">${icon('bus')} Go by bus or taxi (Waka)</a>
       <form id="rate" class="card stack" style="padding:16px;gap:12px"><div class="h-sm">${s.myRating ? 'Your rating' : 'Been here? Rate it'}</div>
         <div class="row" style="gap:6px" id="starpick">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-n="${n}" aria-label="${n} stars" style="font-size:30px;background:none;border:none;color:${n <= (s.myRating || 0) ? 'var(--orange)' : 'var(--line)'};line-height:1">★</button>`).join('')}</div>
         <div class="field"><label for="comment">A line for others (optional)</label><input class="input" id="comment" maxlength="300" placeholder="Go early, the good stuff finishes by 2pm"></div>
         <div class="error" data-error="stars"></div>
         <button class="btn btn-primary" type="submit">Save rating</button></form>
+      ${!s.claimed && !s.mine ? (myClaim && myClaim.status === 'pending' ? `<div class="card row" style="padding:14px;gap:10px;background:var(--surface);border:none">${icon('business-time')}<div class="small grow">Your claim for this place is with Buja. We will tell you when it is checked.</div></div>`
+        : `<div class="card stack" style="padding:14px;gap:8px"><div class="row" style="gap:10px"><span style="width:40px;height:40px;border-radius:12px;background:var(--surface);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon('building-circle-check')}</span><div class="grow"><div class="h-sm">Is this your business?</div><div class="small muted">Claim it to keep the details right, answer customers and take orders on Buja.${myClaim && myClaim.status === 'rejected' ? ' Your last claim was not approved: ' + h(myClaim.reason || '') : ''}</div></div></div>
+          <button class="btn btn-outline" id="claimbtn">${icon('flag')} Claim this place</button>
+          <form id="claimf" class="stack" style="gap:10px;display:none">
+            <div class="field" style="margin:0"><label for="crole">You are the</label><select class="input" id="crole"><option value="">Choose</option><option value="owner">Owner</option><option value="manager">Manager</option><option value="staff">Staff</option></select><div class="error" data-error="role"></div></div>
+            <div class="field" style="margin:0"><label for="cphone">Business phone</label><input class="input" id="cphone" inputmode="tel" placeholder="Buja calls this number to check"><div class="error" data-error="phone"></div></div>
+            <div class="row" style="gap:8px;align-items:center"><label class="btn btn-sm btn-outline" style="width:auto;cursor:pointer">${icon('camera')} Proof photo<input type="file" accept="image/*" id="cproof" style="display:none"></label><span class="small muted grow" id="cproofname">Shopfront, signboard or CAC certificate. Only Buja staff see it.</span></div>
+            <div class="field" style="margin:0"><label for="cnote">Anything else (optional)</label><input class="input" id="cnote" maxlength="300" placeholder="I have run it since 2019"></div>
+            <button class="btn btn-primary" type="submit">Send claim</button></form></div>`) : ''}
       ${reviews.length ? `<div class="stack" style="gap:10px"><div class="section">WHAT PEOPLE SAY</div><div class="card list">${reviews.map((r) => `<div class="item"><div class="grow"><div class="t" style="font-size:14px">${stars(r.stars)} <span class="small muted">${h(r.name)} · ${r.at}</span></div>${r.comment ? `<div class="s" style="color:var(--ink-2);margin-top:2px">${h(r.comment)}</div>` : ''}</div></div>`).join('')}</div></div>` : ''}
     </main>`;
   }, {
@@ -152,6 +201,30 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
           toast('Photo added. Thank you.'); location.reload();
         } catch (err) { failed(el, err); }
       });
+      const s = window.__bujaSpot;
+      el.querySelector('[data-bmsg]')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.artisanChat(b.dataset.bmsg); go('/inbox/' + r.threadId); } catch (err) { busy(b, false); failed(el, err); } });
+      // the owner's own panel: hours, phone, website, description, straight onto the listing
+      if (s && s.mine) {
+        import('./hours.js').then((H) => {
+          const hp = H.picker(el.querySelector('#ohours'), s.hours, { h });
+          el.querySelector('#osave').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); showErrors(el, {});
+            try { await api.ownerEditSpot(id, { hours: hp.value(), phone: el.querySelector('#ophone').value, website: el.querySelector('#oweb').value, description: el.querySelector('#odesc').value }); toast('Listing updated'); location.reload(); }
+            catch (err) { busy(b, false); if (err && err.fields) showErrors(el, err.fields); failed(el, err); } });
+        });
+      } else if (s) {
+        let hp = null;
+        el.querySelector('#hsug')?.addEventListener('click', async () => { const box = el.querySelector('#hsbox'); box.hidden = !box.hidden; if (!hp) { const H = await import('./hours.js'); hp = H.picker(el.querySelector('#hpick'), s.hours, { h }); } });
+        el.querySelector('#hsend')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.suggestSpot(id, 'hours', hp.value()); toast(r.message); if (r.applied) location.reload(); else { el.querySelector('#hsbox').hidden = true; busy(b, false); } } catch (err) { busy(b, false); failed(el, err); } });
+        el.querySelector('#phsug')?.addEventListener('click', async () => { const v = prompt('The correct phone number for ' + s.name); if (!v) return; try { const r = await api.suggestSpot(id, 'phone', v); toast(r.message); } catch (err) { failed(el, err); } });
+        el.querySelector('#closedsug')?.addEventListener('click', async () => { if (!confirm('Tell Buja that ' + s.name + ' has closed down? Staff will check before removing it.')) return; try { const r = await api.suggestSpot(id, 'closed', ''); toast(r.message); } catch (err) { failed(el, err); } });
+      }
+      // claiming the business
+      let proofId = null;
+      el.querySelector('#claimbtn')?.addEventListener('click', (e) => { e.currentTarget.style.display = 'none'; el.querySelector('#claimf').style.display = ''; });
+      el.querySelector('#cproof')?.addEventListener('change', async (e) => { const f = e.target.files[0]; if (!f) return; const t = el.querySelector('#cproofname'); t.textContent = 'Uploading…'; try { const bmp = await createImageBitmap(f).catch(() => null); let file = f; if (bmp) { const sc = Math.min(1, 1400 / Math.max(bmp.width, bmp.height)); const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * sc); cv.height = Math.round(bmp.height * sc); cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height); const blob = await new Promise((r) => cv.toBlob(r, 'image/jpeg', 0.85)); file = new File([blob], 'proof.jpg', { type: 'image/jpeg' }); } proofId = (await api.upload(file, 'image')).upload.id; t.textContent = 'Proof attached. Only Buja staff see it.'; } catch (err) { t.textContent = ''; failed(el, err); } });
+      el.querySelector('#claimf')?.addEventListener('submit', async (e) => { e.preventDefault(); const b = e.target.querySelector('[type=submit]'); busy(b, true); showErrors(el, {});
+        try { const r = await api.claimSpot(id, { role: el.querySelector('#crole').value, phone: el.querySelector('#cphone').value, uploadId: proofId, note: el.querySelector('#cnote').value }); toast(r.message); location.reload(); }
+        catch (err) { busy(b, false); if (err && err.fields) showErrors(el, err.fields); failed(el, err); } });
       el.querySelectorAll('[data-delphoto]').forEach((b) => b.addEventListener('click', async (e) => { e.preventDefault(); if (!confirm('Remove this photo?')) return; try { await api.removeSpotPhoto(b.dataset.delphoto); location.reload(); } catch (err) { failed(el, err); } }));
       let n = 0; const btns = el.querySelectorAll('#starpick button');
       btns.forEach((b) => { if (b.style.color.includes('orange')) n = +b.dataset.n; b.addEventListener('click', () => { n = +b.dataset.n; btns.forEach((x) => { x.style.color = +x.dataset.n <= n ? 'var(--orange)' : 'var(--line)'; }); }); });
@@ -170,7 +243,10 @@ export function registerAsk({ route, go, state, api, ui, DISTRICTS, failed }) {
     <form id="s" class="pad" style="padding-bottom:0"><div class="card row" style="height:48px;padding:0 16px;gap:10px">${icon('magnifying-glass')}<label for="sq" style="position:absolute;left:-9999px">Search places</label><input id="sq" name="q" type="search" placeholder="Name, district or what it serves" value="${h(qq)}" style="flex:1;border:none;background:transparent;outline:none;font-size:14px;color:var(--ink)"></div></form>
     <div class="ask-cats">${Object.entries(b).map(([k, v]) => `<a class="ask-cat${cat === k ? ' on' : ''}" href="#/ask/places?c=${cat === k ? '' : k}">${icon(v.icon)}<span>${h(v.label)}</span></a>`).join('')}</div>
     <main class="pad stack" style="gap:10px;padding-top:6px"><div class="small muted">${d.spots.length ? `${d.spots.length === 1 ? '1 result' : d.spots.length + ' ' + (cat && b[cat] ? h(b[cat].label.toLowerCase()) : 'places')}${at && !qq ? ', nearest first' : ''}` : ''}${d.total ? ` · ${d.total.toLocaleString('en-NG')} places on Buja in all` : ''}</div>${d.spots.map(spotCard).join('') || `<div class="placeholder" style="padding:40px 0"><div class="h-md">Nothing found${at ? ' near you' : ''}</div><div class="small muted" style="max-width:280px;line-height:1.5">Buja adds places from the map every few hours. If you know one, add it.</div><a class="btn btn-ink" href="#/ask/add" style="width:auto">Add a place</a></div>`}</main>`;
-  }, { mount(el) { el.querySelector('#s').addEventListener('submit', (e) => { e.preventDefault(); go('/ask/places?q=' + encodeURIComponent(e.target.q.value)); }); } });
+  }, { mount(el) {
+    el.querySelector('#s').addEventListener('submit', (e) => { e.preventDefault(); go('/ask/places?q=' + encodeURIComponent(e.target.q.value)); });
+    el.addEventListener('click', async (e) => { const m = e.target.closest('[data-msg]'); if (!m) return; e.preventDefault(); busy(m, true); try { const r = await api.artisanChat(m.dataset.msg); go('/inbox/' + r.threadId); } catch (err) { busy(m, false); failed(el, err); } });
+  } });
 
   route('/ask/add', { auth: true, tabs: 'Ask' }, async () => {
     const { categories } = await api.spots('', { category: 'none' });

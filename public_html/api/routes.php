@@ -211,6 +211,9 @@ $router->get('/weather',                     [WeatherController::class, 'index']
 
 // Place photos and saved searches
 $router->post('/spots/{id}/photos',          [AskController::class, 'addPhoto']);
+$router->post('/spots/{id}/claim',           [AskController::class, 'claim']);
+$router->post('/spots/{id}/suggest',         [AskController::class, 'suggest']);
+$router->patch('/spots/{id}/owner',          [AskController::class, 'ownerEdit']);
 $router->delete('/spots/photos/{id}',        [AskController::class, 'removePhoto']);
 $router->get('/saved-searches',              [SavedSearchController::class, 'index']);
 $router->post('/saved-searches',             [SavedSearchController::class, 'create']);
@@ -250,6 +253,7 @@ $router->post('/artisans/me/menu',            [ArtisanController::class, 'addMen
 $router->patch('/artisans/me/menu/{id}',      [ArtisanController::class, 'updateMenuItem']);
 $router->delete('/artisans/me/menu/{id}',     [ArtisanController::class, 'deleteMenuItem']);
 $router->patch('/artisans/me/delivery',       [ArtisanController::class, 'delivery']);
+$router->patch('/artisans/me/busy',           [ArtisanController::class, 'busy']);
 $router->get('/citizen/agencies',            [CitizenController::class, 'agencies']);
 $router->get('/citizen/reports',             [CitizenController::class, 'mine']);
 $router->post('/citizen/reports',            [CitizenController::class, 'create']);
@@ -283,6 +287,9 @@ $router->get('/admin/launch',                [OpsController::class, 'launch']);
 $router->post('/admin/spots-import',         [AdminController::class, 'importSpots']);
 $router->get('/admin/spots-query',           [AdminController::class, 'spotsQuery']);
 $router->post('/admin/spots-ingest',         [AdminController::class, 'spotsIngest']);
+$router->get('/admin/claims',                [AdminController::class, 'claims']);
+$router->post('/admin/claims/{id}',          [AdminController::class, 'decideClaim']);
+$router->post('/admin/spot-edits/{id}',      [AdminController::class, 'decideEdit']);
 
 // City Pulse
 
@@ -425,3 +432,4 @@ $router->get('/escrow/account',               [EscrowController::class, 'account
 $router->post('/escrow/account',              [EscrowController::class, 'saveAccount']);
 $router->get('/admin/escrow',                 [EscrowController::class, 'adminIndex']);
 $router->post('/admin/escrow/{id}/{action}',  [EscrowController::class, 'adminAct']);
+$router->post('/admin/order-pay/{id}/{action}',  [EscrowController::class, 'adminOrderAct']);

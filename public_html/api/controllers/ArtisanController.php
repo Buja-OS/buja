@@ -185,6 +185,8 @@ final class ArtisanController
         ];
         if ($photo) $cols['photo_upload'] = $photo;
         if ($idUp) $cols['id_upload'] = $idUp;
+        // Registering from a listing they claimed: the two are joined, so customers can order from the listing
+        if (!empty($b['spotId'])) { $sp = Db::one('SELECT id, owner_id FROM spots WHERE id = ?', [(int) $b['spotId']]); if ($sp && (int) ($sp['owner_id'] ?? 0) === (int) $u['id']) $cols['spot_id'] = (int) $sp['id']; }
         if ($had) {
             Db::run('UPDATE artisans SET ' . implode(', ', array_map(fn($k) => "$k = ?", array_keys($cols))) . ' WHERE user_id = ?', array_merge(array_values($cols), [$u['id']]));
         } else {
@@ -223,6 +225,52 @@ final class ArtisanController
      * GET /artisans/dashboard : the mechanic's own view. Jobs and earnings this week and month (from prices customers
      * accepted), how quickly they answer, rating, no-shows, what is ringing now, recent jobs, and their hours.
      */
+    /**
+     * The numbers a food, drinks or grocery business looks at: today's orders and sales, the week, what sells,
+     * what is open right now, and where its money is (held until delivered, on its way, paid).
+     */
+    public static function businessStats(int $uid, array $a): array
+    {
+        $lagos = new DateTimeZone('Africa/Lagos');
+        $dayStart = (new DateTime('today', $lagos))->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+        $weekAgo = gmdate('Y-m-d H:i:s', time() - 7 * 86400); $monthAgo = gmdate('Y-m-d H:i:s', time() - 30 * 86400);
+        $sum = function (string $since) use ($uid): array {
+            $r = Db::one("SELECT COUNT(*) AS n, SUM(CASE WHEN status <> 'declined' AND status <> 'expired' AND status <> 'cancelled' THEN COALESCE(subtotal, 0) + COALESCE(delivery_fee, 0) ELSE 0 END) AS sales, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done FROM service_jobs WHERE artisan_id = ? AND kind = 'order' AND created_at >= ?", [$uid, $since]);
+            return ['orders' => (int) ($r['n'] ?? 0), 'sales' => (int) ($r['sales'] ?? 0), 'delivered' => (int) ($r['done'] ?? 0)];
+        };
+        $best = [];
+        try {
+            $st = Db::pdo()->prepare("SELECT items_json FROM service_jobs WHERE artisan_id = ? AND kind = 'order' AND items_json IS NOT NULL AND status NOT IN ('declined','expired','cancelled') AND created_at >= ?"); $st->execute([$uid, $monthAgo]);
+            foreach ($st->fetchAll() as $r) foreach ((array) json_decode((string) $r['items_json'], true) as $i) { $k = (string) ($i['name'] ?? ''); if ($k === '') continue; $best[$k] = ($best[$k] ?? ['name' => $k, 'qty' => 0, 'sales' => 0]); $best[$k]['qty'] += (int) ($i['qty'] ?? 0); $best[$k]['sales'] += (int) ($i['qty'] ?? 0) * (int) ($i['price'] ?? 0); }
+        } catch (Throwable $e) {}
+        usort($best, fn($x, $y) => $y['qty'] <=> $x['qty']);
+        $open = Db::pdo()->prepare("SELECT j.id, j.status, j.problem, j.subtotal, j.delivery_fee, j.created_at, j.ready_at, j.pay_mode, u.name FROM service_jobs j JOIN users u ON u.id = j.customer_id WHERE j.artisan_id = ? AND j.status IN ('requested','accepted','enroute','arrived') ORDER BY j.id");
+        try { $open->execute([$uid]); $openRows = $open->fetchAll(); } catch (Throwable $e) { $openRows = []; }
+        $money = ['held' => 0, 'owed' => 0, 'sentMonth' => 0];
+        try {
+            $money['held'] = (int) (Db::one("SELECT COALESCE(SUM(subtotal + delivery_fee),0) AS s FROM job_payments WHERE artisan_id = ? AND status IN ('paid','disputed')", [$uid])['s'] ?? 0);
+            $money['owed'] = (int) (Db::one("SELECT COALESCE(SUM(subtotal + delivery_fee),0) AS s FROM job_payments WHERE artisan_id = ? AND status = 'released' AND payout_status IN ('queued','failed','sending')", [$uid])['s'] ?? 0);
+            $money['sentMonth'] = (int) (Db::one("SELECT COALESCE(SUM(subtotal + delivery_fee),0) AS s FROM job_payments WHERE artisan_id = ? AND payout_status = 'sent' AND payout_sent_at >= ?", [$uid, $monthAgo])['s'] ?? 0);
+        } catch (Throwable $e) {}
+        $acct = Db::one('SELECT bank_name, account_last4 FROM payout_accounts WHERE user_id = ?', [$uid]);
+        $spot = !empty($a['spot_id']) ? Db::one('SELECT id, name FROM spots WHERE id = ?', [$a['spot_id']]) : null;
+        return ['today' => $sum($dayStart), 'week' => $sum($weekAgo), 'best' => array_slice(array_values($best), 0, 5),
+            'open' => array_map(fn($r) => ['id' => (int) $r['id'], 'status' => $r['status'], 'what' => mb_substr((string) $r['problem'], 0, 80), 'total' => (int) $r['subtotal'] + (int) $r['delivery_fee'], 'at' => $r['created_at'], 'paid' => ($r['pay_mode'] ?? '') === 'online', 'customer' => explode(' ', trim((string) $r['name']))[0]], $openRows),
+            'money' => $money, 'bank' => $acct ? $acct['bank_name'] . ' ····' . $acct['account_last4'] : null,
+            'busyUntil' => !empty($a['busy_until']) && $a['busy_until'] > Db::now() ? $a['busy_until'] : null,
+            'listing' => $spot ? ['id' => (int) $spot['id'], 'name' => $spot['name']] : null];
+    }
+
+    /** PATCH /artisans/me/busy { minutes: 0, 30, 60, 120 } : pause new orders for a while, without switching off */
+    public function busy(): void
+    {
+        $u = Auth::require(); $a = Db::one('SELECT user_id FROM artisans WHERE user_id = ?', [$u['id']]); if (!$a) Http::json(['error' => 'not_found'], 404);
+        $m = (int) (Http::body()['minutes'] ?? 0); $m = in_array($m, [0, 30, 60, 120, 240], true) ? $m : 0;
+        $until = $m ? gmdate('Y-m-d H:i:s', time() + $m * 60) : null;
+        try { Db::run('UPDATE artisans SET busy_until = ? WHERE user_id = ?', [$until, $u['id']]); } catch (Throwable $e) { Http::json(['error' => 'validation', 'message' => 'Pausing orders needs a small update to Buja. Try again shortly.'], 422); }
+        Http::json(['busyUntil' => $until]);
+    }
+
     public function dashboard(): void
     {
         $u = Auth::require();
@@ -241,7 +289,7 @@ final class ArtisanController
                 'photo' => $a['photo_upload'] ? '/api/uploads/' . (int) $a['photo_upload'] : null, 'schedule' => $a['schedule'] ? json_decode($a['schedule'], true) : null, 'onDuty' => ServiceJobController::onDuty($a['schedule'] ?? null),
                 'profileUrl' => rtrim((string) Http::config('app_origin'), '/') . '/#/artisans/' . (int) $u['id'], 'idSent' => !empty($a['id_upload']),
                 'tradeKey' => $a['trade'], 'orderable' => in_array($a['trade'], ServiceJobController::ORDER_TRADES, true), 'menuCount' => count(self::menuOf((int) $u['id'], true)), 'deliveryFee' => isset($a['delivery_fee']) && $a['delivery_fee'] !== null ? (int) $a['delivery_fee'] : null],
-            'week' => $span(7), 'month' => $span(30), 'reliability' => $rel,
+            'week' => $span(7), 'month' => $span(30), 'reliability' => $rel, 'business' => in_array($a['trade'], ServiceJobController::ORDER_TRADES, true) ? self::businessStats((int) $u['id'], $a) : null,
             'offers' => array_map(fn($o) => ['id' => (int) $o['id'], 'problem' => $o['problem'], 'km' => round((float) $o['km'], 1), 'at' => $o['offered_at']], $offers->fetchAll()),
             'recent' => array_map(fn($r) => ['id' => (int) $r['id'], 'problem' => $r['problem'], 'status' => $r['status'], 'at' => $r['created_at'], 'customer' => explode(' ', trim((string) $r['name']))[0], 'price' => $r['quote_status'] === 'accepted' ? (int) $r['quote_amount'] : null], $recent->fetchAll())]);
     }

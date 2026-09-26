@@ -247,6 +247,9 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
       const close = () => { ov.hidden = true; document.body.style.overflow = ''; };
       ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
       let pos = null;
+      const protect = (t) => Math.max(100, Math.min(2500, Math.round(t * 0.025)));
+      let pay = 'delivery'; try { pay = localStorage.getItem('buja_pay_pref') === 'online' ? 'online' : 'delivery'; } catch {}
+      if (q().get('paid') === '0') toast('The payment was not completed, so the order was not sent. Try again, or pay on delivery.', 6000);
       const checkout = (free) => {
         const lines = Object.entries(cart).map(([k, n]) => [byId.get(k), n]).filter(([m]) => m);
         const s = sub(), short = !free && a.minOrder && s < a.minOrder;
@@ -259,11 +262,15 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
             ${short ? `<div class="small" style="color:#B42318">The smallest order here is ${nn(a.minOrder)}. Add ${nn(a.minOrder - s)} more.</div>` : ''}</div>`}
           <div class="field" style="margin:0"><label>Deliver to</label><button class="btn btn-outline" id="opin" type="button" style="justify-content:flex-start">${icon('location-crosshairs')} <span id="opintx">${pos ? 'Your location is set' : 'Finding where you are…'}</span></button></div>
           <div class="field" style="margin:0"><label for="olm">A landmark so the rider finds you</label><input class="input" id="olm" maxlength="160" placeholder="Blue gate beside the pharmacy, Flat 4"></div>
-          ${free ? '' : `<div class="field" style="margin:0"><label for="onote">Note for the kitchen (optional)</label><input class="input" id="onote" maxlength="160" placeholder="Extra pepper, no onions"></div>`}
-          <div class="small muted" style="line-height:1.5">${free ? 'They accept, send you a price to agree in the app, then you watch the delivery come to you on the map.' : 'You pay on delivery. They accept, tell you when it will be ready, then you watch the rider come to you on the map.'}</div>
-          <button class="btn btn-primary" id="oplace" ${short ? 'disabled' : ''}>${icon('bag-shopping')} ${free ? 'Send order' : 'Place order · ' + nn(s + fee)}</button>`;
+          ${free ? '' : `<div class="field" style="margin:0"><label for="onote">Note for the kitchen (optional)</label><input class="input" id="onote" maxlength="160" placeholder="Extra pepper, no onions"></div>
+          <div class="field" style="margin:0"><label>How will you pay?</label><div class="stack" style="gap:8px" id="paypick">
+            <label class="pay-opt ${pay === 'online' ? 'on' : ''}"><input type="radio" name="pay" value="online" ${pay === 'online' ? 'checked' : ''}><span class="grow"><span style="display:block;font-weight:750">Pay now in the app · ${nn(s + fee + protect(s + fee))}</span><span class="small muted">Card, bank transfer or USSD. Buja holds it until you have your order, and refunds you in full if they cannot take it. Includes ${nn(protect(s + fee))} buyer protection.</span></span></label>
+            <label class="pay-opt ${pay === 'delivery' ? 'on' : ''}"><input type="radio" name="pay" value="delivery" ${pay === 'delivery' ? 'checked' : ''}><span class="grow"><span style="display:block;font-weight:750">Pay on delivery · ${nn(s + fee)}</span><span class="small muted">Cash or transfer to them when it arrives.</span></span></label></div></div>`}
+          <div class="small muted" style="line-height:1.5">${free ? 'They accept, send you a price to agree in the app, then you watch the delivery come to you on the map.' : 'They accept, tell you when it will be ready, then you watch the rider come to you on the map.'}</div>
+          <button class="btn btn-primary" id="oplace" ${short ? 'disabled' : ''}>${icon('bag-shopping')} ${free ? 'Send order' : pay === 'online' ? 'Pay ' + nn(s + fee + protect(s + fee)) + ' and order' : 'Place order · ' + nn(s + fee)}</button>`;
         ov.hidden = false; document.body.style.overflow = 'hidden';
         sh.querySelector('#oclose').addEventListener('click', close);
+        sh.querySelectorAll('input[name=pay]').forEach((r) => r.addEventListener('change', () => { pay = r.value; try { localStorage.setItem('buja_pay_pref', pay); } catch {} const keep = { lm: sh.querySelector('#olm').value, note: sh.querySelector('#onote')?.value }; checkout(free); sh.querySelector('#olm').value = keep.lm; if (sh.querySelector('#onote')) sh.querySelector('#onote').value = keep.note || ''; }));
         const locate = async () => { const t = sh.querySelector('#opintx'); if (t) t.textContent = 'Finding where you are…'; const p = await here(10000); if (p) pos = p; const t2 = sh.querySelector('#opintx'); if (t2) t2.textContent = pos ? 'Here, where you are now (GPS)' : 'Tap to try again. Turn on location'; sh.querySelector('#opin')?.classList.toggle('btn-ink', !!pos); };
         sh.querySelector('#opin').addEventListener('click', locate);
         if (!pos) locate(); else { sh.querySelector('#opintx').textContent = 'Here, where you are now (GPS)'; sh.querySelector('#opin').classList.add('btn-ink'); }
@@ -273,8 +280,12 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
           if (!pos) { busy(b, false); toast('Turn on location so they can bring it to you'); return; }
           const body = { artisanId: a.id, lat: pos.lat, lng: pos.lng, landmark: sh.querySelector('#olm').value, kind: 'order' };
           if (free) body.problem = sh.querySelector('#oprob').value;
-          else { body.items = Object.entries(cart).map(([k, n]) => ({ id: +k, qty: n })); body.problem = sh.querySelector('#onote').value; }
-          try { const r = await api.jobCreate(body); cart = {}; save(); close(); toast('Order sent to ' + a.name); go('/jobs/' + r.id); }
+          else { body.items = Object.entries(cart).map(([k, n]) => ({ id: +k, qty: n })); body.problem = sh.querySelector('#onote').value; body.pay = pay; }
+          try {
+            const r = await api.jobCreate(body);
+            if (r.payUrl) { toast('Opening the secure payment page…'); cart = {}; save(); location.href = r.payUrl; return; }
+            cart = {}; save(); close(); toast('Order sent to ' + a.name); go('/jobs/' + r.id);
+          }
           catch (err) { busy(b, false); if (err && err.fields) showErrors(sh, err.fields); failed(el, err); }
         });
       };

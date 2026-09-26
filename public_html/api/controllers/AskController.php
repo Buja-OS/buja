@@ -30,6 +30,14 @@ final class AskController
             'open' => Places::openAt($s['hours'] ?? null), 'phone' => $s['phone'] ?? null, 'website' => $s['website'] ?? null, 'notable' => (bool) ($s['notable'] ?? false)];
         if ($out['away'] !== null) { $road = $out['away'] * WakaFares::ROAD_FACTOR; $out['driveMin'] = max(2, (int) round($road / 22 * 60)); if ($road <= 2.5) $out['walkMin'] = max(1, (int) round($road / 4.8 * 60)); }
         if ($u) $out['myRating'] = (int) (Db::one('SELECT stars FROM spot_ratings WHERE spot_id = ? AND user_id = ?', [$s['id'], $u['id']])['stars'] ?? 0);
+        // Claimed by its owner: who runs it on Buja, and whether you can order from it here
+        $owner = isset($s['owner_id']) && $s['owner_id'] !== null ? (int) $s['owner_id'] : null;
+        $out['claimed'] = $owner !== null; $out['mine'] = $u && $owner === (int) $u['id'];
+        $out['business'] = null;
+        if ($owner) {
+            $a = null; try { $a = Db::one('SELECT user_id, trade, available, busy_until FROM artisans WHERE user_id = ? AND hidden_at IS NULL', [$owner]); } catch (Throwable $e) {}
+            if ($a) $out['business'] = ['id' => (int) $a['user_id'], 'orderable' => in_array($a['trade'], ServiceJobController::ORDER_TRADES, true), 'available' => (bool) $a['available'] && !(!empty($a['busy_until']) && $a['busy_until'] > Db::now()), 'trade' => ArtisanController::TRADES[$a['trade']] ?? $a['trade']];
+        }
         return $out;
     }
     private function directory(): array
@@ -56,6 +64,80 @@ final class AskController
         Db::run('INSERT INTO spot_photos (spot_id, upload_id, user_id, created_at) VALUES (?,?,?,?)', [$id, $upload, $u['id'], Db::now()]);
         Track::hit($u, 'ask', 'photo');
         Http::json(['photos' => $this->photos($id)], 201);
+    }
+
+    /** POST /spots/{id}/claim { role, phone, uploadId, note } : "this is my business". An admin checks it. */
+    public function claim(int $id): void
+    {
+        $u = Auth::require(); RateLimit::hit('spotclaim', 5, 86400);
+        $s = Db::one('SELECT * FROM spots WHERE id = ? AND active = 1', [$id]); if (!$s) Http::json(['error' => 'not_found'], 404);
+        if (!empty($s['owner_id'])) Http::json(['error' => 'validation', 'message' => (int) $s['owner_id'] === (int) $u['id'] ? 'This place is already yours.' : 'Someone has already claimed this place. If that is wrong, report it and Buja will check.'], 409);
+        if (Db::one("SELECT id FROM spot_claims WHERE spot_id = ? AND user_id = ? AND status = 'pending'", [$id, $u['id']])) Http::json(['error' => 'validation', 'message' => 'Your claim is already with Buja. We will tell you when it is checked.'], 409);
+        $b = Http::body(); $e = [];
+        $role = in_array($b['role'] ?? '', ['owner', 'manager', 'staff'], true) ? $b['role'] : null; if (!$role) $e['role'] = 'Are you the owner, a manager or staff?';
+        $phone = preg_replace('/[^\d+]/', '', (string) ($b['phone'] ?? '')); if (strlen($phone) < 10) $e['phone'] = 'The business phone number, so Buja can call to check.';
+        if ($e) Http::json(['error' => 'validation', 'fields' => $e], 422);
+        $proof = !empty($b['uploadId']) ? UploadsController::claim((int) $b['uploadId'], $u) : null;
+        Db::run('INSERT INTO spot_claims (spot_id, user_id, role, phone, proof_upload, note, created_at) VALUES (?,?,?,?,?,?,?)', [$id, $u['id'], $role, mb_substr($phone, 0, 40), $proof, mb_substr(trim((string) ($b['note'] ?? '')), 0, 300) ?: null, Db::now()]);
+        $st = Db::pdo()->prepare("SELECT id FROM users WHERE (role IN ('admin','moderator') OR is_admin = 1) AND deleted_at IS NULL"); $st->execute();
+        foreach ($st->fetchAll() as $a) Notify::user((int) $a['id'], 'offers', 'Business claim: ' . $s['name'], explode(' ', trim((string) $u['name']))[0] . ' says they are the ' . $role . '. Check and approve.', '/#/admin/spots', true);
+        Track::hit($u, 'ask', 'claim');
+        Http::json(['ok' => true, 'message' => 'Thanks. Buja will check and tell you, usually within a day.'], 201);
+    }
+
+    /** Opening hours in the form Buja can read ("Mo-Fr 08:00-18:00; Sa 09:00-14:00; Su off"), or null. */
+    public static function cleanHours(string $h): ?string
+    {
+        $h = trim(preg_replace('/\s+/', ' ', $h)); if ($h === '' || mb_strlen($h) > 60) return null;
+        return Places::openAt($h, new DateTime('2026-01-05 12:00', new DateTimeZone('Africa/Lagos'))) !== null ? $h : null;
+    }
+
+    /**
+     * POST /spots/{id}/suggest { field: hours | phone | closed, value } : a resident's correction. Owners' changes
+     * apply at once; residents' go to Buja to check, except opening hours that two different people agree on.
+     */
+    public function suggest(int $id): void
+    {
+        $u = Auth::require(); RateLimit::hit('spotedit', 20, 86400);
+        $s = Db::one('SELECT * FROM spots WHERE id = ? AND active = 1', [$id]); if (!$s) Http::json(['error' => 'not_found'], 404);
+        $b = Http::body(); $field = (string) ($b['field'] ?? ''); $v = trim((string) ($b['value'] ?? ''));
+        if ($field === 'hours') { $v = self::cleanHours($v); if ($v === null) Http::json(['error' => 'validation', 'fields' => ['hours' => 'Choose the days and times it opens.']], 422); }
+        elseif ($field === 'phone') { $v = preg_replace('/[^\d+ ]/', '', $v); if (strlen(preg_replace('/\D/', '', $v)) < 10) Http::json(['error' => 'validation', 'fields' => ['phone' => 'A full phone number.']], 422); }
+        elseif ($field === 'closed') $v = mb_substr($v, 0, 200) ?: null;
+        else Http::json(['error' => 'validation', 'message' => 'Unknown correction.'], 422);
+        $isOwner = !empty($s['owner_id']) && (int) $s['owner_id'] === (int) $u['id'];
+        $staff = !empty($u['is_admin']) || in_array($u['role'] ?? '', ['admin', 'moderator'], true);
+        if (($isOwner || $staff) && $field !== 'closed') {
+            Db::run('UPDATE spots SET ' . ($field === 'hours' ? 'hours' : 'phone') . ' = ? WHERE id = ?', [$v, $id]);
+            Http::json(['applied' => true, 'message' => 'Updated.', 'spot' => $this->spot(Db::one('SELECT * FROM spots WHERE id = ?', [$id]), $u)]);
+        }
+        Db::run("DELETE FROM spot_edits WHERE spot_id = ? AND user_id = ? AND field = ? AND status = 'pending'", [$id, $u['id'], $field]);
+        Db::run('INSERT INTO spot_edits (spot_id, user_id, field, value, created_at) VALUES (?,?,?,?,?)', [$id, $u['id'], $field, $v, Db::now()]);
+        // Two different people giving the same opening hours is enough: it goes live without waiting.
+        if ($field === 'hours' && empty($s['owner_id'])) {
+            $agree = Db::one("SELECT COUNT(DISTINCT user_id) AS n FROM spot_edits WHERE spot_id = ? AND field = 'hours' AND value = ? AND status IN ('pending','approved') AND created_at > ?", [$id, $v, gmdate('Y-m-d H:i:s', time() - 60 * 86400)]);
+            if ((int) ($agree['n'] ?? 0) >= 2) {
+                Db::run('UPDATE spots SET hours = ? WHERE id = ?', [$v, $id]);
+                Db::run("UPDATE spot_edits SET status = 'approved', decided_at = ? WHERE spot_id = ? AND field = 'hours' AND value = ? AND status = 'pending'", [Db::now(), $id, $v]);
+                Http::json(['applied' => true, 'message' => 'Thanks. Someone else gave the same hours, so they are now showing.', 'spot' => $this->spot(Db::one('SELECT * FROM spots WHERE id = ?', [$id]), $u)]);
+            }
+        }
+        Http::json(['applied' => false, 'message' => $field === 'closed' ? 'Thanks. Buja will check and take it off if it has closed.' : 'Thanks. Buja will check it; if one more person gives the same hours, they show at once.'], 201);
+    }
+
+    /** PATCH /spots/{id}/owner { hours, phone, website, description } : the owner keeps their listing right */
+    public function ownerEdit(int $id): void
+    {
+        $u = Auth::require(); $s = Db::one('SELECT * FROM spots WHERE id = ? AND active = 1', [$id]); if (!$s) Http::json(['error' => 'not_found'], 404);
+        if (empty($s['owner_id']) || (int) $s['owner_id'] !== (int) $u['id']) Http::json(['error' => 'forbidden', 'message' => 'Only the owner can change this listing.'], 403);
+        $b = Http::body(); $set = []; $p = []; $e = [];
+        if (array_key_exists('hours', $b)) { $h = trim((string) $b['hours']); if ($h === '') { $set[] = 'hours = ?'; $p[] = null; } else { $h = self::cleanHours($h); if ($h === null) $e['hours'] = 'Choose the days and times you open.'; else { $set[] = 'hours = ?'; $p[] = $h; } } }
+        if (array_key_exists('phone', $b)) { $ph = preg_replace('/[^\d+ ]/', '', (string) $b['phone']); $set[] = 'phone = ?'; $p[] = $ph !== '' ? mb_substr($ph, 0, 40) : null; }
+        if (array_key_exists('website', $b)) { $w = trim((string) $b['website']); if ($w !== '' && !preg_match('#^https?://#i', $w)) $w = 'https://' . $w; $set[] = 'website = ?'; $p[] = $w !== '' ? mb_substr($w, 0, 200) : null; }
+        if (array_key_exists('description', $b)) { $d = mb_substr(trim((string) $b['description']), 0, 400); if (mb_strlen($d) < 10) $e['description'] = 'A line or two about the place.'; else { $set[] = 'description = ?'; $p[] = $d; } }
+        if ($e) Http::json(['error' => 'validation', 'fields' => $e], 422);
+        if ($set) { $p[] = $id; Db::run('UPDATE spots SET ' . implode(', ', $set) . ' WHERE id = ?', $p); }
+        Http::json(['spot' => $this->spot(Db::one('SELECT * FROM spots WHERE id = ?', [$id]), $u)]);
     }
 
     /** DELETE /spots/photos/{id} : whoever added it, or a moderator */
@@ -296,6 +378,8 @@ final class AskController
         $b = Http::body();
         $q = mb_substr(trim((string) ($b['question'] ?? '')), 0, 300);
         if ($q === '') Http::json(['error' => 'validation', 'fields' => ['question' => 'Ask something.']], 422);
+        // Pidgin, Hausa and Yoruba: the words that say what and where become the English ones Ask matches on
+        $asked = $q; [$en, $lang] = Lang::toEnglish($q); if ($lang) $q = $en;
         $live = null;
         if (!empty($b['lat']) && !empty($b['lng'])) {
             $la = (float) $b['lat']; $ln = (float) $b['lng'];
@@ -328,9 +412,10 @@ final class AskController
         if (!$rows) { $rows = $this->rulePick($q, $spots, $u); if ($mode !== 'rules' && $rows) $mode .= '+rules'; }
         $result = $this->present($q, $rows, $u, $mode, $where);
         $result['where'] = $where;
+        if ($lang) $result['understood'] = ['lang' => Lang::LABEL[$lang], 'as' => $q];
         $result['providers'] = $this->providers(mb_strtolower($q), [$where['lat'], $where['lng']], $u);
         $ids = array_map(fn($s) => $s['id'], $result['spots']);
-        Db::run('INSERT INTO ask_log (user_id, question, district, spot_ids, mode, created_at) VALUES (?,?,?,?,?,?)', [$u['id'], $q, $u['district'], json_encode($ids), $result['mode'], Db::now()]); Track::hit($u, 'ask', 'ask');
+        Db::run('INSERT INTO ask_log (user_id, question, district, spot_ids, mode, created_at) VALUES (?,?,?,?,?,?)', [$u['id'], $asked, $u['district'], json_encode($ids), $result['mode'], Db::now()]); Track::hit($u, 'ask', 'ask');
         Http::json($result);
     }
 
@@ -439,7 +524,8 @@ final class AskController
         $u = Auth::require(); $s = Db::one('SELECT * FROM spots WHERE id = ? AND active = 1', [$id]); if (!$s) Http::json(['error' => 'not_found'], 404);
         $la = (float) ($_GET['lat'] ?? 0); $ln = (float) ($_GET['lng'] ?? 0); if ($la > 8 && $la < 10 && $ln > 6.5 && $ln < 8) $this->me = [$la, $ln];   // the phone's position right now, when sent
         $st = Db::pdo()->prepare('SELECT r.stars, r.comment, r.created_at, us.name FROM spot_ratings r JOIN users us ON us.id = r.user_id WHERE r.spot_id = ? ORDER BY r.id DESC LIMIT 20'); $st->execute([$id]);
-        Http::json(['spot' => $this->spot($s, $u), 'reviews' => array_map(fn($r) => ['stars' => (int) $r['stars'], 'comment' => $r['comment'], 'name' => explode(' ', $r['name'])[0], 'at' => substr($r['created_at'], 0, 10)], $st->fetchAll())]);
+        $claim = null; try { $claim = Db::one('SELECT status, reason FROM spot_claims WHERE spot_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1', [$id, $u['id']]); } catch (Throwable $e) {}
+        Http::json(['myClaim' => $claim ? ['status' => $claim['status'], 'reason' => $claim['reason']] : null, 'spot' => $this->spot($s, $u), 'reviews' => array_map(fn($r) => ['stars' => (int) $r['stars'], 'comment' => $r['comment'], 'name' => explode(' ', $r['name'])[0], 'at' => substr($r['created_at'], 0, 10)], $st->fetchAll())]);
     }
 
     /** POST /spots/{id}/rate { stars 1-5, comment } */

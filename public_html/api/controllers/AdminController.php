@@ -284,6 +284,65 @@ final class AdminController
         Http::json(['result' => $r, 'category' => $cat, 'total' => $total]);
     }
 
+    /** GET /admin/claims : business claims and residents' corrections waiting for a decision */
+    public function claims(): void
+    {
+        $this->staff();
+        $rows = function (string $sql) { try { $st = Db::pdo()->prepare($sql); $st->execute(); return $st->fetchAll(); } catch (Throwable $e) { return []; } };
+        $claims = array_map(function ($c) {
+            $s = Db::one('SELECT id, name, district, category, phone FROM spots WHERE id = ?', [$c['spot_id']]); $u = Db::one('SELECT id, name, email, phone FROM users WHERE id = ?', [$c['user_id']]);
+            $a = Db::one('SELECT business, trade FROM artisans WHERE user_id = ?', [$c['user_id']]);
+            return ['id' => (int) $c['id'], 'role' => $c['role'], 'phone' => $c['phone'], 'note' => $c['note'], 'at' => $c['created_at'], 'proof' => $c['proof_upload'] ? '/api/uploads/' . (int) $c['proof_upload'] : null,
+                'spot' => $s ? ['id' => (int) $s['id'], 'name' => $s['name'], 'district' => $s['district'], 'category' => $s['category'], 'phone' => $s['phone'] ?? null] : null,
+                'user' => $u ? ['id' => (int) $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'phone' => $u['phone']] : null,
+                'business' => $a ? ($a['business'] ?: 'Registered as ' . (ArtisanController::TRADES[$a['trade']] ?? $a['trade'])) : null];
+        }, $rows("SELECT * FROM spot_claims WHERE status = 'pending' ORDER BY id"));
+        $edits = array_map(function ($e) {
+            $s = Db::one('SELECT id, name, district, hours, phone FROM spots WHERE id = ?', [$e['spot_id']]); $u = Db::one('SELECT name FROM users WHERE id = ?', [$e['user_id']]);
+            return ['id' => (int) $e['id'], 'field' => $e['field'], 'value' => $e['value'], 'at' => $e['created_at'], 'by' => explode(' ', trim((string) ($u['name'] ?? '')))[0],
+                'spot' => $s ? ['id' => (int) $s['id'], 'name' => $s['name'], 'district' => $s['district'], 'now' => $e['field'] === 'hours' ? $s['hours'] : ($e['field'] === 'phone' ? ($s['phone'] ?? null) : null)] : null];
+        }, $rows("SELECT * FROM spot_edits WHERE status = 'pending' ORDER BY id LIMIT 100"));
+        Http::json(['claims' => $claims, 'edits' => $edits]);
+    }
+
+    /** POST /admin/claims/{id} { decision: approve | reject, reason } */
+    public function decideClaim(int $id): void
+    {
+        $me = $this->staff(); $b = Http::body();
+        $c = Db::one("SELECT * FROM spot_claims WHERE id = ? AND status = 'pending'", [$id]); if (!$c) Http::json(['error' => 'not_found', 'message' => 'Already decided.'], 404);
+        $s = Db::one('SELECT * FROM spots WHERE id = ?', [$c['spot_id']]); if (!$s) Http::json(['error' => 'not_found'], 404);
+        if (($b['decision'] ?? '') === 'approve') {
+            if (!empty($s['owner_id']) && (int) $s['owner_id'] !== (int) $c['user_id']) Http::json(['error' => 'validation', 'message' => 'This place already has an owner. Reject this claim, or remove the owner first.'], 409);
+            Db::run('UPDATE spots SET owner_id = ?, verified_at = COALESCE(verified_at, ?) WHERE id = ?', [$c['user_id'], Db::now(), $s['id']]);
+            Db::run("UPDATE spot_claims SET status = 'approved', decided_at = ?, decided_by = ? WHERE id = ?", [Db::now(), $me['id'], $id]);
+            Db::run("UPDATE spot_claims SET status = 'rejected', reason = 'Another claim was approved.', decided_at = ?, decided_by = ? WHERE spot_id = ? AND status = 'pending'", [Db::now(), $me['id'], $s['id']]);
+            $a = Db::one('SELECT user_id FROM artisans WHERE user_id = ?', [$c['user_id']]);
+            if ($a) { try { Db::run('UPDATE artisans SET spot_id = ? WHERE user_id = ?', [$s['id'], $c['user_id']]); } catch (Throwable $e) {} }
+            Notify::user((int) $c['user_id'], 'offers', 'Approved: ' . $s['name'] . ' is yours on Buja', $a ? 'Your business profile is now linked to it. Customers can order and message you from the listing.' : 'Finish your business profile so customers can order and message you from the listing.', $a ? '/#/ask/place/' . (int) $s['id'] : '/#/artisans/register?spot=' . (int) $s['id'], true);
+        } else {
+            $why = mb_substr(trim((string) ($b['reason'] ?? '')), 0, 200) ?: 'We could not confirm it is your business.';
+            Db::run("UPDATE spot_claims SET status = 'rejected', reason = ?, decided_at = ?, decided_by = ? WHERE id = ?", [$why, Db::now(), $me['id'], $id]);
+            Notify::user((int) $c['user_id'], 'offers', 'Claim not approved: ' . $s['name'], $why . ' Reply to Buja support if you can show more proof.', '/#/ask/place/' . (int) $s['id']);
+        }
+        Http::json(['ok' => true]);
+    }
+
+    /** POST /admin/spot-edits/{id} { decision: approve | reject } : apply a resident's opening hours, phone, or "it closed" */
+    public function decideEdit(int $id): void
+    {
+        $me = $this->staff(); $b = Http::body();
+        $e = Db::one("SELECT * FROM spot_edits WHERE id = ? AND status = 'pending'", [$id]); if (!$e) Http::json(['error' => 'not_found', 'message' => 'Already decided.'], 404);
+        $ok = ($b['decision'] ?? '') === 'approve';
+        if ($ok) {
+            if ($e['field'] === 'hours') Db::run('UPDATE spots SET hours = ? WHERE id = ?', [$e['value'], $e['spot_id']]);
+            elseif ($e['field'] === 'phone') Db::run('UPDATE spots SET phone = ? WHERE id = ?', [$e['value'], $e['spot_id']]);
+            elseif ($e['field'] === 'closed') Db::run('UPDATE spots SET active = 0 WHERE id = ?', [$e['spot_id']]);
+        }
+        Db::run('UPDATE spot_edits SET status = ?, decided_at = ?, decided_by = ? WHERE id = ?', [$ok ? 'approved' : 'rejected', Db::now(), $me['id'], $id]);
+        if ($ok) Db::run("UPDATE spot_edits SET status = 'approved', decided_at = ?, decided_by = ? WHERE spot_id = ? AND field = ? AND (value = ? OR (value IS NULL AND ? IS NULL)) AND status = 'pending'", [Db::now(), $me['id'], $e['spot_id'], $e['field'], $e['value'], $e['value']]);
+        Http::json(['ok' => true]);
+    }
+
     /** GET /admin/spots-query?category=&tile= : the Overpass query for the admin's phone to run itself */
     public function spotsQuery(): void
     {

@@ -26,6 +26,8 @@ final class Cron
             if (self::stamp('kart_week_tick') < $now - 3600) { self::mark('kart_week_tick'); KartController::awardWeekly(); }
             // Escrow: release after 3 quiet days, refund after 7 days with no handover, retry failed payouts. Every 10 minutes.
             if (self::stamp('escrow_tick') < $now - 600 && Db::one("SELECT 1 AS x FROM escrow_orders WHERE status IN ('paid','shipped') LIMIT 1")) { self::mark('escrow_tick'); EscrowController::tick(); return; }
+            // Order payments: release a day after delivery, refund what was declined or cancelled, retry payouts. Every 10 minutes.
+            if (self::stamp('orderpay_tick') < $now - 600) { $busy = false; try { $busy = (bool) Db::one("SELECT 1 AS x FROM job_payments WHERE status IN ('paid','pending') OR payout_status IN ('queued','failed') LIMIT 1"); } catch (Throwable $e) {} if ($busy) { self::mark('orderpay_tick'); OrderPay::tick(); return; } }
             // Broadcasts still queued: forty more per poll.
             if (Db::one('SELECT 1 AS x FROM broadcast_queue LIMIT 1') && self::stamp('bcast_tick') < $now - 20) { self::mark('bcast_tick'); EngageController::sendQueued(40); return; }
             // Learning reminders: daytime only, 9am to 7pm Abuja, ten people every five minutes.

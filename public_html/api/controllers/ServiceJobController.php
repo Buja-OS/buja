@@ -32,6 +32,7 @@ final class ServiceJobController
         if (($j['mode'] ?? 'direct') === 'nearest' && $j['status'] === 'requested') { self::escalate($j); $j = Db::one('SELECT * FROM service_jobs WHERE id = ?', [$id]); }
         if ($j['status'] === 'requested' && strtotime($j['created_at'] . ' UTC') < time() - self::REQUEST_TTL_MIN * 60) {
             Db::run("UPDATE service_jobs SET status = 'expired' WHERE id = ? AND status = 'requested'", [$id]); $j['status'] = 'expired';
+            OrderPay::sync($id);
         }
         return $j;
     }
@@ -66,7 +67,7 @@ final class ServiceJobController
             if ($base && $base['lat'] !== null) $etaTotal = ($prep ? $prep['minutesLeft'] : 0) + LiveTrack::guessMinutes(WakaRules::km((float) $base['lat'], (float) $base['lng'], (float) $j['lat'], (float) $j['lng']));
         } elseif ($live && $live['etaMin'] !== null) $etaTotal = $live['etaMin'];
         return [
-            'kind' => $kind, 'prep' => $prep, 'etaTotalMin' => $etaTotal,
+            'kind' => $kind, 'prep' => $prep, 'etaTotalMin' => $etaTotal, 'payMode' => $j['pay_mode'] ?? null, 'pay' => ($j['pay_mode'] ?? '') === 'online' ? OrderPay::shape((int) $j['id']) : null,
             'items' => !empty($j['items_json']) ? (json_decode((string) $j['items_json'], true) ?: null) : null, 'subtotal' => isset($j['subtotal']) && $j['subtotal'] !== null ? (int) $j['subtotal'] : null, 'deliveryFee' => isset($j['delivery_fee']) && $j['delivery_fee'] !== null ? (int) $j['delivery_fee'] : null,
             'id' => (int) $j['id'], 'status' => $j['status'], 'role' => $isCustomer ? 'customer' : 'artisan', 'trade' => $j['trade'], 'tradeLabel' => ArtisanController::TRADES[$j['trade']] ?? $j['trade'],
             'problem' => $j['problem'], 'landmark' => $showExact ? $j['landmark'] : null,
@@ -111,14 +112,17 @@ final class ServiceJobController
         return [$items, $sum];
     }
 
-    /** POST /service-jobs { artisanId, problem, lat, lng, landmark, items: [{id, qty}] } */
-    public function create(): void
+    /**
+     * Checks a request or order and returns it ready to save: who, where, what, and for a menu order the items
+     * priced from the business's own menu. Stops with a clear message when something is wrong.
+     */
+    public static function prepare(array $u, array $b): array
     {
-        $u = Auth::require(); RateLimit::hit('servicejob', 8, 3600); $b = Http::body();
         $aid = (int) ($b['artisanId'] ?? 0);
         if ($aid === (int) $u['id']) Http::json(['error' => 'validation', 'message' => 'You cannot book yourself.'], 422);
         $a = Db::one('SELECT * FROM artisans WHERE user_id = ? AND hidden_at IS NULL', [$aid]); if (!$a) Http::json(['error' => 'not_found', 'message' => 'That artisan is not listed.'], 404);
         if (!(int) $a['available']) Http::json(['error' => 'validation', 'message' => 'They are not taking jobs right now. Try another, or let Buja find the nearest.'], 422);
+        if (!empty($a['busy_until']) && $a['busy_until'] > Db::now()) { $t = (new DateTime($a['busy_until'] . ' UTC'))->setTimezone(new DateTimeZone('Africa/Lagos'))->format('g:ia'); Http::json(['error' => 'validation', 'message' => 'They are very busy right now and have paused new orders until ' . $t . '. Try again then, or order from another place.'], 422); }
         $lat = (float) ($b['lat'] ?? 0); $lng = (float) ($b['lng'] ?? 0);
         if (!self::inFct($lat, $lng)) Http::json(['error' => 'validation', 'message' => 'Your location is outside the FCT. Buja businesses and artisans work inside Abuja; on a phone, turn on GPS so the pin is exact.'], 422);
         // A menu order: the items and prices come from the business's menu here, never from the phone.
@@ -133,17 +137,40 @@ final class ServiceJobController
         }
         $problem = mb_substr(trim((string) ($b['problem'] ?? '')), 0, 400); if (mb_strlen($problem) < 5) { $msg = in_array($a['trade'], self::ORDER_TRADES, true) ? 'Say what you would like in a few words.' : 'Say what is wrong in a few words.'; Http::json(['error' => 'validation', 'message' => $msg, 'fields' => ['problem' => $msg]], 422); }
         if (Db::one("SELECT id FROM service_jobs WHERE customer_id = ? AND artisan_id = ? AND status IN ('requested','accepted','enroute','arrived')", [$u['id'], $aid])) Http::json(['error' => 'validation', 'message' => 'You already have an open job with them.'], 409);
-        Db::run('INSERT INTO service_jobs (customer_id, artisan_id, trade, problem, lat, lng, landmark, created_at) VALUES (?,?,?,?,?,?,?,?)', [$u['id'], $aid, $a['trade'], $problem, round($lat, 6), round($lng, 6), mb_substr(trim((string) ($b['landmark'] ?? '')), 0, 160) ?: null, Db::now()]);
+        return ['artisanId' => $aid, 'trade' => $a['trade'], 'lat' => round($lat, 6), 'lng' => round($lng, 6), 'landmark' => mb_substr(trim((string) ($b['landmark'] ?? '')), 0, 160) ?: null, 'problem' => $problem,
+            'items' => $items, 'subtotal' => $subtotal, 'deliveryFee' => $fee, 'isOrder' => in_array($a['trade'], self::ORDER_TRADES, true) && ($b['kind'] ?? 'order') === 'order'];
+    }
+
+    /** Saves a checked request or order and tells the business. Used directly, and once an in-app payment clears. */
+    public static function insert(array $u, array $o, ?string $payMode = null): int
+    {
+        $aid = (int) $o['artisanId']; $a = Db::one('SELECT * FROM artisans WHERE user_id = ?', [$aid]) ?: ['lat' => null, 'lng' => null, 'trade' => $o['trade']];
+        Db::run('INSERT INTO service_jobs (customer_id, artisan_id, trade, problem, lat, lng, landmark, created_at) VALUES (?,?,?,?,?,?,?,?)', [$u['id'], $aid, $o['trade'], $o['problem'], $o['lat'], $o['lng'], $o['landmark'], Db::now()]);
         $id = (int) Db::lastId();
-        $isOrder = in_array($a['trade'], self::ORDER_TRADES, true) && ($b['kind'] ?? 'order') === 'order';
-        if ($isOrder) { try { Db::run("UPDATE service_jobs SET kind = 'order' WHERE id = ?", [$id]); } catch (Throwable $e) {} }   // before migration 040 it simply stays a call-out
+        if ($o['isOrder']) { try { Db::run("UPDATE service_jobs SET kind = 'order' WHERE id = ?", [$id]); } catch (Throwable $e) {} }   // before migration 040 it simply stays a call-out
+        $items = $o['items']; $subtotal = (int) ($o['subtotal'] ?? 0); $fee = (int) ($o['deliveryFee'] ?? 0);
         if ($items) {   // the price is agreed by the menu: recorded as an accepted quote, so both sides see the same total
-            try { Db::run("UPDATE service_jobs SET items_json = ?, subtotal = ?, delivery_fee = ?, quote_amount = ?, quote_note = ?, quote_status = 'accepted', quoted_at = ? WHERE id = ?", [json_encode($items, JSON_UNESCAPED_UNICODE), $subtotal, $fee, $subtotal + $fee, 'Menu order', Db::now(), $id]); } catch (Throwable $e) {}
+            try { Db::run("UPDATE service_jobs SET items_json = ?, subtotal = ?, delivery_fee = ?, quote_amount = ?, quote_note = ?, quote_status = 'accepted', quoted_at = ? WHERE id = ?", [json_encode($items, JSON_UNESCAPED_UNICODE), $subtotal, $fee, $subtotal + $fee, $payMode === 'online' ? 'Menu order, paid in the app' : 'Menu order', Db::now(), $id]); } catch (Throwable $e) {}
         }
-        $km = WakaRules::km((float) ($a['lat'] ?? $lat), (float) ($a['lng'] ?? $lng), $lat, $lng);
-        Notify::user($aid, 'work', $isOrder ? 'New order from ' . explode(' ', trim((string) $u['name']))[0] . ($items ? ' · ₦' . number_format($subtotal + $fee) : '') . ', ' . ($km < 1 ? 'under 1' : round($km)) . ' km away' : explode(' ', trim((string) $u['name']))[0] . ' needs a ' . strtolower(ArtisanController::TRADES[$a['trade']] ?? 'hand') . ' about ' . ($km < 1 ? 'under 1' : round($km)) . ' km away', mb_substr($problem, 0, 90) . ' Tap to accept or decline.', '/#/jobs/' . $id, true);
+        if ($payMode) { try { Db::run('UPDATE service_jobs SET pay_mode = ? WHERE id = ?', [$payMode, $id]); } catch (Throwable $e) {} }
+        $km = WakaRules::km((float) ($a['lat'] ?? $o['lat']), (float) ($a['lng'] ?? $o['lng']), (float) $o['lat'], (float) $o['lng']);
+        $who = explode(' ', trim((string) $u['name']))[0]; $far = ($km < 1 ? 'under 1' : round($km)) . ' km away';
+        Notify::user($aid, 'work', $o['isOrder'] ? ($payMode === 'online' ? 'New paid order from ' : 'New order from ') . $who . ($items ? ' · ₦' . number_format($subtotal + $fee) : '') . ', ' . $far : $who . ' needs a ' . strtolower(ArtisanController::TRADES[$o['trade']] ?? 'hand') . ' about ' . $far, mb_substr($o['problem'], 0, 90) . ' Tap to accept or decline.', '/#/jobs/' . $id, true);
         Track::hit($u, 'artisan', 'job_request');
-        Http::json(['id' => $id], 201);
+        return $id;
+    }
+
+    /** POST /service-jobs { artisanId, problem, lat, lng, landmark, items: [{id, qty}], pay: 'online' | 'delivery' } */
+    public function create(): void
+    {
+        $u = Auth::require(); RateLimit::hit('servicejob', 8, 3600); $b = Http::body();
+        $o = self::prepare($u, $b);
+        if (($b['pay'] ?? '') === 'online') {
+            if (!$o['items']) Http::json(['error' => 'validation', 'message' => 'Paying in the app works for orders from a menu. For anything else, agree the price with them first.'], 422);
+            $r = OrderPay::start($u, $o);
+            Http::json(['payUrl' => $r['url'], 'reference' => $r['reference'], 'total' => $r['total'], 'fee' => $r['fee']], 201);
+        }
+        Http::json(['id' => self::insert($u, $o, $o['items'] ? 'delivery' : null)], 201);
     }
 
     /** GET /service-jobs/{id} : polled every few seconds by both sides */
@@ -213,8 +240,19 @@ final class ServiceJobController
                 Db::run('DELETE FROM service_trail WHERE job_id = ?', [$id]);
                 if ($isArtisan) Notify::user($to, 'work', 'Job marked done', 'How did ' . $name . ' do? Rate them so others know.', $url, true);
                 break;
+            case 'received':
+                // the customer has the order: the business is paid now instead of a day later
+                if ($isArtisan || !in_array($j['status'], ['arrived', 'done', 'enroute'], true)) $bad();
+                if ($j['status'] !== 'done') { Db::run("UPDATE service_jobs SET status = 'done', done_at = ? WHERE id = ?", [Db::now(), $id]); Db::run('UPDATE artisans SET jobs_done = jobs_done + 1 WHERE user_id = ?', [$j['artisan_id']]); Db::run('DELETE FROM service_trail WHERE job_id = ?', [$id]); }
+                OrderPay::sync($id, true);
+                break;
+            case 'problem':
+                if ($isArtisan) $bad();
+                OrderPay::dispute($id, $u, (string) (Http::body()['note'] ?? ''));
+                break;
             case 'cancel':
                 if (!in_array($j['status'], ['requested', 'accepted', 'enroute'], true)) $bad();
+                if (!$isArtisan && ($j['pay_mode'] ?? '') === 'online' && $j['status'] !== 'requested') Http::json(['error' => 'validation', 'message' => 'They have started on your order. Message them first; if they agree, they can cancel it and you get all your money back.'], 422);
                 Db::run("UPDATE service_jobs SET status = 'cancelled', cancelled_by = ? WHERE id = ?", [$u['id'], $id]);
                 Db::run('DELETE FROM service_trail WHERE job_id = ?', [$id]);
                 Notify::user($to, 'work', 'Job cancelled', $name . ' cancelled the job.', $url);
@@ -222,6 +260,7 @@ final class ServiceJobController
             default: Http::json(['error' => 'not_found'], 404);
         }
         Track::hit($u, 'artisan', 'job_' . $action);
+        OrderPay::sync($id);
         $this->show($id);
     }
 
@@ -386,7 +425,7 @@ final class ServiceJobController
     {
         $n = 0;
         foreach (Db::pdo()->query("SELECT * FROM service_jobs WHERE mode = 'nearest' AND status = 'requested' ORDER BY id LIMIT " . (int) $limit)->fetchAll() as $j) {
-            if (strtotime($j['created_at'] . ' UTC') < time() - self::REQUEST_TTL_MIN * 60) { Db::run("UPDATE service_jobs SET status = 'expired' WHERE id = ? AND status = 'requested'", [$j['id']]); continue; }
+            if (strtotime($j['created_at'] . ' UTC') < time() - self::REQUEST_TTL_MIN * 60) { Db::run("UPDATE service_jobs SET status = 'expired' WHERE id = ? AND status = 'requested'", [$j['id']]); OrderPay::sync((int) $j['id']); continue; }
             self::escalate($j); $n++;
         }
         return $n;
@@ -492,6 +531,7 @@ final class ServiceJobController
         if ($prev) Db::run('UPDATE user_ratings SET stars = ?, tags = ?, comment = ?, module = ?, hidden_at = NULL, created_at = ? WHERE id = ?', [$stars, json_encode($tags), $comment, 'artisan', Db::now(), $prev['id']]);
         else Db::run('INSERT INTO user_ratings (rater, rated, thread_id, module, stars, tags, comment, created_at) VALUES (?,?,?,?,?,?,?,?)', [$u['id'], $j['artisan_id'], $j['thread_id'], 'artisan', $stars, json_encode($tags), $comment, Db::now()]);
         Db::run('UPDATE service_jobs SET rated = 1 WHERE id = ?', [$id]);
+        OrderPay::sync($id, true);   // rating it means they have it
         if ($stars >= 4) Notify::user((int) $j['artisan_id'], 'work', 'You got ' . $stars . ' stars', explode(' ', trim((string) $u['name']))[0] . ' rated your work.', '/#/people/' . (int) $j['artisan_id']);
         $this->show($id);
     }

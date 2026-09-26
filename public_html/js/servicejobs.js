@@ -120,7 +120,13 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
 
   route('/artisans/register', { auth: true, tabs: '' }, async () => {
     const [{ artisan: me }, meta] = await Promise.all([api.artisanMe().catch(() => ({ artisan: null })), api.artisans({}).catch(() => ({ trades: {} }))]);
-    const f = new URLSearchParams(location.hash.split('?')[1] || ''); const startTrade = (me && me.trade) || f.get('trade') || 'mechanic';
+    const f = new URLSearchParams(location.hash.split('?')[1] || '');
+    // Coming from a place they claimed on Ask: its name, kind and pin fill the form
+    let fromSpot = null; if (f.get('spot')) { try { fromSpot = (await api.spot(f.get('spot'))).spot; } catch {} }
+    window.__bujaFromSpot = fromSpot;
+    const SPOT_TRADE = { food: 'restaurant', lounge: 'drinks', nightlife: 'drinks', shopping: 'grocery' };
+    const spotTrade = fromSpot ? (SPOT_TRADE[fromSpot.category] || ({ barber: 'hair', beauty: 'hair', hairdresser: 'hair', laundry: 'laundry', dry_cleaning: 'laundry', car_repair: 'mechanic', tailor: 'tailor', bakery: 'bakery' })[(fromSpot.tags || [])[0]] || '') : '';
+    const startTrade = (me && me.trade) || f.get('trade') || spotTrade || 'mechanic';
     const trades = meta.trades || {};
     return `${topbar(me ? 'My profile' : 'Register on Buja', '/artisans')}
     <div class="pad" style="padding-bottom:0"><div class="row" style="gap:6px" id="steps">${[1, 2, 3].map((n) => `<div style="flex:1;height:5px;border-radius:3px;background:${n === 1 ? 'var(--orange)' : 'var(--line)'}" data-bar="${n}"></div>`).join('')}</div></div>
@@ -128,7 +134,8 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       <section data-step="1" class="stack" style="gap:14px">
         <div><div class="h-md">You and your work</div><div class="small muted">Step 1 of 3. Customers see this before they call you.</div></div>
         ${field({ id: 'ownerName', label: 'Your full name', value: (me && me.owner) || state.user.name || '' })}
-        ${field({ id: 'business', label: 'Workshop or business name (optional)', value: (me && me.name !== me.person ? me.name : '') || '', placeholder: 'Musa Auto Clinic' })}
+        ${fromSpot ? `<div class="card row" style="padding:12px 14px;gap:10px;background:var(--green-tint);border:none">${icon('circle-check')}<div class="small grow">Setting up <strong>${h(fromSpot.name)}</strong>, the place you claimed. Customers who find it on Ask can then order and message you.</div></div>` : ''}
+        ${field({ id: 'business', label: 'Workshop or business name (optional)', value: (me && me.name !== me.person ? me.name : '') || (fromSpot ? fromSpot.name : ''), placeholder: 'Musa Auto Clinic' })}
         <div class="field" style="margin:0"><label for="trade">Your trade</label><select class="input" id="trade">${Object.entries(trades).map(([k, l]) => `<option value="${k}" ${k === startTrade ? 'selected' : ''}>${h(l)}</option>`).join('')}</select><div class="error" data-error="trade"></div></div>
         <div class="field" style="margin:0" id="svcbox"><label>What you fix</label><div class="row" id="svc" style="gap:6px;flex-wrap:wrap"></div></div>
         <div class="field" style="margin:0" id="brandsbox"><label>Car makes you know</label><div class="row" id="brands" style="gap:6px;flex-wrap:wrap">${BRANDS.map((b) => `<button type="button" class="chip ${me && (me.brands || []).includes(b) ? 'on' : ''}" data-b="${h(b)}">${h(b)}</button>`).join('')}</div></div>
@@ -164,7 +171,8 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
   }, {
     async mount(el) {
       const { artisan: me } = await api.artisanMe().catch(() => ({ artisan: null }));
-      let pin = me && me.lat != null ? { lat: me.lat, lng: me.lng } : null, photoId = null, idId = null;
+      const fromSpot = window.__bujaFromSpot;
+      let pin = me && me.lat != null ? { lat: me.lat, lng: me.lng } : fromSpot && fromSpot.lat != null ? { lat: fromSpot.lat, lng: fromSpot.lng } : null, photoId = null, idId = null;
       const picked = new Set(me ? me.services : []);
       const drawSvc = () => { const t = el.querySelector('#trade').value; el.querySelector('#svc').innerHTML = (SERVICES[t] || []).map((s) => `<button type="button" class="chip ${picked.has(s) ? 'on' : ''}" data-s="${h(s)}">${h(s)}</button>`).join('') || '<span class="small muted">Describe it under About.</span>'; el.querySelector('#brandsbox').style.display = ['mechanic', 'vulcanizer', 'towing'].includes(t) ? '' : 'none'; el.querySelectorAll('#svc [data-s]').forEach((b) => b.addEventListener('click', () => { picked.has(b.dataset.s) ? picked.delete(b.dataset.s) : picked.add(b.dataset.s); b.classList.toggle('on'); })); };
       /** Food, drinks, groceries, water and gas are businesses customers order from: the form speaks their language. */
@@ -210,7 +218,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       el.querySelector('#af').addEventListener('submit', async (e) => {
         e.preventDefault(); const btn = e.target.querySelector('[type=submit]'); showErrors(el, {}); busy(btn, true);
         try {
-          await api.artisanSave({ ownerName: el.querySelector('#ownerName').value, business: el.querySelector('#business').value, trade: el.querySelector('#trade').value, services: [...picked],
+          await api.artisanSave({ spotId: fromSpot ? fromSpot.id : undefined, ownerName: el.querySelector('#ownerName').value, business: el.querySelector('#business').value, trade: el.querySelector('#trade').value, services: [...picked],
             brands: [...el.querySelectorAll('#brands .on')].map((b) => b.dataset.b), years: el.querySelector('#years').value, calloutFee: el.querySelector('#calloutFee').value, about: el.querySelector('#about').value,
             lat: pin && pin.lat, lng: pin && pin.lng, address: el.querySelector('#address').value, landmark: el.querySelector('#landmark').value, phone: el.querySelector('#phone').value, whatsapp: el.querySelector('#whatsapp').value,
             radiusKm: el.querySelector('#radiusKm').value, hours: el.querySelector('#hours').value, mobileService: el.querySelector('#mobileService').checked, emergency: el.querySelector('#emergency').checked,
@@ -283,6 +291,23 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
   const DAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
   const naira = (n) => '₦' + Number(n || 0).toLocaleString();
   const hr = (x) => { const h = Math.floor(x), m = Math.round((x - h) * 60); return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'); };
+  /** A food, drinks or grocery business at a glance: pause switch, today's numbers, open orders, what sells, and its money. */
+  const bizBlock = (B) => {
+    const busy = B.busyUntil ? new Date(String(B.busyUntil).replace(' ', 'T') + 'Z').toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null;
+    const top = B.best.length ? Math.max(...B.best.map((x) => x.qty)) : 1;
+    const ST = { requested: 'New, answer it', accepted: 'Accepted', enroute: 'On the way', arrived: 'Arrived' };
+    return `<div class="card stack" style="padding:14px;gap:10px;${busy ? 'border-color:var(--orange);background:var(--orange-tint)' : ''}"><div class="row" style="gap:10px"><div class="grow"><div style="font-size:15px;font-weight:800">${busy ? 'New orders paused until ' + busy : 'Kitchen too busy?'}</div><div class="small muted">${busy ? 'Customers see you are busy and can order again after that.' : 'Pause new orders for a while without switching off.'}</div></div></div>
+        <div class="row" style="gap:6px;flex-wrap:wrap">${busy ? `<button class="btn btn-sm btn-primary" data-busy="0" style="width:auto">Take orders again</button>` : [[30, '30 min'], [60, '1 hour'], [120, '2 hours']].map(([m, l]) => `<button class="chip" data-busy="${m}">Pause ${l}</button>`).join('')}</div></div>
+      <div class="biz-kpis">${[['Orders today', B.today.orders], ['Sales today', naira(B.today.sales)], ['Orders this week', B.week.orders], ['Sales this week', naira(B.week.sales)]].map(([l, v]) => `<div class="biz-kpi"><b>${v}</b><span>${l}</span></div>`).join('')}</div>
+      ${B.open.length ? `<div class="section" style="margin:0">OPEN ORDERS</div><div class="card list">${B.open.map((o) => `<a class="item" href="#/jobs/${o.id}"><div class="grow"><div class="t">${h(o.customer)} · ${naira(o.total)}${o.paid ? ' <span class="tag green" style="font-size:10px">Paid</span>' : ''}</div><div class="s">${h(ST[o.status] || o.status)} · ${h(o.what)}</div></div>${icon('chevron-right')}</a>`).join('')}</div>` : '<div class="small muted">No open orders right now.</div>'}
+      ${B.best.length ? `<div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Best sellers, last 30 days</div>${B.best.map((x) => `<div class="stack" style="gap:4px"><div class="row small"><span class="grow">${h(x.name)}</span><strong>${x.qty} sold · ${naira(x.sales)}</strong></div><div class="biz-bar"><i style="width:${Math.max(6, Math.round(x.qty / top * 100))}%"></i></div></div>`).join('')}</div>` : ''}
+      <div class="card stack" style="padding:14px;gap:8px"><div class="h-sm">Your money from app payments</div>
+        <div class="money-row"><span class="muted">Held until customers have their orders</span><strong>${naira(B.money.held)}</strong></div>
+        <div class="money-row"><span class="muted">Released, on its way to you</span><strong>${naira(B.money.owed)}</strong></div>
+        <div class="money-row"><span class="muted">Sent to your bank, last 30 days</span><strong>${naira(B.money.sentMonth)}</strong></div>
+        <a class="btn btn-sm ${B.bank ? 'btn-outline' : 'btn-primary'}" href="#/payout">${icon('building')} ${B.bank ? 'Paid into ' + h(B.bank) + ' · change' : 'Add the bank account Buja pays into'}</a></div>
+      ${B.listing ? `<a class="card row" href="#/ask/place/${B.listing.id}" style="padding:12px 14px;gap:10px">${icon('location-dot')}<span class="grow small">Your listing on Ask: <strong>${h(B.listing.name)}</strong></span>${icon('chevron-right')}</a>` : `<a class="card row" href="#/ask/places" style="padding:12px 14px;gap:10px">${icon('building-circle-check')}<span class="grow small">Already on the Ask map? Find your place and tap <strong>Claim this place</strong>, so customers who find it there can order from you.</span>${icon('chevron-right')}</a>`}`;
+  };
   route('/artisans/dashboard', { auth: true, tabs: 'Me' }, async () => {
     const d = await api.artisanDashboard();
     if (!d.artisan) return `${topbar('Mechanic dashboard', '/me')}<div class="placeholder" style="padding:60px 20px"><div class="mi card">${icon('wrench')}</div><div class="h-md">You are not registered as a mechanic yet</div><div class="small muted">Five minutes: your name, a face photo and your workshop pin.</div><a class="btn btn-primary" href="#/artisans/register?trade=mechanic" style="width:auto">Register my trade</a></div>`;
@@ -298,7 +323,8 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           <div class="small muted">${a.available ? (a.onDuty ? (a.orderable ? 'Your phone rings when someone orders. Keep Buja open.' : 'Your phone rings when a breakdown is near. Keep Buja open.') : 'You will be alerted again when your hours start.') : 'No alerts until you switch on.'}</div></div>
           <button class="switch ${a.available ? 'on' : ''}" id="onoff" role="switch" aria-checked="${a.available}" aria-label="Taking jobs" style="flex-shrink:0"><span></span></button></div></div>
       ${a.orderable ? `<a class="card row" href="#/artisans/menu" style="padding:14px;gap:12px;border-color:${a.menuCount ? 'var(--line)' : 'var(--orange)'}"><span style="width:44px;height:44px;border-radius:14px;background:var(--orange-tint);color:var(--orange-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon('receipt')}</span><span class="grow"><span style="display:block;font-size:16px;font-weight:800">${a.menuCount ? 'Your menu' : 'Add your menu'}</span><span class="small muted">${a.menuCount ? a.menuCount + ' item' + (a.menuCount === 1 ? '' : 's') + ' · delivery ' + (a.deliveryFee ? naira(a.deliveryFee) : 'included') : 'Customers order straight from it and pay on delivery.'}</span></span>${icon('chevron-right')}</a>` : ''}
-      <div class="kpis">${[['Jobs this week', d.week.jobs], ['Earned this week', naira(d.week.earned)], ['Done this month', d.month.done], ['Earned this month', naira(d.month.earned)]].map(([l, v]) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join('')}</div>
+      ${d.business ? bizBlock(d.business) : ''}
+      <div class="kpis"${d.business ? ' style="display:none"' : ''}>${[['Jobs this week', d.week.jobs], ['Earned this week', naira(d.week.earned)], ['Done this month', d.month.done], ['Earned this month', naira(d.month.earned)]].map(([l, v]) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join('')}</div>
       <div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">How you are doing</div>
         ${[['Answer rate', R.offered >= 3 ? pct(R.responseRate) : 'New', R.offered >= 3 ? `${R.answered} of ${R.offered} alerts answered in 60 days` : 'Shows after your first few alerts', R.offered < 3 || R.responseRate >= 0.7],
            ['Rating', R.ratings ? '★ ' + Number(R.stars).toFixed(1) : 'New', R.ratings ? R.ratings + ' customer review' + (R.ratings === 1 ? '' : 's') : 'Finish a job and ask for a rating', !R.ratings || R.stars >= 4],
@@ -317,6 +343,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       const tg = el.querySelector('#onoff'); if (!tg) return;
       tg.addEventListener('click', async () => { tg.disabled = true; const on = !tg.classList.contains('on'); tg.classList.toggle('on', on); try { await api.artisanSchedule({ available: on, schedule: readHours() }); toast(on ? 'You are taking jobs' : 'Switched off'); location.reload(); } catch (err) { tg.disabled = false; failed(el, err); } });
       const readHours = () => { if (el.querySelector('#anytime').checked) return null; const s = {}; el.querySelectorAll('[data-day]').forEach((c) => { if (!c.checked) return; const k = c.dataset.day; const f = el.querySelector(`[data-from="${k}"]`).value.split(':'), t = el.querySelector(`[data-to="${k}"]`).value.split(':'); s[k] = [+f[0] + (+f[1] || 0) / 60, +t[0] + (+t[1] || 0) / 60]; }); return Object.keys(s).length ? s : null; };
+      el.querySelectorAll('[data-busy]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.setBusy(+b.dataset.busy); toast(r.busyUntil ? 'New orders paused' : 'Taking orders again'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } }));
       el.querySelector('#anytime').addEventListener('change', (e) => { const box = el.querySelector('#hours'); box.style.opacity = e.target.checked ? .45 : 1; box.style.pointerEvents = e.target.checked ? 'none' : ''; });
       el.querySelector('#savehours').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { await api.artisanSchedule({ schedule: readHours() }); toast('Hours saved'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } });
       el.querySelector('#share').addEventListener('click', async () => { const d = await api.artisanDashboard(); const t = `${d.artisan.name}, ${d.artisan.trade.toLowerCase()} on Buja. See my reviews and call me: ${d.artisan.profileUrl}`; if (navigator.share) navigator.share({ title: d.artisan.name, text: t }).catch(() => {}); else { try { await navigator.clipboard.writeText(t); toast('Copied'); } catch { toast(d.artisan.profileUrl, 5000); } } });
@@ -410,6 +437,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       let job; try { job = (await api.serviceJob(id)).job; } catch (err) { sheet.body.innerHTML = `<div class="small" style="color:#D92D20;padding:10px 0">${h((err && err.message) || 'Could not load this job')}</div>`; return; }
       const map = await createMap(box, { center: [job.place.lng, job.place.lat], zoom: 14 });
       if (!map) box.innerHTML = `<div class="placeholder" style="height:100%;padding-top:90px"><div class="small muted">Map unavailable on this phone. Status updates below still work.</div></div>`;
+      if (new URLSearchParams(location.hash.split('?')[1] || '').get('paid') === '1') toast('Payment received. Your order has been sent to ' + job.other.name + '.', 5000);
       else {
         const rc = document.createElement('button'); rc.className = 'bm-fab bm-locate'; rc.style.cssText = 'top:calc(70px + var(--safe-t,0px));display:none'; rc.setAttribute('aria-label', 'Follow again'); rc.innerHTML = icon('location-crosshairs'); screen.appendChild(rc);
         map.raw.on('dragstart', () => { follow = false; rc.style.display = ''; });
@@ -480,7 +508,29 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       const itemsBlock = (j) => { const N = (n) => '₦' + Number(n || 0).toLocaleString(); const note = (String(j.problem || '').split('. Note: ')[1] || '').trim();
         return `<div class="card stack" style="padding:12px 14px;gap:8px"><div class="small muted" style="font-weight:700">${j.role === 'artisan' ? 'THE ORDER' : 'YOUR ORDER'}</div><div class="ord-lines">${j.items.map((i) => `<div class="row" style="gap:10px"><span class="ord-qty">${i.qty}×</span><span class="grow">${h(i.name)}</span><span>${N(i.price * i.qty)}</span></div>`).join('')}</div>
           ${note ? `<div class="small" style="color:var(--ink-2)"><strong>Note:</strong> ${h(note)}</div>` : ''}
-          <div class="ord-sum"><div class="row small"><span class="grow muted">Items</span><span>${N(j.subtotal)}</span></div><div class="row small"><span class="grow muted">Delivery</span><span>${j.deliveryFee ? N(j.deliveryFee) : 'Included'}</span></div><div class="row" style="font-weight:900;font-size:17px"><span class="grow">Total${j.role === 'artisan' ? ' to collect' : ' to pay on delivery'}</span><span>${N((j.subtotal || 0) + (j.deliveryFee || 0))}</span></div></div></div>`; };
+          <div class="ord-sum"><div class="row small"><span class="grow muted">Items</span><span>${N(j.subtotal)}</span></div><div class="row small"><span class="grow muted">Delivery</span><span>${j.deliveryFee ? N(j.deliveryFee) : 'Included'}</span></div>${j.payMode === 'online' && j.pay && j.role === 'customer' && j.pay.fee ? `<div class="row small"><span class="grow muted">Buyer protection</span><span>${N(j.pay.fee)}</span></div>` : ''}<div class="row" style="font-weight:900;font-size:17px"><span class="grow">${j.payMode === 'online' ? (j.role === 'artisan' ? 'Paid in the app, for you' : 'Paid in the app') : 'Total' + (j.role === 'artisan' ? ' to collect' : ' to pay on delivery')}</span><span>${N((j.subtotal || 0) + (j.deliveryFee || 0) + (j.payMode === 'online' && j.pay && j.role === 'customer' ? (j.pay.fee || 0) : 0))}</span></div></div></div>`; };
+      /** Paid in the app: where the money is, in plain words, and what the customer can do about it. */
+      const payBlock = (j) => {
+        const P = j.pay; if (!P || j.payMode !== 'online') return '';
+        const N = (n) => '₦' + Number(n || 0).toLocaleString(); const when = (iso) => iso ? new Date(String(iso).replace(' ', 'T') + 'Z').toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+        const owed = (P.subtotal || 0) + (P.deliveryFee || 0);
+        const tone = P.status === 'refunded' ? 'var(--surface)' : P.status === 'released' ? 'var(--green-tint)' : P.status === 'disputed' ? 'var(--orange-tint)' : 'var(--green-tint)';
+        let msg = '', acts = '';
+        if (j.role === 'customer') {
+          if (P.status === 'paid') { msg = j.status === 'done' ? `You paid ${N(P.total)}. Buja pays them ${P.releaseAt ? 'on ' + when(P.releaseAt) : 'soon'} unless you report a problem.` : `You paid ${N(P.total)}. Buja is holding it until you have your order, and refunds you in full if they cannot take it.`;
+            if (['arrived', 'done'].includes(j.status)) acts = `<div class="row" style="gap:8px"><button class="btn btn-sm btn-primary grow" data-act="received">${icon('circle-check')} I have my order</button><button class="btn btn-sm btn-outline" id="payproblem" style="width:auto">Report a problem</button></div>`;
+            else if (j.status === 'enroute') acts = `<button class="linkbtn" id="payproblem">Report a problem</button>`; }
+          else if (P.status === 'released') msg = `Paid to ${h(j.other.name)}. Thank you.`;
+          else if (P.status === 'refunded') msg = `Refunded ${N(P.total)}. ${h(P.note || '')} Paystack returns it to how you paid, usually within 5 working days.`;
+          else if (P.status === 'disputed') msg = 'You reported a problem. Buja is holding the money while we check, and will contact you both.';
+        } else {
+          if (P.status === 'paid') msg = `The customer paid in the app. Buja holds ${N(owed)} for you and pays it ${j.status === 'done' ? (P.releaseAt ? 'on ' + when(P.releaseAt) + ', or sooner when they confirm' : 'soon') : 'once they have the order'}. Do not collect cash.`;
+          else if (P.status === 'released') msg = P.payout === 'sent' ? `${N(owed)} has been sent to your bank.` : `${N(owed)} is yours. ${P.payout === 'queued' ? 'Add your bank account in the business dashboard so Buja can send it.' : 'It is on its way to your bank.'}`;
+          else if (P.status === 'refunded') msg = `The customer was refunded: ${h(P.note || '')}`;
+          else if (P.status === 'disputed') msg = `The customer reported a problem: "${h(P.note || '')}". Buja is checking and will contact you.`;
+        }
+        return `<div class="card stack" style="padding:12px 14px;gap:8px;background:${tone};border:none"><div class="row" style="gap:8px;align-items:flex-start">${icon('shield-halved')}<div class="small grow" style="line-height:1.5">${msg}</div></div>${acts}</div>`;
+      };
       /** Ordered, accepted, preparing, on the way, delivered: where an order is, at a glance. */
       const tracker = (j) => {
         if (!isOrder(j) || ['declined', 'cancelled', 'expired'].includes(j.status)) return '';
@@ -525,7 +575,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           else if (j.status === 'arrived') body = isOrder(j) ? `<div class="small muted">Handed over${j.items && j.items.length ? ' and collected ' + naira((j.subtotal || 0) + (j.deliveryFee || 0)) : ''}?</div><button class="btn btn-primary" data-act="done">${icon('circle-check')} Delivered</button>` : `<div class="small muted">When the work is finished:</div><button class="btn btn-primary" data-act="done">${icon('circle-check')} Job done</button>`;
           else body = `<div class="small muted">${j.status === 'done' ? 'Well done. Their rating will show on your profile.' : 'This job is closed.'}</div>`;
         }
-        sheet.body.innerHTML = `<div class="stack" style="gap:14px;padding-top:4px">${tracker(j)}${who}${j.items && j.items.length ? itemsBlock(j) : j.role === 'customer' || j.status !== 'requested' ? `<div class="small" style="color:var(--ink-2)"><strong>${isOrder(j) ? (j.role === 'artisan' ? 'The order' : 'Your order') : h(j.tradeLabel)}:</strong> ${h(j.problem)}</div>` : ''}${priceBlock(j)}${body}</div>`;
+        sheet.body.innerHTML = `<div class="stack" style="gap:14px;padding-top:4px">${tracker(j)}${who}${j.items && j.items.length ? itemsBlock(j) : j.role === 'customer' || j.status !== 'requested' ? `<div class="small" style="color:var(--ink-2)"><strong>${isOrder(j) ? (j.role === 'artisan' ? 'The order' : 'Your order') : h(j.tradeLabel)}:</strong> ${h(j.problem)}</div>` : ''}${priceBlock(j)}${payBlock(j)}${body}</div>`;
         sheet.body.querySelectorAll('[data-prep]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.jobAct(id, 'prepare', { minutes: +b.dataset.prep }); toast('Your customer can see it will be ready in ' + b.dataset.prep + ' min'); render(r.job); } catch (err) { busy(b, false); failed(el, err); } }));
         sheet.body.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
           const a = b.dataset.act; if ((a === 'cancel' || a === 'decline') && !confirm(a === 'cancel' ? 'Cancel this job?' : 'Decline this job?')) return;
@@ -535,6 +585,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
         }));
         sheet.body.querySelector('[data-start]')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); const p = await here(10000); try { const r = await api.jobAct(id, 'start', p || {}); startSharing(); draw(r.job); render(r.job); } catch (err) { busy(b, false); failed(el, err); } });
         bindPrice();
+        sheet.body.querySelector('#payproblem')?.addEventListener('click', async (e) => { const note = prompt('What went wrong with the order? Buja holds the payment while we check.'); if (!note) return; const b = e.currentTarget; busy(b, true); try { const r = await api.jobAct(id, 'problem', { note }); toast('Reported. Buja will contact you both.'); render(r.job); } catch (err) { busy(b, false); failed(el, err); } });
         sheet.body.querySelector('[data-rate]')?.addEventListener('click', () => rateForm());
         sheet.body.querySelector('[data-icall]')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.startCall(j.threadId, 'audio'); go('/rtc/' + r.call.room); } catch (err) { busy(b, false); failed(el, err); } });   // in-app call, no phone numbers
         sheet.body.querySelector('[data-save]')?.addEventListener('click', async (e) => { const b = e.currentTarget; try { const r = await api.saveArtisan(+b.dataset.save); b.innerHTML = r.saved ? icon('circle-check') + ' Saved to My mechanics' : icon('bookmark') + ' Save to My mechanics'; toast(r.saved ? 'Saved. Find them on the mechanic map next time.' : 'Removed'); } catch (err) { failed(el, err); } });
