@@ -86,7 +86,9 @@ const PAINT_NAMES = { green: 'Amaka green', red: 'Tunde red', yellow: 'Ngozi yel
 const UPGRADE = { engine: (l) => ({ topMul: 1 + 0.03 * l }), accel: (l) => ({ accMul: 1 + 0.08 * l }), handling: (l) => ({ turnMul: 1 + 0.05 * l, offBonus: l }), boost: (l) => ({ boostMul: 1 + 0.12 * l }), stability: (l) => ({ stab: l }) };
 const myDriver = () => { try { const d = localStorage.getItem('buja_kart_driver'); return DRIVERS[d] ? d : 'green'; } catch { return 'green'; } };
 const TEX = '/assets/kart/';
-const MUSIC_LEVEL = 0.3;   // the soundtrack under the engine
+// Music volume, 0 to 100, set by the player (menu and pause screen). 35 is the old fixed level; 100 is about three times louder.
+const musicVol = () => { try { const v = parseInt(localStorage.getItem('buja_kart_music_vol'), 10); return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 35; } catch { return 35; } };
+const musicGain = (v) => (v / 100) * 0.9;
 // where each looping recording repeats (seconds): the files carry a little of the loop either side so the join is seamless on every browser
 const SFX_LOOPS = {"eng-idle":[0.12,4.07],"eng-low":[0.12,6.07],"eng-high":[0.12,5.47],"eng-electric":[0.12,2.5811],"skid":[0.12,1.32],"track":[0.12,13.62]};
 /** What the shop sells. Prices live on the server; these are the names and blurbs. */
@@ -141,6 +143,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       <div class="card row" style="padding:12px 14px;gap:10px"><div class="grow"><div style="font-weight:700">Graphics</div><div class="small muted">Auto picks what your phone can run smoothly</div></div><select class="input" id="gfx" style="width:auto;height:40px">${['auto', 'low', 'medium', 'high'].map((g) => `<option value="${g}" ${((() => { try { return localStorage.getItem('buja_kart_gfx'); } catch { return null; } })() || 'auto') === g ? 'selected' : ''}>${g[0].toUpperCase() + g.slice(1)}</option>`).join('')}</select></div>
       <div class="card stack" style="padding:12px 14px;gap:10px">
         ${[['buja_kart_orient', 'Screen', [['portrait', 'Upright'], ['landscape', 'Sideways']], 'portrait'], ['buja_kart_steer', 'Steering', [['buttons', 'Buttons'], ['tilt', 'Tilt the phone']], 'buttons'], ['buja_kart_hand', 'Steering side', [['l', 'Left thumb'], ['r', 'Right thumb']], 'l'], ['buja_kart_gas', 'Accelerate', [['pedal', 'GAS button'], ['auto', 'Automatic']], 'pedal'], ['buja_kart_sfx', 'Sound effects', [['1', 'On'], ['0', 'Off']], '1'], ['buja_kart_music', 'Music', [['1', 'On'], ['0', 'Off']], '1']].map(([key, label, opts, def]) => { const cur = (() => { try { return localStorage.getItem(key) || def; } catch { return def; } })(); return `<div class="row" style="gap:10px"><div class="grow" style="font-weight:600">${label}</div><select class="input" data-set="${key}" style="width:auto;height:38px">${opts.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`; }).join('')}
+        <label class="kart-vol"><span>Music volume</span><input type="range" min="0" max="100" step="5" value="${musicVol()}" id="menuvol"><b id="menuvoln">${musicVol()}%</b></label>
       </div>
       <div class="small muted" style="line-height:1.5">The circuit follows real central Abuja streets (Independence Avenue, Herbert Macaulay Way, Sani Abacha Way, Tafawa Balewa Way), compressed for a raceable lap. Road data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, ODbL. Engine and drive-by sounds recorded by alex_jauk and kontraa.</div>
       <div class="small muted" style="line-height:1.5">The expressway routes are laid out after Kubwa Expressway (Zuba to the Central Area), the Umaru Musa Yar'Adua Expressway (Airport Road, past the City Gate and the National Stadium) and Aminu Kano Crescent in Wuse 2, compressed into raceable loops. Unlock them by racing. Race music: "Besieged Castle" by ED Music Productions.</div>
@@ -160,6 +163,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       el.querySelectorAll('[data-track]').forEach((b) => b.addEventListener('click', () => { if (locked(b.dataset.track)) { toast('Locked: ' + ROUTES[b.dataset.track].need.map((n) => n.label + ' (' + Math.min(n.have, n.want) + '/' + n.want + ')').join(', ')); return; } try { localStorage.setItem('buja_kart_track', b.dataset.track); } catch {} go('/kart'); location.reload(); }));
       el.querySelectorAll('[data-driver]').forEach((b) => b.addEventListener('click', () => { try { localStorage.setItem('buja_kart_driver', b.dataset.driver); } catch {} el.querySelectorAll('[data-driver]').forEach((x) => x.classList.toggle('on', x === b)); toast(DRIVERS[b.dataset.driver].name + ' is ready'); }));
       el.querySelector('#gfx')?.addEventListener('change', (e) => { try { localStorage.setItem('buja_kart_gfx', e.target.value); } catch {} toast('Graphics: ' + e.target.value); });
+      const mvol = el.querySelector('#menuvol'); if (mvol) mvol.addEventListener('input', () => { try { localStorage.setItem('buja_kart_music_vol', mvol.value); if (+mvol.value > 0) localStorage.setItem('buja_kart_music', '1'); } catch {} el.querySelector('#menuvoln').textContent = mvol.value + '%'; const sel = el.querySelector('[data-set="buja_kart_music"]'); if (sel && +mvol.value > 0) sel.value = '1'; });
       el.querySelectorAll('[data-set]').forEach((s) => s.addEventListener('change', (e) => { try { localStorage.setItem(s.dataset.set, e.target.value); } catch {} }));
       el.querySelector('#newroom').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.kartNewRoom({ track: myTrack() }); go('/kart/room/' + r.code); } catch (err) { busy(b, false); failed(el, err); } });
       el.querySelector('#joinroom').addEventListener('click', () => { const c = el.querySelector('#code').value.trim().toUpperCase(); if (c.length === 5) go('/kart/room/' + c); else toast('Room codes have 5 letters'); });
@@ -1011,6 +1015,7 @@ class Race {
             <button class="kart-tg ${this.audio.sfxOn ? 'on' : ''}" data-p="sfx">🔊 Sound</button><button class="kart-tg ${this.audio.musicOn ? 'on' : ''}" data-p="music">🎵 Music</button>
             <button class="kart-tg ${L ? 'on' : ''}" data-p="rotate">⟲ Landscape</button><button class="kart-tg ${this.steerMode === 'tilt' ? 'on' : ''}" data-p="tilt">📱 Tilt to steer</button>
           </div>
+          <label class="kart-vol"><span>🎵 Music volume</span><input type="range" min="0" max="100" step="5" value="${musicVol()}" id="mvol"><b id="mvoln">${musicVol()}%</b></label>
           <button class="btn btn-ghost" data-p="quit">Leave the race</button></div></div>`;
       box.classList.add('on');
       box.querySelectorAll('[data-p]').forEach((b) => b.addEventListener('click', async () => {
@@ -1023,6 +1028,8 @@ class Race {
         else if (a === 'rotate') { const on = !b.classList.contains('on'); b.classList.toggle('on', on); await this.setLandscape(on); }
         else if (a === 'tilt') { const on = this.steerMode !== 'tilt'; const ok = await this.enableTilt(on); b.classList.toggle('on', ok && on); }
       }));
+      const mv = box.querySelector('#mvol');
+      if (mv) mv.addEventListener('input', () => { this.audio.wake(); this.audio.setMusicVol(+mv.value); box.querySelector('#mvoln').textContent = mv.value + '%'; const mt = box.querySelector('[data-p="music"]'); if (mt) mt.classList.toggle('on', this.audio.musicOn); });
     } else {
       box.classList.remove('on'); box.innerHTML = '';
       if (this.paused) { const gap = performance.now() - this._pausedAt; this.paused = false; if (this.t0) this.t0 += gap; if (this.lapStart) this.lapStart += gap; if (this.countFrom) this.countFrom += gap; this.clock.getDelta(); this.bots.forEach((b) => { if (b.finished) b.finished += 0; }); }
@@ -1306,7 +1313,7 @@ class KartAudio {
         const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; const c = this.ctx = new AC();
         this.master = c.createGain(); this.master.gain.value = 0.9; this.master.connect(c.destination);
         this.sfx = c.createGain(); this.sfx.gain.value = this.sfxOn ? 1 : 0; this.sfx.connect(this.master);
-        this.mus = c.createGain(); this.mus.gain.value = this.musicOn ? MUSIC_LEVEL : 0; this.mus.connect(this.master);
+        this.mus = c.createGain(); this.mus.gain.value = this.musicOn ? musicGain(musicVol()) : 0; this.mus.connect(this.master);
         const nb = c.createBuffer(1, c.sampleRate, c.sampleRate), d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; this.noiseBuf = nb;
         // engine: two detuned oscillators through a low-pass filter that opens with revs
         this.eng = c.createGain(); this.eng.gain.value = 0; this.engF = c.createBiquadFilter(); this.engF.type = 'lowpass'; this.engF.frequency.value = 500; this.engF.Q.value = 3;
@@ -1393,7 +1400,13 @@ class KartAudio {
     if (this.pack === 'okada' && this.bufRev && !this.okSrc) { this.okS = this.ctx.createGain(); this.okS.gain.value = 0; this.okS.connect(this.sfx); this.okSrc = this.ctx.createBufferSource(); this.okSrc.buffer = this.bufRev; this.okSrc.loop = true; this.okSrc.loopStart = 0.85; this.okSrc.loopEnd = 1.75; this.okSrc.connect(this.okS); this.okSrc.start(0, 0.85); }
   }
   setSfx(on) { this.sfxOn = on; try { localStorage.setItem('buja_kart_sfx', on ? '1' : '0'); } catch {} if (this.sfx) this.sfx.gain.setTargetAtTime(on ? 1 : 0, this.ctx.currentTime, 0.05); }
-  setMusic(on) { this.musicOn = on; try { localStorage.setItem('buja_kart_music', on ? '1' : '0'); } catch {} if (!this.ctx) return; this.mus.gain.setTargetAtTime(on ? MUSIC_LEVEL : 0, this.ctx.currentTime, 0.1); if (on) this.startMusic(); }
+  setMusic(on) { this.musicOn = on; try { localStorage.setItem('buja_kart_music', on ? '1' : '0'); } catch {} if (!this.ctx) return; this.mus.gain.setTargetAtTime(on ? musicGain(musicVol()) : 0, this.ctx.currentTime, 0.1); if (on) this.startMusic(); }
+  /** Louder or quieter soundtrack, 0 to 100. Moving it above zero turns the music on. */
+  setMusicVol(v) {
+    v = Math.max(0, Math.min(100, Math.round(v))); try { localStorage.setItem('buja_kart_music_vol', String(v)); } catch {}
+    if (v > 0 && !this.musicOn) { this.setMusic(true); return; }
+    if (this.ctx && this.musicOn) this.mus.gain.setTargetAtTime(musicGain(v), this.ctx.currentTime, 0.05);
+  }
   /** What the kart is fitted with changes how it sounds: a bigger engine is deeper and louder, a turbo whistles, nitro roars. */
   setTune(t) { this.tune = { engine: 0, accel: 0, boost: 0, ...(t || {}) }; }
   /** The extra layers: wind, turbo, nitro roar, a real V8 voice and the crowd. All generated, nothing to download. */
