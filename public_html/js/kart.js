@@ -3,9 +3,10 @@
 import * as THREE from './vendor/three.module.min.js';
 import { Sky } from './vendor/three-sky.js';
 import { buildKart, loadEnvironment, makePost, buildSky, foliageGeometries, foliageMaterial } from './kartgfx.js';
+import { buildExpressway, buildAds, adTextures, routeLandmarks, laneLines } from './kartroads.js';
 
 let LAPS = 3;
-const ROAD_W = 16;                     // metres
+let ROAD_W = 16;                       // metres; the expressway routes are wider (set from the circuit)
 const MAX_V = 36, OFF_V = 15, BOOST_V = 46; // m/s
 let SAMPLES = 600;                    // set from the real circuit when it loads (one point every 4 m)
 const CIRCUIT_URL = '/assets/kart/abuja-circuit.json';
@@ -16,6 +17,10 @@ const TRACKS = {
 // Reversed circuits: the same streets driven the other way round
 TRACKS['abuja-r'] = { url: CIRCUIT_URL, reverse: true, name: 'City streets, reversed', blurb: 'Tafawa Balewa Way back to Independence Avenue' };
 TRACKS['gp-r'] = { url: '/assets/kart/abuja-gp.json', reverse: true, name: 'Grand Prix, reversed', blurb: 'Through the City Gate the other way, Aso Rock on your left' };
+// Expressway routes, unlocked by racing (the server decides who has them)
+TRACKS.aminu = { url: '/assets/kart/route-aminu.json', route: true, name: 'Aminu Kano Crescent', blurb: 'Wuse 2: Banex Plaza, shop rows, billboards and footbridges' };
+TRACKS.airport = { url: '/assets/kart/route-airport.json', route: true, name: 'Airport Road', blurb: 'Ten lanes past the City Gate and the National Stadium, under three flyovers' };
+TRACKS.kubwa = { url: '/assets/kart/route-kubwa.json', route: true, name: 'Kubwa Expressway', blurb: 'Zuba to the Central Area: the widest road, rail bridges, Zuma Rock behind you' };
 /** The garage's turntable: the real kart model, slowly turning, restyled as you browse. */
 function turntable(canvas, colour, look) {
   const w = canvas.clientWidth || 340, hgt = canvas.clientHeight || 200;
@@ -65,7 +70,10 @@ const GP_ROUNDS = ['abuja', 'gp', 'abuja-r', 'gp-r'];
 const GP_POINTS = [10, 7, 5, 3];
 const gpState = () => { try { return JSON.parse(sessionStorage.getItem('buja_kart_gp') || 'null'); } catch { return null; } };
 const gpSave = (s) => { try { if (s) sessionStorage.setItem('buja_kart_gp', JSON.stringify(s)); else sessionStorage.removeItem('buja_kart_gp'); } catch {} };
-const myTrack = () => { try { const t = localStorage.getItem('buja_kart_track'); return TRACKS[t] ? t : 'gp'; } catch { return 'gp'; } };
+// which expressway routes this player has unlocked, from the server (null until the garage has loaded)
+let ROUTES = null;
+const locked = (id) => !!(TRACKS[id] && TRACKS[id].route && ROUTES && ROUTES[id] && !ROUTES[id].unlocked);
+const myTrack = () => { try { const t = localStorage.getItem('buja_kart_track'); return TRACKS[t] && !locked(t) ? t : 'gp'; } catch { return 'gp'; } };
 const DRIVERS = {
   green:  { name: 'Amaka', colour: '#1E9E55', skill: 1.0 },
   red:    { name: 'Tunde', colour: '#E0342B', skill: 0.99 },
@@ -78,6 +86,7 @@ const PAINT_NAMES = { green: 'Amaka green', red: 'Tunde red', yellow: 'Ngozi yel
 const UPGRADE = { engine: (l) => ({ topMul: 1 + 0.03 * l }), accel: (l) => ({ accMul: 1 + 0.08 * l }), handling: (l) => ({ turnMul: 1 + 0.05 * l, offBonus: l }), boost: (l) => ({ boostMul: 1 + 0.12 * l }), stability: (l) => ({ stab: l }) };
 const myDriver = () => { try { const d = localStorage.getItem('buja_kart_driver'); return DRIVERS[d] ? d : 'green'; } catch { return 'green'; } };
 const TEX = '/assets/kart/';
+const MUSIC_LEVEL = 0.3;   // the soundtrack under the engine
 // where each looping recording repeats (seconds): the files carry a little of the loop either side so the join is seamless on every browser
 const SFX_LOOPS = {"eng-idle":[0.12,4.07],"eng-low":[0.12,6.07],"eng-high":[0.12,5.47],"eng-electric":[0.12,2.5811],"skid":[0.12,1.32],"track":[0.12,13.62]};
 /** What the shop sells. Prices live on the server; these are the names and blurbs. */
@@ -105,7 +114,10 @@ export function registerKart({ route, go, state, api, ui, failed }) {
 
   /* ============================== MENU ============================== */
   route('/kart', { auth: true, tabs: '' }, async () => {
+    const gar = await api.kartGarage().catch(() => null); if (gar && gar.garage && gar.garage.routes) ROUTES = gar.garage.routes;
     const b = await api.kartBoard({ span: 'week', track: myTrack() }).catch(() => ({ rows: [], me: null }));
+    const trackBtn = ([id, t]) => { const r = ROUTES && ROUTES[id]; const lk = locked(id);
+      return `<button class="kart-track ${myTrack() === id ? 'on' : ''} ${t.route ? 'kart-route' : ''} ${lk ? 'locked' : ''}" data-track="${id}"><b>${lk ? '🔒 ' : t.route ? '🛣️ ' : ''}${t.name}</b><span>${t.blurb}</span>${lk && r ? `<span class="kart-need">${r.need.map((n) => `${h(n.label)}: <b>${Math.min(n.have, n.want)}/${n.want}</b>`).join('<br>')}</span>` : ''}</button>`; };
     return `${topbar('Buja Kart', '/home', `<a class="iconbtn" href="#/kart/board" aria-label="Leaderboard">${icon('star')}</a>`)}
     <main class="pad stack" style="gap:14px">
       <div class="kart-hero kart-hero-art"><img src="/assets/kart/hero.jpg" alt="Buja Kart: racing past the City Gate, the National Mosque and Aso Rock"><div class="kart-hero-text"><div class="kart-logo">BUJA <span>KART</span></div><div>Race round Eagle Square, the National Mosque, NNPC Towers and Aso Rock.</div></div></div>
@@ -113,7 +125,9 @@ export function registerKart({ route, go, state, api, ui, failed }) {
         <div class="kart-drivers">${Object.entries(DRIVERS).map(([id, d]) => `<button class="kart-driver ${myDriver() === id ? 'on' : ''}" data-driver="${id}" style="--c:${d.colour}"><img src="/assets/kart/driver-${id}.jpg" alt=""><b>${d.name}</b></button>`).join('')}</div></div>
       ${b.me ? `<div class="card row" style="padding:12px 14px;gap:10px"><span style="font-size:22px">🏁</span><div class="grow"><div style="font-weight:700">Your best lap this week: ${fmt(b.me.best)}</div><div class="small muted">${b.me.rank ? ord(b.me.rank) + ' in Abuja this week' : 'Set a time to get on the board'}</div></div><a class="btn btn-sm btn-outline" href="#/kart/board" style="width:auto">Board</a></div>` : ''}
       <a class="card row" href="#/kart/garage" style="padding:12px 14px;gap:12px"><span style="font-size:26px">🔧</span><span class="grow"><b>Garage</b><br><span class="small muted">Upgrade your engine, acceleration, handling and boost; buy paint</span></span><span class="tag" id="coins">🪙 …</span></a>
-      <div class="kart-tracks">${Object.entries(TRACKS).map(([id, t]) => `<button class="kart-track ${myTrack() === id ? 'on' : ''}" data-track="${id}"><b>${t.name}</b><span>${t.blurb}</span></button>`).join('')}</div>
+      <div class="kart-tracks">${Object.entries(TRACKS).filter(([, t]) => !t.route).map(trackBtn).join('')}</div>
+      <div class="h-sm" style="margin:2px 2px -6px">Abuja expressways</div>
+      <div class="kart-tracks">${Object.entries(TRACKS).filter(([, t]) => t.route).map(trackBtn).join('')}</div>
       <button class="kart-btn kart-btn-gp" id="gpstart"><b>🏆 Grand Prix</b><span>Four races: city streets, the Grand Prix circuit, then both reversed. Points for every finish.</span></button>
       <button class="kart-btn kart-btn-go" data-go="/kart/play?mode=bots"><b>Race</b><span>Three Abuja drivers, item boxes: 🌶️ pepper, 🍌 banana, 🥤 zobo, ⚡ NEPA</span></button>
       <button class="kart-btn" data-go="/kart/play?mode=solo"><b>Time trial</b><span>Beat your own ghost, lap after lap</span></button>
@@ -129,6 +143,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
         ${[['buja_kart_orient', 'Screen', [['portrait', 'Upright'], ['landscape', 'Sideways']], 'portrait'], ['buja_kart_steer', 'Steering', [['buttons', 'Buttons'], ['tilt', 'Tilt the phone']], 'buttons'], ['buja_kart_hand', 'Steering side', [['l', 'Left thumb'], ['r', 'Right thumb']], 'l'], ['buja_kart_gas', 'Accelerate', [['pedal', 'GAS button'], ['auto', 'Automatic']], 'pedal'], ['buja_kart_sfx', 'Sound effects', [['1', 'On'], ['0', 'Off']], '1'], ['buja_kart_music', 'Music', [['1', 'On'], ['0', 'Off']], '1']].map(([key, label, opts, def]) => { const cur = (() => { try { return localStorage.getItem(key) || def; } catch { return def; } })(); return `<div class="row" style="gap:10px"><div class="grow" style="font-weight:600">${label}</div><select class="input" data-set="${key}" style="width:auto;height:38px">${opts.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`; }).join('')}
       </div>
       <div class="small muted" style="line-height:1.5">The circuit follows real central Abuja streets (Independence Avenue, Herbert Macaulay Way, Sani Abacha Way, Tafawa Balewa Way), compressed for a raceable lap. Road data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, ODbL. Engine and drive-by sounds recorded by alex_jauk and kontraa.</div>
+      <div class="small muted" style="line-height:1.5">The expressway routes are laid out after Kubwa Expressway (Zuba to the Central Area), the Umaru Musa Yar'Adua Expressway (Airport Road, past the City Gate and the National Stadium) and Aminu Kano Crescent in Wuse 2, compressed into raceable loops. Unlock them by racing. Race music: "Besieged Castle" by ED Music Productions.</div>
       <div class="small muted" style="line-height:1.5">Controls: your left thumb steers with ◀ ▶ (slide between them without lifting), your right thumb rests on GAS with BRAKE beside it. Holding ◀ or ▶ keeps the gas on through corners; let go of everything to coast. Short taps make small corrections; hold a turn to turn harder. Hold 🔥 while turning to drift, let go for a boost. Drive through a ? box for an item, then tap it (above GAS) to use it. Prefer steering with your right thumb? Change Steering side above. Keyboard: arrow keys, space to drift, E for the item.</div>
     </main>`;
   }, {
@@ -142,7 +157,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
         box.querySelectorAll('[data-fid]').forEach((b) => b.addEventListener('click', () => go('/kart/play?mode=solo&ghost=friend&fid=' + b.dataset.fid + '&track=' + r.track))); }).catch(() => { const box = el.querySelector('#fghosts'); if (box) box.remove(); });
       el.querySelector('#gpstart')?.addEventListener('click', () => { gpSave({ round: 0, pts: {} }); go('/kart/play?mode=gp&track=' + GP_ROUNDS[0]); });
       api.kartGarage().then((r) => { const c = el.querySelector('#coins'); if (c) c.textContent = '🪙 ' + r.garage.coins; }).catch(() => {});
-      el.querySelectorAll('[data-track]').forEach((b) => b.addEventListener('click', () => { try { localStorage.setItem('buja_kart_track', b.dataset.track); } catch {} go('/kart'); location.reload(); }));
+      el.querySelectorAll('[data-track]').forEach((b) => b.addEventListener('click', () => { if (locked(b.dataset.track)) { toast('Locked: ' + ROUTES[b.dataset.track].need.map((n) => n.label + ' (' + Math.min(n.have, n.want) + '/' + n.want + ')').join(', ')); return; } try { localStorage.setItem('buja_kart_track', b.dataset.track); } catch {} go('/kart'); location.reload(); }));
       el.querySelectorAll('[data-driver]').forEach((b) => b.addEventListener('click', () => { try { localStorage.setItem('buja_kart_driver', b.dataset.driver); } catch {} el.querySelectorAll('[data-driver]').forEach((x) => x.classList.toggle('on', x === b)); toast(DRIVERS[b.dataset.driver].name + ' is ready'); }));
       el.querySelector('#gfx')?.addEventListener('change', (e) => { try { localStorage.setItem('buja_kart_gfx', e.target.value); } catch {} toast('Graphics: ' + e.target.value); });
       el.querySelectorAll('[data-set]').forEach((s) => s.addEventListener('change', (e) => { try { localStorage.setItem(s.dataset.set, e.target.value); } catch {} }));
@@ -348,10 +363,15 @@ class Race {
     if (T !== 'low') { const sh = this.sun.shadow; sh.mapSize.set(T === 'high' ? 2048 : 1024, T === 'high' ? 2048 : 1024); sh.camera.left = sh.camera.bottom = -70; sh.camera.right = sh.camera.top = 70; sh.camera.near = 50; sh.camera.far = 700; sh.bias = -0.0004; sh.normalBias = 0.6; this.sun.castShadow = true; }
     this.scene.add(this.sun, this.sun.target);
     this.tex = await loadTextures(this.renderer, T);
+    if (this.garage && this.garage.routes) ROUTES = this.garage.routes;
+    if (this.mode !== 'room' && locked(this.trackId)) { this.toast(TRACKS[this.trackId].name + ' is locked: racing the Grand Prix circuit'); this.trackId = 'gp'; }
     const T0 = TRACKS[this.trackId || 'gp']; this.circuit = await (await fetch(T0.url)).json(); if (T0.reverse) this.circuit = reverseCircuit(this.circuit);
-    SAMPLES = this.circuit.lap.length; LAPS = this.circuit.laps || 3;
+    SAMPLES = this.circuit.lap.length; LAPS = this.circuit.laps || 3; ROAD_W = this.circuit.roadW || 16; this.speedMul = this.circuit.speed || 1;
     this.el.querySelector('#lap').textContent = `LAP 1/${LAPS}`;
-    this.buildTrack(); this.buildWorld(); this.buildLandmarks(); this.buildBarriers(); this.buildCityGate(); if (this.circuit.id === 'gp') this.buildGrandPrix();
+    try { this.adTex = await adTextures(); this.adStrips = this.adTex.strips; } catch { this.adTex = null; }
+    this.buildTrack(); if (this.circuit.twin) buildExpressway(this, { mergeGeos, rockGeometry, foliageGeometries, foliageMaterial, flagTexture });
+    this.buildWorld(); this.buildLandmarks(); this.buildBarriers(); if (!this.circuit.noGate) this.buildCityGate(); if (this.circuit.id === 'gp') this.buildGrandPrix();
+    try { await buildAds(this, { roadW: ROAD_W, twin: !!this.circuit.twin, clearOfTrack: (x, z, r) => this.clearOfTrack(x, z, r) }); } catch (e) { console.warn('ads', e); }
     this.bakeStatic();   // fuse everything that never moves into one object per material: far fewer draw calls
     this.fx = new KartFX(this.scene, this.tier);
     this.items = this.mode === 'bots' || this.mode === 'gp'; if (this.items) this.buildItemBoxes();
@@ -421,24 +441,26 @@ class Race {
     };
     this.ribbon = ribbon;
     const asphalt = new THREE.MeshStandardMaterial({ map: this.tex.asphalt, normalMap: this.tex.asphaltN, normalScale: new THREE.Vector2(0.9, 0.9), roughnessMap: this.tex.asphaltR, roughness: this.env && this.env.night ? 0.62 : 0.95, metalness: 0, envMapIntensity: 0.55 });
-    const road = new THREE.Mesh(ribbon(-ROAD_W / 2, ROAD_W / 2, 0.02), asphalt); road.receiveShadow = true; this.scene.add(road);
+    const road = new THREE.Mesh(ribbon(-ROAD_W / 2, ROAD_W / 2, 0.02), asphalt); road.receiveShadow = true; this.scene.add(road); this.roadMat = asphalt;
+    const XW = !!C.expressway, TW = !!C.twin;
     // kerbs: red and white blocks, slightly raised
     const kc = [], kp = [], ki = [];
-    for (const side of [-1, 1]) for (let i = 0; i < SAMPLES; i += 1) {
+    for (const side of TW ? [1] : [-1, 1]) for (let i = 0; i < SAMPLES; i += 1) {   // on an expressway the median has its own kerb
       const a = this.samples[i], b = this.samples[(i + 1) % SAMPLES], t = this.tangents[i], nx = -t.z, nz = t.x, o1 = side * ROAD_W / 2, o2 = side * (ROAD_W / 2 + 1.2), v = kp.length / 3;
       kp.push(a.x + nx * o1, 0.08, a.z + nz * o1, a.x + nx * o2, 0.08, a.z + nz * o2, b.x + nx * o1, 0.08, b.z + nz * o1, b.x + nx * o2, 0.08, b.z + nz * o2);
-      const c = Math.floor(i / 1) % 2 ? [0.78, 0.1, 0.1] : [0.95, 0.95, 0.95]; for (let q = 0; q < 4; q++) kc.push(...c);
+      const c = XW ? (i % 2 ? [0.62, 0.61, 0.58] : [0.72, 0.71, 0.68]) : Math.floor(i / 1) % 2 ? [0.78, 0.1, 0.1] : [0.95, 0.95, 0.95]; for (let q = 0; q < 4; q++) kc.push(...c);   // concrete kerbs on the expressways
       ki.push(...(side > 0 ? [v, v + 1, v + 2, v + 1, v + 3, v + 2] : [v, v + 2, v + 1, v + 1, v + 2, v + 3]));
     }
     const kg = new THREE.BufferGeometry(); kg.setAttribute('position', new THREE.Float32BufferAttribute(kp, 3)); kg.setAttribute('color', new THREE.Float32BufferAttribute(kc, 3)); kg.setIndex(ki); kg.computeVertexNormals();
     this.scene.add(new THREE.Mesh(kg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 })));
     // pavements beyond the kerbs, then the city begins
     const pave = new THREE.MeshStandardMaterial({ map: this.tex.pave, normalMap: this.tex.paveN, roughness: 0.9, envMapIntensity: 0.5 });
-    for (const [a, b] of [[ROAD_W / 2 + 1.2, ROAD_W / 2 + 6], [-ROAD_W / 2 - 6, -ROAD_W / 2 - 1.2]]) { const m = new THREE.Mesh(ribbon(a, b, 0.12), pave); m.receiveShadow = true; this.scene.add(m); }
+    for (const [a, b] of TW ? [[ROAD_W / 2 + 1.2, ROAD_W / 2 + 4]] : [[ROAD_W / 2 + 1.2, ROAD_W / 2 + 6], [-ROAD_W / 2 - 6, -ROAD_W / 2 - 1.2]]) { const m = new THREE.Mesh(ribbon(a, b, 0.12), pave); m.receiveShadow = true; this.scene.add(m); }
     // painted lines: a dashed centre line and solid edge lines, as separate crisp quads
     const lp = [], li = [];
     const quad = (a, b, off, w) => { const t = a.clone().sub(b).normalize(), nx = -t.z, nz = t.x, v = lp.length / 3; for (const p of [a, b]) lp.push(p.x + nx * (off - w), 0.05, p.z + nz * (off - w), p.x + nx * (off + w), 0.05, p.z + nz * (off + w)); li.push(v, v + 2, v + 1, v + 1, v + 2, v + 3); };
-    for (let i = 0; i < SAMPLES; i++) { const a = this.samples[i], b = this.samples[(i + 1) % SAMPLES]; quad(a, b, ROAD_W / 2 - 0.6, 0.12); quad(a, b, -ROAD_W / 2 + 0.6, 0.12); if (i % 3 === 0) quad(a, this.samples[(i + 2) % SAMPLES], 0, 0.14); }
+    if (!C.lanes) for (let i = 0; i < SAMPLES; i++) { const a = this.samples[i], b = this.samples[(i + 1) % SAMPLES]; quad(a, b, ROAD_W / 2 - 0.6, 0.12); quad(a, b, -ROAD_W / 2 + 0.6, 0.12); if (i % 3 === 0) quad(a, this.samples[(i + 2) % SAMPLES], 0, 0.14); }
+    else { laneLines(this, 0, ROAD_W, C.lanes); lp.push(0, 0, 0, 0, 0, 0, 0, 0, 0); li.push(0, 1, 2); }   // lanes: three across, dashed between
     const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3)); lg.setIndex(li); lg.computeVertexNormals();
     this.scene.add(new THREE.Mesh(lg, new THREE.MeshStandardMaterial({ color: '#F2F2EC', roughness: 0.5 })));
     // start/finish: chequered strip and a gantry (the Grand Prix circuit has its own, with lights)
@@ -460,7 +482,7 @@ class Race {
     // the real streets around the circuit: not driveable, but they make the city grid read correctly
     const ctxMat = new THREE.MeshStandardMaterial({ map: this.tex.asphalt, roughness: 0.92, color: '#DDDDDD' });
     const geos = [];
-    for (const c of C.context) {
+    for (const c of C.context || []) {
       if (c.p.length < 2) continue;
       const pts = c.p.map(([x, z]) => new THREE.Vector3(x, 0, z)); const tans = pts.map((p, i) => (pts[Math.min(i + 1, pts.length - 1)].clone().sub(pts[Math.max(i - 1, 0)])).normalize());
       // skip stretches that run under the circuit itself
@@ -469,6 +491,8 @@ class Race {
     }
     if (geos.length) { const merged = mergeGeos(geos); const m = new THREE.Mesh(merged, ctxMat); m.receiveShadow = true; this.scene.add(m); }
   }
+  /** No part of the loop (or the opposite carriageway) within r of x, z. */
+  clearOfTrack(x, z, r) { for (let i = 0; i < SAMPLES; i += 3) { const p = this.samples[i]; if ((p.x - x) ** 2 + (p.z - z) ** 2 < r * r) return false; const q = this.twinPts && this.twinPts[i]; if (q && (q.x - x) ** 2 + (q.z - z) ** 2 < r * r) return false; } return true; }
   placeAlong(obj, s, offset, face = true) { const i = ((Math.round(s) % SAMPLES) + SAMPLES) % SAMPLES; const p = this.samples[i], t = this.tangents[i]; obj.position.set(p.x - t.z * offset, 0, p.z + t.x * offset); if (face) obj.rotation.y = Math.atan2(t.x, t.z); }
   nearest(x, z, hint = null) {
     let best = -1, bd = Infinity; const scan = (from, to) => { for (let k = from; k <= to; k++) { const i = ((k % SAMPLES) + SAMPLES) % SAMPLES; const p = this.samples[i]; const d = (p.x - x) ** 2 + (p.z - z) ** 2; if (d < bd) { bd = d; best = i; } } };
@@ -481,9 +505,10 @@ class Race {
   buildWorld() {
     const T = this.tier;
     const gt = this.tex.grass; gt.repeat.set(380, 380); if (this.tex.grassN) this.tex.grassN.repeat.set(380, 380);
-    const ground = new THREE.Mesh(new THREE.CircleGeometry(3200, 48), new THREE.MeshStandardMaterial({ map: gt, normalMap: this.tex.grassN, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 1, envMapIntensity: 0.45 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; this.scene.add(ground);
-    const clearOfTrack = (x, z, r) => { for (let i = 0; i < SAMPLES; i += 3) { const p = this.samples[i]; if ((p.x - x) ** 2 + (p.z - z) ** 2 < r * r) return false; } return true; };
-    const CLEAR = { assembly: 135, mosque: 105, eagle: 90, christian: 80, nnpc: 75, cbn: 70, tower: 60, millennium: 70 }; // each landmark's own space
+    // a subdivided plane a little below the road: one huge fan of triangles loses depth precision on some phones and shows through the road
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(6400, 6400, 40, 40), new THREE.MeshStandardMaterial({ map: gt, normalMap: this.tex.grassN, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 1, envMapIntensity: 0.45 })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.04; ground.receiveShadow = true; this.scene.add(ground);
+    const clearOfTrack = (x, z, r) => this.clearOfTrack(x, z, r); const TW = !!this.circuit.twin;
+    const CLEAR = { assembly: 135, mosque: 105, eagle: 90, christian: 80, nnpc: 75, cbn: 70, tower: 60, millennium: 70, stadium: 150, citygate: 55, banex: 70, wuse: 70, airport: 170 }; // each landmark's own space
     const inNoBuild = (x, z) => (this.circuit.noBuild || []).some(([cx, cz, r]) => (x - cx) ** 2 + (z - cz) ** 2 < r * r);
     const nearLandmark = (x, z) => inNoBuild(x, z) || this.circuit.landmarks.some((l) => l.id !== 'aso' && (l.x - x) ** 2 + (l.z - z) ** 2 < (CLEAR[l.id] || 85) ** 2);
     // Buildings: one instanced mesh, facades from a texture sheet, floors and bays repeating to each building's real size.
@@ -531,7 +556,7 @@ class Race {
     const trunkM = new THREE.MeshStandardMaterial({ color: '#8C7A5E', roughness: 0.9, map: this.tex.rock }), palmF = foliageMaterial('palm'), leafF = foliageMaterial('leaves'); const leafM = palmF.m, neemM = leafF.m;
     const pt = new THREE.InstancedMesh(palmTrunk, trunkM, TN), pf = new THREE.InstancedMesh(frond, leafM, TN), nt = new THREE.InstancedMesh(neemTrunk, trunkM, TN), nc = new THREE.InstancedMesh(neem, neemM, TN);
     let np = 0, nn = 0; const col = new THREE.Color();
-    for (let s = 0; s < SAMPLES; s += 3) for (const side of [-1, 1]) {
+    for (let s = 0; s < SAMPLES; s += 3) for (const side of TW ? [1] : [-1, 1]) {   // the median has its own trees
       const p = this.samples[s], t = this.tangents[s], off = side * (ROAD_W / 2 + 8.5), x = p.x - t.z * off, z = p.z + t.x * off;
       if (!clearOfTrack(x, z, ROAD_W / 2 + 7.5) || inNoBuild(x, z)) continue;
       const sc = 0.85 + Math.random() * 0.35; m4.compose(new THREE.Vector3(x, 0, z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * 6), new THREE.Vector3(sc, sc, sc));
@@ -542,7 +567,7 @@ class Race {
     const pole = new THREE.CylinderGeometry(0.12, 0.16, 9, 6); pole.translate(0, 4.5, 0); const arm = new THREE.BoxGeometry(0.12, 0.12, 2.6); arm.translate(0, 9, 1.2); const lamp = new THREE.BoxGeometry(0.5, 0.18, 0.9); lamp.translate(0, 8.9, 2.4);
     const lampG = mergeGeos([pole, arm, lamp]); const LN = Math.floor(SAMPLES / 8) + 2;
     const lm = new THREE.InstancedMesh(lampG, new THREE.MeshStandardMaterial({ color: '#5A5F66', roughness: 0.45, metalness: 0.7 }), LN); let nl = 0;
-    for (let s = 0; s < SAMPLES && nl < LN; s += 8) { const side = (s / 8) % 2 ? 1 : -1; const p = this.samples[s], t = this.tangents[s], off = side * (ROAD_W / 2 + 3); const x = p.x - t.z * off, z = p.z + t.x * off; if (!clearOfTrack(x, z, ROAD_W / 2 + 2)) continue; m4.compose(new THREE.Vector3(x, 0, z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(t.x, t.z) + (side > 0 ? Math.PI / 2 : -Math.PI / 2)), new THREE.Vector3(1, 1, 1)); lm.setMatrixAt(nl++, m4); }
+    for (let s = 0; s < SAMPLES && nl < LN && !TW; s += 8) { const side = (s / 8) % 2 ? 1 : -1; const p = this.samples[s], t = this.tangents[s], off = side * (ROAD_W / 2 + 3); const x = p.x - t.z * off, z = p.z + t.x * off; if (!clearOfTrack(x, z, ROAD_W / 2 + 2)) continue; m4.compose(new THREE.Vector3(x, 0, z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(t.x, t.z) + (side > 0 ? Math.PI / 2 : -Math.PI / 2)), new THREE.Vector3(1, 1, 1)); lm.setMatrixAt(nl++, m4); }
     if (this.env && this.env.night && nl) { // glowing lamp heads, one draw call
       const glow = new THREE.InstancedMesh(new THREE.SphereGeometry(0.42, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color('#FFE2A0').multiplyScalar(9), toneMapped: false }), nl), mm = new THREE.Matrix4(), v = new THREE.Vector3();
       const pc = document.createElement('canvas'); pc.width = pc.height = 128; const px = pc.getContext('2d'); const pg = px.createRadialGradient(64, 64, 0, 64, 64, 64); pg.addColorStop(0, 'rgba(255,214,150,.55)'); pg.addColorStop(0.5, 'rgba(255,196,120,.18)'); pg.addColorStop(1, 'rgba(255,180,100,0)'); px.fillStyle = pg; px.fillRect(0, 0, 128, 128);
@@ -552,8 +577,8 @@ class Race {
     }
     lm.count = nl; lm.castShadow = T === 'high'; this.scene.add(lm);
     // Zuma Rock on the western horizon
-    const zg = rockGeometry(3, 1.25, 11); const zuma = new THREE.Mesh(zg, new THREE.MeshStandardMaterial({ map: this.tex.rock, normalMap: this.tex.rockN, normalScale: new THREE.Vector2(1.4, 1.4), roughness: 0.95, color: '#B8A690' })); zuma.scale.set(260, 230, 210); zuma.position.set(-2400, -8, -700); this.scene.add(zuma);
-    this.addLabel('Zuma Rock', -2400, 330, -700, 2.4);
+    const zg = rockGeometry(3, 1.25, 11); const zuma = new THREE.Mesh(zg, new THREE.MeshStandardMaterial({ map: this.tex.rock, normalMap: this.tex.rockN, normalScale: new THREE.Vector2(1.4, 1.4), roughness: 0.95, color: '#B8A690' })); zuma.scale.set(260, 230, 210); const [zx, zz] = this.circuit.zuma || [-2400, -700]; zuma.position.set(zx, -8, zz); this.scene.add(zuma);
+    this.addLabel('Zuma Rock', zx, 330, zz, 2.4);
   }
 
   /* ------------------------------ Abuja's landmarks ------------------------------ */
@@ -605,13 +630,14 @@ class Race {
         const pod = new THREE.Mesh(lathe([[1, 0], [9, 2], [10, 5], [8, 8], [1, 9]], 32), glass); pod.position.y = 118; pod.castShadow = true; g.add(pod); g.add(box(26, 5, 26, stone)); return g; },
       aso: () => { const m = new THREE.Mesh(rockGeometry(4, 0.82, 5), new THREE.MeshStandardMaterial({ map: this.tex.rock, normalMap: this.tex.rockN, normalScale: new THREE.Vector2(1.4, 1.4), roughness: 0.95, color: '#C4B3A0' })); m.scale.set(330, 300, 260); m.castShadow = false; const g = new THREE.Group(); g.add(m); return g; },
     };
+    Object.assign(make, routeLandmarks(this, { mergeGeos, flagTexture }));
     this.landmarkAt = [];
     for (const l of this.circuit.landmarks) {
       if (!make[l.id]) continue;
       const g = make[l.id](); g.position.set(l.x, 0, l.z);
       const t = this.tangents[l.s]; g.rotation.y = Math.atan2(t.x, t.z);
       this.scene.add(g); this.landmarkAt.push({ s: l.s, name: l.name });
-      const top = { aso: 290, tower: 185, cbn: 108, nnpc: 90, christian: 82, assembly: 60, mosque: 64, eagle: 26, millennium: 16 }[l.id] || 60;
+      const top = { aso: 290, tower: 185, cbn: 108, nnpc: 90, christian: 82, assembly: 60, mosque: 64, eagle: 26, millennium: 16, stadium: 48, citygate: 36, banex: 38, wuse: 22, airport: 66 }[l.id] || 60;
       this.addLabel(l.name, l.x, top, l.z, l.id === 'aso' ? 2.2 : 1);
     }
   }
@@ -690,11 +716,11 @@ class Race {
   drive(k, dt, steer, brake, drift, isAI = false, gas = true) {
     const on = this.nearest(k.position.x, k.position.z, k.idx); k.idx = on.i;
     const off = Math.abs(on.lateral) > ROAD_W / 2 + 1.2;
-    let top = off ? OFF_V + (k.offBonus || 0) : MAX_V * (isAI ? k.skill : 1) * (k.topMul || 1); if (k.boost > 0) { top = BOOST_V * (k.topMul || 1); k.boost -= dt; }
+    const sm = this.speedMul || 1; let top = off ? OFF_V + (k.offBonus || 0) : MAX_V * sm * (isAI ? k.skill : 1) * (k.topMul || 1); if (k.boost > 0) { top = BOOST_V * sm * (k.topMul || 1); k.boost -= dt; }
     if (k.slow > 0) { k.slow -= dt; top *= 0.6; k.boost = 0; }
     if (k.spin > 0) { k.spin -= dt; steer = 0; drift = false; top = Math.min(top, 8); }
-    const accel = brake ? -28 : !gas ? (k.v > 0 ? -5 : 0) : (k.v < top ? 13 * (k.accMul || 1) : -9);   // off the gas: the kart coasts down
-    k.v = Math.max(0, Math.min(k.boost > 0 ? BOOST_V : top + 2, k.v + accel * dt));
+    const accel = brake ? -28 : !gas ? (k.v > 0 ? -5 : 0) : (k.v < top ? 13 * sm * (k.accMul || 1) : -9);   // off the gas: the kart coasts down
+    k.v = Math.max(0, Math.min(k.boost > 0 ? BOOST_V * sm : top + 2, k.v + accel * dt));
     if (isAI) {
       const grip = drift && Math.abs(steer) > 0 ? 1.55 : 1;
       const turn = steer * grip * (0.9 + 0.8 * Math.min(1, k.v / 18)) * dt * (k.v > 1 ? 1 : k.v);
@@ -718,7 +744,8 @@ class Race {
     if (!isAI) { if (drift && Math.abs(steer) > 0 && k.v > 14) k.drift = Math.min(2.2, k.drift + dt); else if (k.drift > 0.55) { k.boost = Math.min(1.6, k.drift * 0.7) * (k.boostMul || 1); k.drift = 0; this.buzz(20); this._drifts = (this._drifts || 0) + 1; } else k.drift = 0; }
     k.position.x += Math.sin(k.h) * k.v * dt; k.position.z += Math.cos(k.h) * k.v * dt;
     // walls: slide along instead of stopping dead
-    if (Math.abs(on.lateral) > ROAD_W / 2 + 9) { const t = this.tangents[on.i], back = Math.sign(on.lateral) * (Math.abs(on.lateral) - (ROAD_W / 2 + 9)); k.position.x += t.z * back; k.position.z -= t.x * back; if (!isAI && k.v > 8 && !k._hit) { this.audio.bump(); this.shake = 0.35 * (1 - (k.stab || 0) * 0.12); this.buzz(30); } k._hit = true; k.v *= 0.9 + (k.stab || 0) * 0.012; } else k._hit = false;
+    const wall = on.lateral < 0 && this.circuit.twin ? ROAD_W / 2 - 0.7 : ROAD_W / 2 + 9;   // the median kerb stops you on an expressway
+    if (Math.abs(on.lateral) > wall) { const t = this.tangents[on.i], back = Math.sign(on.lateral) * (Math.abs(on.lateral) - wall); k.position.x += t.z * back; k.position.z -= t.x * back; if (!isAI && k.v > 8 && !k._hit) { this.audio.bump(); this.shake = 0.35 * (1 - (k.stab || 0) * 0.12); this.buzz(30); } k._hit = true; k.v *= 0.9 + (k.stab || 0) * 0.012; } else k._hit = false;
     if (this.pads.some((p) => Math.abs(p - on.i) < 4) && Math.abs(on.lateral) < 3) { if (!isAI && k.boost <= 0) this.audio.boost(); k.boost = Math.max(k.boost, 1.1 * (k.boostMul || 1)); }
     // lean into turns, dip under braking, front wheels steer
     const lean = -steer * Math.min(1, k.v / 22) * (drift ? 0.11 : 0.07); k.lean += (lean - k.lean) * 0.15;
@@ -810,6 +837,8 @@ class Race {
       this._rival = rival;
     }
     this.flagWave(now);
+    if (this.adTick) this.adTick(now);
+    if (this.trafficTick) this.trafficTick(dt);
     this.chase(dt);
     if (this.skyFx) this.skyFx.update(dt);
     if (this.crowdT) this.crowdT.value = now / 1000;
@@ -875,6 +904,7 @@ class Race {
       <div class="kart-big">${this.mode === 'solo' ? 'Race complete' : this.ord(place) + ' place'}</div>
       <div class="kart-row"><span>Race</span><b>${this.fmt(raceMs)}</b></div><div class="kart-row"><span>Best lap</span><b>${this.fmt(this.bestLap)}</b></div>
       ${saved ? `<div class="kart-row"><span>Abuja ranking, all time</span><b>${this.ord(saved.rank)}</b></div>${saved.personalBest ? '<div class="kart-pb">New personal best!</div>' : `<div class="kart-sub">Your best: ${this.fmt(saved.previousBest)}</div>`}` : ''}
+      ${saved && saved.routesUnlocked && saved.routesUnlocked.length ? saved.routesUnlocked.map((o) => `<div class="kart-pb">🛣️ Unlocked: ${this.h(o.name)}</div>`).join('') : ''}
       ${saved && saved.coinsEarned ? `<div class="kart-coins">+${saved.coinsEarned} 🪙 <span>${saved.coins} in the garage</span></div>` : ''}
       ${saved && saved.achievements && saved.achievements.length ? `<div class="kart-ach-new">${saved.achievements.map((a) => `<div>🏆 <b>${this.h(a.title)}</b><span>+${a.coins}</span></div>`).join('')}</div>` : ''}
       ${this._lowered ? '<div class="kart-sub">That race ran a little choppy, so Auto will use lower graphics next time.</div>' : ''}
@@ -916,7 +946,7 @@ class Race {
     this.boxes = []; this.boxMesh = new THREE.InstancedMesh(geo, mat, 16); this.boxMesh.castShadow = this.tier !== 'low'; this.scene.add(this.boxMesh);
     for (const at of [0.17, 0.42, 0.66, 0.9]) {
       const s = Math.floor(at * SAMPLES);
-      for (const lane of [-5.2, -1.75, 1.75, 5.2]) { const m = new THREE.Object3D(); this.placeAlong(m, s, lane); m.position.y = 1.3; m.visible = true; this.boxes.push({ m, back: 0 }); }
+      for (const lane of [-5.2, -1.75, 1.75, 5.2].map((l) => l * ROAD_W / 16)) { const m = new THREE.Object3D(); this.placeAlong(m, s, lane); m.position.y = 1.3; m.visible = true; this.boxes.push({ m, back: 0 }); }
     }
     this.bananas = [];
     this.ITEMS = {
@@ -1121,12 +1151,12 @@ class Race {
   }
   /** Guard rails where the track edge stops you: red and white Armco panels, one draw call. */
   buildBarriers() {
-    const pos = [], col = [], idx = []; const off = ROAD_W / 2 + 9.4;
-    for (const side of [-1, 1]) for (let i = 0; i < SAMPLES; i++) {
+    const pos = [], col = [], idx = []; const off = ROAD_W / 2 + 9.4; const XW = !!this.circuit.expressway;
+    for (const side of this.circuit.twin ? [1] : [-1, 1]) for (let i = 0; i < SAMPLES; i++) {
       const a = this.samples[i], b = this.samples[(i + 1) % SAMPLES], t = this.tangents[i], nx = -t.z * side * off, nz = t.x * side * off, v = pos.length / 3;
       if (this.nearest(a.x + nx, a.z + nz).dist < off - 3) continue;   // where another part of the track comes close, no rail across it
       pos.push(a.x + nx, 0.35, a.z + nz, a.x + nx, 1.15, a.z + nz, b.x + nx, 0.35, b.z + nz, b.x + nx, 1.15, b.z + nz);
-      const c = Math.floor(i / 2) % 2 ? [0.8, 0.12, 0.12] : [0.93, 0.93, 0.93]; for (let q = 0; q < 4; q++) col.push(...c);
+      const c = XW ? [0.5, 0.51, 0.52] : Math.floor(i / 2) % 2 ? [0.8, 0.12, 0.12] : [0.93, 0.93, 0.93]; for (let q = 0; q < 4; q++) col.push(...c);   // galvanised rail on the expressways
       idx.push(...(side > 0 ? [v, v + 1, v + 2, v + 1, v + 3, v + 2] : [v, v + 2, v + 1, v + 1, v + 2, v + 3]));
     }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals();
@@ -1276,7 +1306,7 @@ class KartAudio {
         const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; const c = this.ctx = new AC();
         this.master = c.createGain(); this.master.gain.value = 0.9; this.master.connect(c.destination);
         this.sfx = c.createGain(); this.sfx.gain.value = this.sfxOn ? 1 : 0; this.sfx.connect(this.master);
-        this.mus = c.createGain(); this.mus.gain.value = this.musicOn ? 0.22 : 0; this.mus.connect(this.master);
+        this.mus = c.createGain(); this.mus.gain.value = this.musicOn ? MUSIC_LEVEL : 0; this.mus.connect(this.master);
         const nb = c.createBuffer(1, c.sampleRate, c.sampleRate), d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; this.noiseBuf = nb;
         // engine: two detuned oscillators through a low-pass filter that opens with revs
         this.eng = c.createGain(); this.eng.gain.value = 0; this.engF = c.createBiquadFilter(); this.engF.type = 'lowpass'; this.engF.frequency.value = 500; this.engF.Q.value = 3;
@@ -1363,7 +1393,7 @@ class KartAudio {
     if (this.pack === 'okada' && this.bufRev && !this.okSrc) { this.okS = this.ctx.createGain(); this.okS.gain.value = 0; this.okS.connect(this.sfx); this.okSrc = this.ctx.createBufferSource(); this.okSrc.buffer = this.bufRev; this.okSrc.loop = true; this.okSrc.loopStart = 0.85; this.okSrc.loopEnd = 1.75; this.okSrc.connect(this.okS); this.okSrc.start(0, 0.85); }
   }
   setSfx(on) { this.sfxOn = on; try { localStorage.setItem('buja_kart_sfx', on ? '1' : '0'); } catch {} if (this.sfx) this.sfx.gain.setTargetAtTime(on ? 1 : 0, this.ctx.currentTime, 0.05); }
-  setMusic(on) { this.musicOn = on; try { localStorage.setItem('buja_kart_music', on ? '1' : '0'); } catch {} if (!this.ctx) return; this.mus.gain.setTargetAtTime(on ? 0.22 : 0, this.ctx.currentTime, 0.1); if (on) this.startMusic(); }
+  setMusic(on) { this.musicOn = on; try { localStorage.setItem('buja_kart_music', on ? '1' : '0'); } catch {} if (!this.ctx) return; this.mus.gain.setTargetAtTime(on ? MUSIC_LEVEL : 0, this.ctx.currentTime, 0.1); if (on) this.startMusic(); }
   /** What the kart is fitted with changes how it sounds: a bigger engine is deeper and louder, a turbo whistles, nitro roars. */
   setTune(t) { this.tune = { engine: 0, accel: 0, boost: 0, ...(t || {}) }; }
   /** The extra layers: wind, turbo, nitro roar, a real V8 voice and the crowd. All generated, nothing to download. */
@@ -1468,8 +1498,20 @@ class KartAudio {
   overtake(up) { this.tone(up ? 660 : 330, 0.16, 'triangle', 0.15); this.tone(up ? 990 : 262, 0.2, 'triangle', 0.15, 0.1); }
   finish(win) { const n = win ? [523, 659, 784, 1047, 784, 1047] : [392, 494, 587, 784]; n.forEach((f, i) => this.tone(f, 0.34, 'triangle', 0.22, i * 0.14)); this.tone(win ? 1047 : 784, 1.2, 'sine', 0.12, n.length * 0.14); }
   click() { this.tone(1200, 0.05, 'square', 0.05); }
-  /** A light groove to race to: kick, clap, shaker, a talking-drum bend and a bass line, scheduled ahead of time. */
+  /** The race soundtrack (music-race.mp3), looped. Decoded once and kept for the next race. If it cannot load,
+   *  the generated groove below plays instead. */
   startMusic() {
+    if (!this.ctx || this.lite || this._musicSrc || this._musicLoading) return; const c = this.ctx;
+    const play = (buf) => { if (this.ctx !== c || this._musicSrc) return; const src = c.createBufferSource(); src.buffer = buf; src.loop = true; src.connect(this.mus); src.start(c.currentTime + 0.05); this._musicSrc = src; };
+    if (KartAudio.musicBuf) return play(KartAudio.musicBuf);
+    this._musicLoading = true;
+    fetch(TEX + 'music-race.mp3').then((r) => { if (!r.ok) throw new Error('music ' + r.status); return r.arrayBuffer(); })
+      .then((a) => new Promise((ok, no) => c.decodeAudioData(a, ok, no)))
+      .then((buf) => { KartAudio.musicBuf = buf; this._musicLoading = false; play(buf); })
+      .catch(() => { this._musicLoading = false; if (this.ctx === c) this.startGroove(); });
+  }
+  /** A light groove to race to: kick, clap, shaker, a talking-drum bend and a bass line, scheduled ahead of time. */
+  startGroove() {
     if (!this.ctx || this._musicT) return; const c = this.ctx, bpm = 112, step = 60 / bpm / 4; let n = 0, next = c.currentTime + 0.1;
     const bass = [55, 0, 0, 65.4, 0, 73.4, 0, 0, 55, 0, 82.4, 0, 73.4, 0, 65.4, 0];
     const tick = () => {
@@ -1487,7 +1529,7 @@ class KartAudio {
     };
     tick();
   }
-  stop() { try { this.musicOn = false; clearTimeout(this._musicT); this._musicT = null; this.ctx && this.ctx.close(); } catch {} this.ctx = null; }
+  stop() { try { this.musicOn = false; clearTimeout(this._musicT); this._musicT = null; if (this._musicSrc) this._musicSrc.stop(); this.ctx && this.ctx.close(); } catch {} this.ctx = null; this._musicSrc = null; }
 }
 
 /* ================================================================================================ */

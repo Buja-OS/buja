@@ -9,7 +9,33 @@ declare(strict_types=1);
  */
 final class KartController
 {
-    public const TRACKS = ['gp' => 'Abuja Grand Prix Circuit', 'abuja' => 'Abuja city streets', 'gp-r' => 'Grand Prix, reversed', 'abuja-r' => 'City streets, reversed'];
+    public const TRACKS = ['gp' => 'Abuja Grand Prix Circuit', 'abuja' => 'Abuja city streets', 'gp-r' => 'Grand Prix, reversed', 'abuja-r' => 'City streets, reversed',
+        'aminu' => 'Aminu Kano Crescent', 'airport' => 'Airport Road', 'kubwa' => 'Kubwa Expressway'];
+    /**
+     * The expressway routes are earned. Each rule: races finished (any track), wins against rivals, and races on
+     * another route. Players on the kart_unlimited list (femiayor@gmail.com by default) have them all.
+     */
+    public const ROUTES = [
+        'aminu'   => ['races' => 3],
+        'airport' => ['races' => 8, 'wins' => 1],
+        'kubwa'   => ['races' => 15, 'wins' => 3, 'on' => ['airport', 2]],
+    ];
+    /** Which routes this player has, and what is left to do for the others. */
+    public static function routes(int $uid, ?array $p = null): array
+    {
+        $vip = self::unlimited($uid); $p = $p ?: self::profile($uid); $out = [];
+        $onCount = function (string $track) use ($uid): int { static $memo = []; return $memo[$uid . $track] ??= (int) (Db::one('SELECT COUNT(*) AS n FROM kart_times WHERE user_id = ? AND track = ?', [$uid, $track])['n'] ?? 0); };
+        foreach (self::ROUTES as $id => $rule) {
+            $need = [];
+            if (isset($rule['races'])) $need[] = ['label' => 'Finish ' . $rule['races'] . ' races', 'have' => (int) $p['races'], 'want' => $rule['races']];
+            if (isset($rule['wins'])) $need[] = ['label' => 'Win ' . $rule['wins'] . ($rule['wins'] === 1 ? ' race' : ' races') . ' against rivals', 'have' => (int) $p['wins'], 'want' => $rule['wins']];
+            if (isset($rule['on'])) { [$t, $n] = $rule['on']; $need[] = ['label' => 'Race ' . self::TRACKS[$t] . ' ' . $n . ' times', 'have' => $vip ? $n : $onCount($t), 'want' => $n]; }
+            $done = $vip || array_reduce($need, fn($ok, $x) => $ok && $x['have'] >= $x['want'], true);
+            $out[$id] = ['unlocked' => $done, 'need' => $need, 'vip' => $vip];
+        }
+        return $out;
+    }
+    private static function routeLocked(int $uid, string $track): bool { return isset(self::ROUTES[$track]) && !self::routes($uid)[$track]['unlocked']; }
     public const MIN_LAP_MS = 20000;          // anything faster is not a real lap on this track
     public const COLOURS = ['#FF7A1A', '#1F5FBF', '#2E7D1E', '#C2185B', '#7A3E96', '#0E7C86'];
     public const STATS = ['engine' => 'Speed', 'accel' => 'Acceleration', 'handling' => 'Wheels', 'boost' => 'Nitro', 'stability' => 'Stability'];
@@ -130,7 +156,7 @@ final class KartController
         return ['coins' => $vip ? 999999 : (int) $p['coins'], 'unlimited' => $vip, 'races' => (int) $p['races'], 'wins' => (int) $p['wins'], 'maxLevel' => self::MAX_LEVEL,
             'stats' => array_map(fn($k) => ['id' => $k, 'label' => self::STATS[$k], 'level' => (int) $p[$k], 'next' => (int) $p[$k] < self::MAX_LEVEL ? ($vip ? 0 : self::COST[(int) $p[$k]]) : null], self::statKeys($p)),
             'paints' => array_map(fn($id, $price) => ['id' => $id, 'price' => $price, 'owned' => $vip || $price === 0 || in_array($id, $owned, true)], array_keys(self::PAINTS), self::PAINTS), 'paint' => $p['paint'],
-            'shop' => $shop, 'equipped' => $eq, 'shopReady' => $shopReady, 'streak' => (int) ($p['streak'] ?? 0)];
+            'shop' => $shop, 'equipped' => $eq, 'shopReady' => $shopReady, 'streak' => (int) ($p['streak'] ?? 0), 'routes' => self::routes($uid, $p)];
     }
     /** GET /kart/garage */
     public function garage(): void { $u = Auth::require(); Http::json(['garage' => self::shapeProfile(self::profile((int) $u['id']))]); }
@@ -278,7 +304,9 @@ final class KartController
         $lap = (int) ($b['lapMs'] ?? 0); $race = (int) ($b['raceMs'] ?? 0);
         if ($lap < self::MIN_LAP_MS || $lap > 600000 || $race < $lap || $race > 3600000) Http::json(['error' => 'validation', 'message' => 'That time does not look like a real race.'], 422);
         $mode = in_array($b['mode'] ?? '', ['solo', 'bots', 'room', 'gp'], true) ? $b['mode'] : 'solo';
-        $ghost = null;
+        // a locked route only counts when a friend's room took you there
+        if ($mode !== 'room' && self::routeLocked((int) $u['id'], $track)) Http::json(['error' => 'locked', 'message' => self::TRACKS[$track] . ' is not unlocked yet.'], 403);
+        $ghost = null; $routesBefore = self::routes((int) $u['id']);
         if (!empty($b['ghost']) && is_array($b['ghost']) && count($b['ghost']) <= 1200) $ghost = json_encode(array_map(fn($p) => [round((float) $p[0], 1), round((float) $p[1], 1), round((float) $p[2], 2)], array_values($b['ghost'])));
         $prev = Db::one('SELECT MIN(lap_ms) AS b FROM kart_times WHERE user_id = ? AND track = ?', [$u['id'], $track]);
         Db::run('INSERT INTO kart_times (user_id, track, lap_ms, race_ms, mode, ghost, created_at) VALUES (?,?,?,?,?,?,?)', [$u['id'], $track, $lap, $race, $mode, $ghost, Db::now()]);
@@ -314,7 +342,10 @@ final class KartController
         $fid = (int) ($stats['ghostFriend'] ?? 0);
         if ($fid && class_exists('FriendsController') && FriendsController::state($uid, $fid) === 'friends') { $fb = Db::one('SELECT MIN(lap_ms) AS b FROM kart_times WHERE user_id = ? AND track = ?', [$fid, $track]); if ($fb && $fb['b'] && $lap < (int) $fb['b']) $add(self::achieve($uid, 'ghost_beaten')); }
         $bonusCoins = array_sum(array_map(fn($a) => $a['coins'], $got));
-        Http::json(['personalBest' => $pb, 'previousBest' => $prev && $prev['b'] ? (int) $prev['b'] : null, 'rank' => $rank, 'coinsEarned' => $earned + $bonusCoins, 'daily' => $daily, 'achievements' => $got, 'coins' => (int) (Db::one('SELECT coins FROM kart_profiles WHERE user_id = ?', [$u['id']])['coins'] ?? 0)], 201);
+        $routesAfter = self::routes((int) $u['id']); $opened = [];
+        foreach ($routesAfter as $id => $r) if ($r['unlocked'] && !$routesBefore[$id]['unlocked']) $opened[] = ['id' => $id, 'name' => self::TRACKS[$id]];
+        foreach ($opened as $o) Notify::user((int) $u['id'], 'social', '🛣️ New Buja Kart route: ' . $o['name'], 'You unlocked it by racing. Pick it on the Buja Kart screen.', '/#/kart', true);
+        Http::json(['routesUnlocked' => $opened, 'personalBest' => $pb, 'previousBest' => $prev && $prev['b'] ? (int) $prev['b'] : null, 'rank' => $rank, 'coinsEarned' => $earned + $bonusCoins, 'daily' => $daily, 'achievements' => $got, 'coins' => (int) (Db::one('SELECT coins FROM kart_profiles WHERE user_id = ?', [$u['id']])['coins'] ?? 0)], 201);
     }
 
     /** POST /kart/gp { place } : a bonus for finishing all four Grand Prix races (a real Grand Prix takes 6 minutes or more) */
@@ -367,6 +398,7 @@ final class KartController
     {
         $u = Auth::require(); RateLimit::hit('kartroom', 20, 3600);
         $track = self::track((string) (Http::body()['track'] ?? 'abuja'));
+        if (self::routeLocked((int) $u['id'], $track)) Http::json(['error' => 'locked', 'message' => self::TRACKS[$track] . ' is not unlocked yet. Race more to open it.'], 403);
         for ($i = 0; $i < 10; $i++) { $code = substr(str_shuffle('ABCDEFGHJKMNPQRSTUVWXYZ23456789'), 0, 5); if (!Db::one('SELECT id FROM kart_rooms WHERE code = ?', [$code])) break; }
         Db::run('INSERT INTO kart_rooms (code, host_id, track, created_at) VALUES (?,?,?,?)', [$code, $u['id'], $track, Db::now()]);
         $r = Db::one('SELECT * FROM kart_rooms WHERE code = ?', [$code]); $this->join($r, $u);
