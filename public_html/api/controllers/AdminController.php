@@ -297,6 +297,7 @@ final class AdminController
     {
         $this->staff(); @set_time_limit(0);
         $b = Http::body(); $cat = (string) ($b['category'] ?? ''); $els = is_array($b['elements'] ?? null) ? $b['elements'] : [];
+        $source = ($b['source'] ?? '') === 'overture' ? 'overture' : 'osm';
         if (count($els) > 2000) Http::json(['error' => 'validation', 'message' => 'Send at most 2000 places at a time.'], 422);
         // only real FCT points, only the fields a map server sends
         $clean = [];
@@ -306,11 +307,11 @@ final class AdminController
             if ($lat < 8.3 || $lat > 9.7 || $lng < 6.7 || $lng > 8.0) continue;
             $type = in_array($e['type'] ?? '', ['node', 'way', 'relation'], true) ? $e['type'] : 'node';
             $tags = []; foreach ((array) ($e['tags'] ?? []) as $k => $v) if (is_string($k) && is_scalar($v) && strlen($k) <= 40) $tags[$k] = mb_substr((string) $v, 0, 300);
-            $clean[] = ['type' => $type, 'id' => (int) ($e['id'] ?? 0), 'lat' => $lat, 'lon' => $lng, 'tags' => $tags];
+            $clean[] = ['type' => $type, 'id' => $source === 'overture' ? mb_substr((string) ($e['id'] ?? ''), 0, 80) : (int) ($e['id'] ?? 0), 'lat' => $lat, 'lon' => $lng, 'tags' => $tags];
         }
         if ($cat === 'fuel') { $r = Osm::saveFuel($clean); Http::json(['result' => $r, 'total' => (int) (Db::one('SELECT COUNT(*) AS n FROM fuel_stations')['n'] ?? 0)]); }
         $q = Osm::queryFor($cat, 0); if (!$q) Http::json(['error' => 'validation', 'message' => 'Unknown kind of place.'], 422);
-        $r = Osm::saveAll($clean, $cat);
+        $r = Osm::saveAll($clean, $cat, $source);
         Http::json(['result' => $r, 'total' => (int) (Db::one('SELECT COUNT(*) AS n FROM spots WHERE active = 1')['n'] ?? 0)]);
     }
 

@@ -111,7 +111,9 @@ export function registerTrust({ route, go, state, setState, api, ui, failed }) {
 
   route('/admin/spots', { auth: true, tabs: 'Me' }, async () => {
     const g = guard(); if (g) return g; const { items } = await api.adminSpots();
-    return `${topbar('Places to verify', '/admin')}<div class="pad" style="padding-bottom:0"><div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Fill the directory from OpenStreetMap</div><div class="small muted" style="line-height:1.5">Pulls every named place of a category across the FCT. Real places, real coordinates, marked as unreviewed until somebody rates them. Run each once; running again only adds what is new.</div><button class="btn btn-primary" id="importall">Import everything</button><div class="small muted" style="margin-top:-4px">All 11 kinds of place, in four parts of the FCT each. Your phone fetches the map data itself (about 10 to 20 MB of data), so keep this screen open; it usually takes 5 to 15 minutes. Or do one kind:</div><div class="row" style="gap:6px;flex-wrap:wrap">${['food', 'lounge', 'worship', 'health', 'hotel', 'shopping', 'relax', 'nightlife', 'culture', 'kids', 'services'].map((c) => `<button class="btn btn-sm btn-outline" data-import="${c}" style="width:auto">${c}</button>`).join('')}</div><div class="small" id="importres" style="line-height:1.5;white-space:pre-line"></div><div class="row" style="gap:8px;margin-top:4px"><button class="btn btn-sm btn-ink" id="fuelimport" style="width:auto">Import fuel stations</button><span class="small muted">for the Fuel board</span></div></div></div>
+    return `${topbar('Places to verify', '/admin')}<div class="pad" style="padding-bottom:0"><div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Fill the directory from OpenStreetMap</div><div class="small muted" style="line-height:1.5">Pulls every named place of a category across the FCT. Real places, real coordinates, marked as unreviewed until somebody rates them. Run each once; running again only adds what is new.</div><button class="btn btn-primary" id="importall">Import everything</button><div class="small muted" style="margin-top:-4px">All 11 kinds of place, in four parts of the FCT each. Your phone fetches the map data itself (about 10 to 20 MB of data), so keep this screen open; it usually takes 5 to 15 minutes. Or do one kind:</div><div class="row" style="gap:6px;flex-wrap:wrap">${['food', 'lounge', 'worship', 'health', 'hotel', 'shopping', 'relax', 'nightlife', 'culture', 'kids', 'services'].map((c) => `<button class="btn btn-sm btn-outline" data-import="${c}" style="width:auto">${c}</button>`).join('')}</div><div class="small" id="importres" style="line-height:1.5;white-space:pre-line"></div><div class="row" style="gap:8px;margin-top:4px"><button class="btn btn-sm btn-ink" id="fuelimport" style="width:auto">Import fuel stations</button><span class="small muted">for the Fuel board</span></div></div>
+      <div class="card stack" style="padding:14px;gap:10px;margin-top:12px"><div class="h-sm">Add business listings from Overture Maps</div><div class="small muted" style="line-height:1.5">Overture Maps is open data built largely from business listings shared by Meta and Microsoft, so it knows many restaurants, churches, hospitals, shops and services OpenStreetMap does not. Buja keeps only places marked open, with a name and at least ${'60%'} confidence, sorts them into Buja's categories, and skips any already in Buja (same name within about 150 m). They show as "from Overture Maps", not yet reviewed. Your computer reads the data itself (roughly 20 to 60 MB), so Wi-Fi is best and the screen must stay open.</div>
+        <button class="btn btn-primary" id="ovimport">Import from Overture Maps</button><div class="small" id="ovres" style="line-height:1.5;white-space:pre-line"></div></div></div>
     <main class="pad stack" style="gap:12px">${items.length ? items.map((i) => `<div class="card stack" style="padding:14px;gap:8px" data-s="${i.id}"><div class="h-sm">${h(i.name)}</div><div class="small muted">${i.category} · ${h(i.district)}${i.area ? ' · ' + h(i.area) : ''} · added by ${h(i.addedBy || 'Buja')} · ${i.createdAt.slice(0, 10)}</div><div class="small" style="line-height:1.5">${h(i.description)}</div>${i.tags.length ? `<div class="row" style="flex-wrap:wrap;gap:6px">${i.tags.map((t) => `<span class="tag" style="background:var(--surface);color:var(--ink-2)">${h(t)}</span>`).join('')}</div>` : ''}<div class="row" style="gap:8px"><button class="btn btn-sm btn-ink" data-act="verify" style="flex:1">${icon('circle-check')} Verify</button><button class="btn btn-sm btn-outline" data-act="remove" style="flex:1">Remove</button></div></div>`).join('') : `<div class="placeholder" style="padding:50px 0"><div class="h-md">Nothing to verify</div></div>`}</main>`;
   }, { mount(el) {
       // Each kind of place is fetched in four parts of the FCT, one request each, so a busy map server never has to answer one huge query.
@@ -156,7 +158,7 @@ export function registerTrust({ route, go, state, setState, api, ui, failed }) {
             if (!got.elements.length) break;
           }
         }
-        return { line: `${cat}: ${added} new, ${seen} found${bad.length ? `. ${bad.length} of 4 parts failed` : ''}.`, bad, total };
+        return { line: `${cat}: ${seen} found on the map, ${added} new${seen - added > 0 ? `, ${seen - added} already in Buja` : ''}${bad.length ? `. ${bad.length} of 4 parts failed` : ''}.`, bad, total };
       };
       const go1 = async (btn, cats) => {
         if (running) { toast('An import is already running'); return; } running = true; busy(btn, true);
@@ -165,6 +167,34 @@ export function registerTrust({ route, go, state, setState, api, ui, failed }) {
         if (errs.length) out(log.join('\n') + '\n\nWhat the map servers said:\n' + errs.slice(0, 8).join('\n') + '\n\nRun it again later to fill the gaps; places already in are skipped.');
         busy(btn, false); running = false;
       };
+      el.querySelector('#ovimport')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget, box = el.querySelector('#ovres'); const say = (t) => { box.textContent = t; };
+        if (running) { toast('An import is already running'); return; } running = true; busy(btn, true);
+        try {
+          say('Finding the latest Overture release…');
+          const ov = await import('./overture.js');
+          const release = await ov.latestRelease();
+          say(`Reading Overture release ${release} over the FCT…`);
+          const got = await ov.readFct(release, (done, total, found) => say(`Reading map tiles: ${done} of ${total}. ${found.toLocaleString()} places so far that fit Buja's categories.`));
+          const cats = Object.keys(got.byCat).sort((a, b) => got.byCat[b].length - got.byCat[a].length);
+          const lines = []; let allNew = 0, allSeen = 0, total = null; const errs = [];
+          for (const c of cats) {
+            const list = got.byCat[c]; let added = 0, seen = 0;
+            for (let i = 0; i < list.length; i += 500) {
+              say([...lines, `${c}: saving ${Math.min(i + 500, list.length)} of ${list.length}…`].join('\n'));
+              let r = null;
+              for (let t = 0; t < 2 && !r; t++) { try { r = await api.spotsIngest(c, list.slice(i, i + 500), 'overture'); } catch (err) { if (t) errs.push(`${c}: ${(err && err.message) || 'saving failed'}`); else await new Promise((ok) => setTimeout(ok, 3000)); } }
+              if (r) { added += r.result.added || 0; seen += r.result.seen || 0; total = r.total; }
+            }
+            allNew += added; allSeen += seen;
+            lines.push(`${c}: ${list.length} listed, ${added} new${seen - added > 0 ? `, ${seen - added} already in Buja` : ''}.`);
+          }
+          say(`Overture ${release}: read ${got.tiles} map tiles.\n${lines.join('\n')}\n\n${allNew.toLocaleString()} new places added.${total != null ? ` The directory now has ${total.toLocaleString()}.` : ''}${errs.length ? '\n\nSome batches did not save:\n' + errs.slice(0, 5).join('\n') + '\nRun it again; places already in are skipped.' : ''}`);
+        } catch (err) {
+          say('Could not read Overture Maps from this computer: ' + ((err && err.message) || err) + '. Check the internet connection and try again.');
+        }
+        busy(btn, false); running = false;
+      });
       el.querySelector('#fuelimport')?.addEventListener('click', (e) => go1(e.currentTarget, ['fuel']));
       el.querySelector('#importall')?.addEventListener('click', (e) => go1(e.currentTarget, ['food', 'lounge', 'worship', 'health', 'hotel', 'shopping', 'relax', 'nightlife', 'culture', 'kids', 'services']));
       el.querySelectorAll('[data-import]').forEach((b) => b.addEventListener('click', () => go1(b, [b.dataset.import])));

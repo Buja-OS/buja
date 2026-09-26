@@ -82,17 +82,34 @@ final class Osm
         return null;
     }
 
+    /** The same place already in Buja under a slightly different name: within about 150 m, with a matching name. */
+    private static function sameNearby(string $name, float $lat, float $lng): ?array
+    {
+        $norm = fn($s) => trim(preg_replace('/\b(the|ltd|limited|nig|nigeria|abuja|fct|restaurant|hotel|hotels|and|plc|enterprise|enterprises|ventures|global|services|international|intl)\b/u', ' ', preg_replace('/[^\p{L}\p{N} ]+/u', ' ', mb_strtolower($name))));
+        $n = preg_replace('/\s+/', ' ', $norm($name)); if (mb_strlen($n) < 4) return null;
+        $d = 0.0014;
+        $st = Db::pdo()->prepare('SELECT * FROM spots WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? LIMIT 60');
+        $st->execute([$lat - $d, $lat + $d, $lng - $d, $lng + $d]);
+        foreach ($st->fetchAll() as $row) {
+            $m = preg_replace('/\s+/', ' ', $norm((string) $row['name'])); if (mb_strlen($m) < 4) continue;
+            if ($m === $n || str_contains($m, $n) || str_contains($n, $m)) return $row;
+        }
+        return null;
+    }
+
     /**
      * Saves one OSM element as a place, or fills in details an older copy lacked (phone, website, photo links).
      * Returns [row, isNew] or null when it has no name or position.
      */
-    public static function save(array $e, string $category): ?array
+    public static function save(array $e, string $category, string $source = 'osm'): ?array
     {
+        $ov = $source === 'overture';
         $t = $e['tags'] ?? [];
         $name = trim((string) ($t['name'] ?? '')); if ($name === '' || mb_strlen($name) > 70) return null;
         $plat = (float) ($e['lat'] ?? $e['center']['lat'] ?? 0); $plng = (float) ($e['lon'] ?? $e['lng'] ?? $e['center']['lon'] ?? 0);
         if (!$plat || !$plng) return null;
-        $osmId = ($e['type'] ?? 'node') . '/' . ($e['id'] ?? '');
+        // Overture ids are long; a short stable fingerprint fits the same unique column
+        $osmId = $ov ? 'ov/' . substr(md5((string) ($e['id'] ?? $name)), 0, 21) : ($e['type'] ?? 'node') . '/' . ($e['id'] ?? '');
         $district = self::districtFor($plat, $plng);
         $phone = $t['phone'] ?? $t['contact:phone'] ?? null; $web = $t['website'] ?? $t['contact:website'] ?? null;
         $wd = isset($t['wikidata']) && preg_match('/^Q\d{1,12}$/', (string) $t['wikidata']) ? (string) $t['wikidata'] : null;
@@ -100,7 +117,7 @@ final class Osm
         $notable = $wd || !empty($t['wikipedia']) ? 1 : 0;
         $extra = ['subtype' => self::subtype($t), 'religion' => isset($t['religion']) ? mb_substr((string) $t['religion'], 0, 20) : null, 'phone' => $phone ? mb_substr((string) $phone, 0, 40) : null,
             'website' => $web && preg_match('#^https?://#i', (string) $web) ? mb_substr((string) $web, 0, 200) : null, 'wikidata' => $wd, 'commons' => $commons, 'notable' => $notable];
-        $existing = Db::one('SELECT * FROM spots WHERE osm_id = ? OR (name = ? AND district = ?)', [$osmId, $name, $district]);
+        $existing = Db::one('SELECT * FROM spots WHERE osm_id = ? OR (name = ? AND district = ?)', [$osmId, $name, $district]) ?: ($ov ? self::sameNearby($name, $plat, $plng) : null);
         if ($existing) {
             // fill only what is missing; never overwrite what a moderator or resident corrected
             $sets = []; $p = [];
@@ -111,9 +128,9 @@ final class Osm
         $cuisine = isset($t['cuisine']) ? str_replace([';', '_'], [', ', ' '], (string) $t['cuisine']) : null;
         $desc = trim(implode('. ', array_filter([$cuisine ? 'Serves ' . $cuisine : null, $t['addr:street'] ?? null, isset($t['denomination']) ? ucfirst(str_replace('_', ' ', (string) $t['denomination'])) : null])));
         $tags = array_values(array_unique(array_filter([$t['cuisine'] ?? null, $extra['subtype'], $t['amenity'] ?? $t['shop'] ?? $t['leisure'] ?? $t['tourism'] ?? null])));
-        $cols = ['name' => $name, 'category' => $category, 'district' => $district, 'area' => $t['addr:street'] ?? ($t['addr:suburb'] ?? null), 'tags' => json_encode($tags), 'price_level' => 2,
-            'description' => mb_substr($desc !== '' ? $desc . '. Listed on OpenStreetMap; not yet reviewed on Buja.' : 'Listed on OpenStreetMap; not yet reviewed on Buja.', 0, 400),
-            'hours' => isset($t['opening_hours']) ? mb_substr((string) $t['opening_hours'], 0, 60) : null, 'lat' => $plat, 'lng' => $plng, 'source' => 'osm', 'osm_id' => $osmId, 'active' => 1, 'created_at' => Db::now()];
+        $cols = ['name' => $name, 'category' => $category, 'district' => $district, 'area' => ($a = $t['addr:street'] ?? ($t['addr:suburb'] ?? null)) !== null ? mb_substr((string) $a, 0, 100) : null, 'tags' => json_encode($tags), 'price_level' => 2,
+            'description' => mb_substr(($desc !== '' ? $desc . '. ' : '') . ($ov ? 'Listed in Overture Maps business data; not yet reviewed on Buja.' : 'Listed on OpenStreetMap; not yet reviewed on Buja.'), 0, 400),
+            'hours' => isset($t['opening_hours']) ? mb_substr((string) $t['opening_hours'], 0, 60) : null, 'lat' => $plat, 'lng' => $plng, 'source' => $ov ? 'overture' : 'osm', 'osm_id' => $osmId, 'active' => 1, 'created_at' => Db::now()];
         try { $all = $cols + $extra; Db::run('INSERT INTO spots (' . implode(', ', array_keys($all)) . ') VALUES (' . implode(',', array_fill(0, count($all), '?')) . ')', array_values($all)); }
         catch (Throwable $ex) { Db::run('INSERT INTO spots (' . implode(', ', array_keys($cols)) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')', array_values($cols)); }   // before migration 043
         $row = Db::one('SELECT * FROM spots WHERE id = ?', [Db::lastId()]);
@@ -202,11 +219,16 @@ final class Osm
     public static function endpoints(): array { return self::ENDPOINTS; }
 
     /** Saves a batch of OSM elements; returns counts. Split out so it can be tested without a network. */
-    public static function saveAll(array $els, string $category): array
+    public static function saveAll(array $els, string $category, string $source = 'osm'): array
     {
         $added = 0; $seen = 0;
-        foreach ($els as $e) { $r = self::save($e, $category); if (!$r) continue; $seen++; if ($r[1]) $added++; }
-        return ['added' => $added, 'seen' => $seen, 'error' => null];
+        $failed = 0;
+        foreach ($els as $e) {
+            // one odd place (an over-long address, a strange character) must not stop the rest from being saved
+            try { $r = self::save($e, $category, $source); } catch (Throwable $ex) { $failed++; if ($failed <= 3) error_log('[buja osm] could not save ' . (($e['tags']['name'] ?? '?')) . ': ' . $ex->getMessage()); continue; }
+            if (!$r) continue; $seen++; if ($r[1]) $added++;
+        }
+        return ['added' => $added, 'seen' => $seen, 'error' => null, 'skipped' => $failed];
     }
 
     /** Every fuel station in the FCT, for the fuel board. */
