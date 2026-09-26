@@ -403,6 +403,7 @@ $router->post('/kart/rooms/{code}/start',    [KartController::class, 'start']);
 $router->post('/kart/rooms/{code}/finish',   [KartController::class, 'finish']);
 $router->post('/kart/rooms/{code}/again',    [KartController::class, 'again']);
 $router->post('/kart/rooms/{code}/chat',     [KartController::class, 'chat']);
+$router->post('/kart/rooms/{code}/track',    [KartController::class, 'setTrack']);
 
 // Friends
 $router->get('/friends',                     [FriendsController::class, 'index']);
@@ -416,6 +417,7 @@ $router->get('/kart/garage',                 [KartController::class, 'garage']);
 $router->post('/kart/garage/upgrade',        [KartController::class, 'upgrade']);
 $router->get('/kart/achievements',           [KartController::class, 'achievements']);
 $router->get('/kart/friend-ghosts',          [KartController::class, 'friendGhosts']);
+$router->get('/kart/friends',               [KartController::class, 'friends']);
 $router->post('/kart/perf',                  [KartController::class, 'perf']);
 $router->get('/kart/tier-hint',             [KartController::class, 'tierHint']);
 $router->get('/admin/kart-perf',            [KartController::class, 'adminPerf']);

@@ -50,7 +50,7 @@ final class KartController
     public const SHOP = [
         'design' => ['classic' => 0, 'stripes' => 300, 'naija' => 500, 'flames' => 700, 'carbon' => 900, 'neon' => 1200],
         'helmet' => ['classic' => 0, 'chevron' => 200, 'naija' => 400, 'gold' => 600, 'carbon' => 700, 'chrome' => 800],
-        'env'    => ['day' => 0, 'sunset' => 400, 'harmattan' => 600, 'night' => 800],
+        'env'    => ['day' => 0, 'sunset' => 400, 'harmattan' => 600, 'night' => 800, 'rain' => 700],
         'sound'  => ['kart' => 0, 'okada' => 300, 'electric' => 400, 'v8' => 500],
     ];
     /** Achievements: [title, how to earn it, coins]. */
@@ -67,6 +67,10 @@ final class KartController
         'collector'     => ['Collector', 'Own 5 things from the shop', 200],
         'maxed'         => ['Fully tuned', 'Max out any upgrade', 200],
         'weekly_podium' => ['On the podium', "Finish top 3 in a week's tournament", 500],
+        'stuntman'      => ['Stunt driver', 'Land 3 stunts in one race', 150],
+        'outrun'        => ['Outrun the police', 'Escape a police chase', 150],
+        'coin_rush'     => ['Coin rush', 'Pick up 40 coins in one race', 150],
+        'rain_racer'    => ['Rainy season', 'Finish a race in the rain', 100],
     ];
     public const WEEK_PRIZES = [1 => 1000, 2 => 600, 3 => 300];
     public const QUICK = ['Let\'s go!', 'Nice one', 'Wait for me', 'GG', 'Rematch?', 'Na so!'];
@@ -225,6 +229,13 @@ final class KartController
     }
 
     /** GET /kart/friend-ghosts?track= : friends who have a best lap here to race against */
+    /** GET /kart/friends : your Buja friends with a tag, to invite into a race room with one tap */
+    public function friends(): void
+    {
+        $u = Auth::require(); $ids = class_exists('FriendsController') ? array_slice(FriendsController::friendIds((int) $u['id']), 0, 40) : []; $out = [];
+        foreach ($ids as $fid) { $r = Db::one('SELECT name, tag FROM users WHERE id = ? AND deleted_at IS NULL', [$fid]); if ($r && $r['tag']) $out[] = ['id' => (int) $fid, 'name' => self::first($r['name']), 'tag' => $r['tag'], 'avatar' => Auth::picture((int) $fid)]; }
+        Http::json(['friends' => $out]);
+    }
     public function friendGhosts(): void
     {
         $u = Auth::require(); $track = self::track((string) ($_GET['track'] ?? 'gp')); $out = [];
@@ -340,6 +351,10 @@ final class KartController
         if ((int) $pr['wins'] >= 10) $add(self::achieve($uid, 'wins_10'));
         if ((int) ($pr['streak'] ?? 0) >= 7) $add(self::achieve($uid, 'streak_7'));
         if ((int) ($stats['drifts'] ?? 0) >= 10) $add(self::achieve($uid, 'drifter'));
+        if ((int) ($stats['stunts'] ?? 0) >= 3) $add(self::achieve($uid, 'stuntman'));
+        if ((int) ($stats['escaped'] ?? 0) >= 1) $add(self::achieve($uid, 'outrun'));
+        if ((int) ($b['pickups'] ?? 0) >= 40) $add(self::achieve($uid, 'coin_rush'));
+        if (!empty($stats['rain'])) $add(self::achieve($uid, 'rain_racer'));
         if ((int) ($stats['bananaHits'] ?? 0) >= 1 && $mode !== 'solo') $add(self::achieve($uid, 'banana'));
         if ($mode === 'room') $add(self::achieve($uid, 'friend_race'));
         // a friend's ghost is checked here, not taken on trust: the lap must beat that friend's real best
@@ -394,6 +409,17 @@ final class KartController
         if ($r['status'] !== 'lobby') Http::json(['error' => 'validation', 'message' => 'This race has already started. Ask for a rematch.'], 409);
         Db::run('INSERT INTO kart_players (room_id, user_id, colour, joined_at) VALUES (?,?,?,?)', [$r['id'], $u['id'], self::COLOURS[$n % count(self::COLOURS)], Db::now()]);
         $this->say($r, (int) $u['id'], '👋 joined');
+    }
+    /** POST /kart/rooms/{code}/track { track } : the host picks where the room races, before the start. */
+    public function setTrack(string $code): void
+    {
+        $u = Auth::require(); $r = $this->room($code); $t = (string) (Http::body()['track'] ?? '');
+        if ((int) $r['host_id'] !== (int) $u['id']) Http::json(['error' => 'forbidden', 'message' => 'Only the host picks the track.'], 403);
+        if ($r['status'] === 'racing') Http::json(['error' => 'validation', 'message' => 'The race has started.'], 422);
+        if (!isset(self::TRACKS[$t])) Http::json(['error' => 'validation', 'message' => 'Unknown track.'], 422);
+        if (self::routeLocked((int) $u['id'], $t)) Http::json(['error' => 'locked', 'message' => self::TRACKS[$t] . ' is not unlocked yet.'], 403);
+        if ($t !== $r['track']) { Db::run('UPDATE kart_rooms SET track = ? WHERE id = ?', [$t, $r['id']]); $this->say($r, (int) $u['id'], '🛣️ picked ' . self::TRACKS[$t]); }
+        $this->sync($code);
     }
     private function say(array $r, int $uid, string $body): void { Db::run('INSERT INTO kart_chat (room_id, user_id, body, created_at) VALUES (?,?,?,?)', [$r['id'], $uid, mb_substr($body, 0, 140), Db::now()]); }
 

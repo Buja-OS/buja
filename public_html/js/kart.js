@@ -98,13 +98,14 @@ const SFX_LOOPS = {"eng-idle":[0.12,4.07],"eng-low":[0.12,6.07],"eng-high":[0.12
 const SHOP_INFO = {
   design: { title: 'Design', items: { classic: ['Classic', 'Your colour, clean'], stripes: ['Racing stripes', 'Twin white stripes, nose to tail'], naija: ['Green-white-green', 'The flag, down the middle'], flames: ['Flames', 'Hot-rod flames on the side pods'], carbon: ['Carbon', 'Matte carbon with an orange line'], neon: ['Neon', 'Glowing trims and underglow, made for night'] } },
   helmet: { title: 'Helmet', items: { classic: ['Classic', 'Your colour'], chevron: ['Chevron', 'Your colour with a cream stripe'], naija: ['Naija', 'Green with a white stripe'], gold: ['Gold', 'Polished gold'], carbon: ['Carbon', 'Matte black, orange stripe'], chrome: ['Chrome', 'Mirror finish'] } },
-  env: { title: 'World', items: { day: ['Afternoon', 'Bright Abuja sun'], sunset: ['Sunset', 'Golden light behind Aso Rock'], harmattan: ['Harmattan', 'Dusty haze, low visibility'], night: ['Night', 'Headlights and glowing streetlamps'] } },
+  env: { title: 'World', items: { day: ['Afternoon', 'Bright Abuja sun'], sunset: ['Sunset', 'Golden light behind Aso Rock'], harmattan: ['Harmattan', 'Dusty haze, low visibility'], night: ['Night', 'Headlights and glowing streetlamps'], rain: ['Rainy season', 'Rain, thunder, wet roads and spray'] } },
   sound: { title: 'Engine sound', items: { kart: ['Kart', 'The real go-kart recording'], okada: ['Okada', 'A motorcycle rev'], electric: ['Electric', 'A smooth, rising whine'], v8: ['V8', 'A deep, rough roar'] } },
 };
 const ENVS = {
   day:       { elev: 42, azim: 205, turb: 3.2, ray: 2.4, mie: 0.004, sun: '#FFF0D8', sunI: 2.8, hemi: 0.35, fog: '#B9CFE0', near: 700, far: 3200, exp: 0.72 },
   sunset:    { elev: 8,  azim: 250, turb: 8,  ray: 2.6, mie: 0.008, sun: '#FFB06A', sunI: 3.4, hemi: 0.55, fog: '#E0A67E', near: 380, far: 2400, exp: 1.02 },
   harmattan: { elev: 30, azim: 215, turb: 12, ray: 0.7, mie: 0.012, sun: '#FFE0B0', sunI: 2.2, hemi: 0.55, fog: '#CDB48C', near: 90,  far: 950,  exp: 0.64 },
+  rain:      { elev: 34, azim: 210, turb: 16, ray: 0.8, mie: 0.02, sun: '#C8D0DA', sunI: 1.1, hemi: 0.8, fog: '#8C98A3', near: 50, far: 620, exp: 0.82, rain: true },
   night:     { elev: -4, azim: 200, turb: 2,  ray: 0.4, mie: 0.002, sun: '#9DB7FF', sunI: 0.35, hemi: 0.14, fog: '#0B1426', near: 150, far: 1300, exp: 1.0, night: true },
 };
 const BOOSTS = [0.1, 0.33, 0.52, 0.8];
@@ -256,6 +257,9 @@ export function registerKart({ route, go, state, api, ui, failed }) {
     async mount(el, { code }) {
       let d; try { d = await api.kartJoin(code); } catch (err) { el.querySelector('#lobby').innerHTML = `<div class="placeholder" style="padding:50px 0"><div class="h-md">${h((err && err.message) || 'Could not join')}</div><a class="btn btn-primary" href="#/kart" style="width:auto">Back to Buja Kart</a></div>`; return; }
       let chatAfter = 0, alive = true; const chat = [];
+      if (!ROUTES) { try { const g = await api.kartGarage(); if (g.garage && g.garage.routes) ROUTES = g.garage.routes; } catch {} }
+      let friends = []; api.kartFriends().then((x) => { friends = x.friends || []; const box = el.querySelector('#fquick'); if (box) box.innerHTML = friendChips(); }).catch(() => {});
+      const friendChips = () => friends.length ? '<div class="small muted" style="width:100%">Your friends: tap to invite</div>' + friends.slice(0, 12).map((f) => `<button class="chip" data-ftag="${h(f.tag)}">@${h(f.tag)}</button>`).join('') : '';
       const draw = () => {
         const r = d.room;
         if (r.status === 'racing') { alive = false; go('/kart/play?mode=room&code=' + r.code + '&track=' + r.track); return; }
@@ -263,7 +267,9 @@ export function registerKart({ route, go, state, api, ui, failed }) {
         el.querySelector('#lobby').innerHTML = `
           <div class="card row" style="padding:14px;gap:12px"><div class="grow"><div class="small muted">Room code</div><div style="font:900 28px ui-monospace,Menlo,monospace;letter-spacing:6px">${h(r.code)}</div></div><button class="btn btn-sm btn-outline" id="share" style="width:auto">${icon('paper-plane')} Share</button></div>
           <div class="card stack" style="padding:12px 14px;gap:8px"><div class="h-sm">Invite by Buja Tag</div>
-            <div class="row" style="gap:8px"><input class="input" id="tag" placeholder="@friend" autocapitalize="off" autocomplete="off" style="flex:1"><button class="btn btn-ink" id="inv" style="width:auto">Invite</button></div><div id="tagsug" class="row" style="gap:6px;flex-wrap:wrap"></div></div>
+            <div class="row" style="gap:8px"><input class="input" id="tag" placeholder="@friend" autocapitalize="off" autocomplete="off" style="flex:1"><button class="btn btn-ink" id="inv" style="width:auto">Invite</button></div><div id="tagsug" class="row" style="gap:6px;flex-wrap:wrap"></div><div id="fquick" class="row" style="gap:6px;flex-wrap:wrap">${friendChips()}</div></div>
+          <div class="card stack" style="padding:12px 14px;gap:8px"><div class="row" style="gap:8px"><div class="h-sm grow">Track</div><b>${h((TRACKS[r.track] || TRACKS.gp).name)}</b></div>
+            ${r.host ? `<div class="row" style="gap:6px;flex-wrap:wrap">${Object.entries(TRACKS).map(([id, t]) => `<button class="chip ${id === r.track ? 'on' : ''}" data-rt="${id}" ${locked(id) ? 'disabled style="opacity:.5"' : ''}>${locked(id) ? '🔒 ' : ''}${h(t.name)}</button>`).join('')}</div><div class="small muted">Pick any track you have unlocked. Everyone in the room races it, even friends who have not unlocked it yet.</div>` : '<div class="small muted">The host picks the track.</div>'}</div>
           <div class="section">DRIVERS (${d.players.length}/6)</div>
           <div class="card list">${d.players.map((p) => `<div class="item"><span style="width:14px;height:14px;border-radius:7px;background:${p.colour};flex-shrink:0"></span>${p.avatar ? `<img src="${h(p.avatar)}" alt="" style="width:32px;height:32px;border-radius:16px;object-fit:cover">` : avatar(p.name, 32)}<div class="grow"><div class="t">${h(p.name)}${p.me ? ' (you)' : ''}</div><div class="s">@${h(p.tag || '')}</div></div>${p.ready ? '<span class="tag green">Ready</span>' : '<span class="tag">Waiting</span>'}</div>`).join('')}</div>
           <div class="row" style="gap:8px"><button class="btn btn-outline grow" id="ready">${d.players.find((p) => p.me)?.ready ? 'Not ready' : "I'm ready"}</button>${r.host ? `<button class="btn btn-primary grow" id="start" ${d.players.length < 2 ? 'disabled' : ''}>${icon('flag-checkered')} Start race</button>` : ''}</div>
@@ -276,6 +282,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
         el.querySelector('#share').addEventListener('click', async () => { const t = `Race me on Buja Kart! Room ${r.code}: ${location.origin}/#/kart/room/${r.code}`; if (navigator.share) navigator.share({ text: t }).catch(() => {}); else { try { await navigator.clipboard.writeText(t); toast('Copied'); } catch { toast(t, 6000); } } });
         const inv = async () => { const t = el.querySelector('#tag').value.trim(); if (!t) return; try { const x = await api.kartInvite(r.code, t); toast('Invited ' + x.name); el.querySelector('#tag').value = ''; } catch (err) { failed(el, err); } };
         el.querySelector('#inv').addEventListener('click', inv);
+        el.querySelectorAll('[data-rt]').forEach((b) => b.addEventListener('click', async () => { if (b.dataset.rt === r.track) return; busy(b, true); try { d = await api.kartRoomTrack(r.code, b.dataset.rt); draw(); } catch (err) { busy(b, false); failed(el, err); } }));
         let sugT; el.querySelector('#tag').addEventListener('input', (e) => { clearTimeout(sugT); const q = e.target.value.replace('@', ''); sugT = setTimeout(async () => { if (q.length < 2) { el.querySelector('#tagsug').innerHTML = ''; return; } const { cards } = await api.tagSearch(q).catch(() => ({ cards: [] })); el.querySelector('#tagsug').innerHTML = cards.filter((c) => !c.self).map((c) => `<button class="chip" data-t="${h(c.tag)}">@${h(c.tag)} · ${h(c.person)}</button>`).join(''); el.querySelectorAll('[data-t]').forEach((b) => b.addEventListener('click', () => { el.querySelector('#tag').value = '@' + b.dataset.t; inv(); })); }, 300); });
         el.querySelector('#ready').addEventListener('click', async () => { d = await api.kartSync(r.code, { ready: !d.players.find((p) => p.me)?.ready, chatAfter }); draw(); });
         el.querySelector('#start')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { d = await api.kartStart(r.code); draw(); } catch (err) { failed(el, err); } });
@@ -291,6 +298,8 @@ export function registerKart({ route, go, state, api, ui, failed }) {
         if (!once) setTimeout(() => tick(), 2000);
       };
       draw(); setTimeout(() => tick(), 2000);
+      // one tap invites a friend (the buttons are redrawn with the room, so the listener sits on the page once)
+      el.querySelector('#lobby').addEventListener('click', async (e) => { const f = e.target.closest('[data-ftag]'); if (!f || f.disabled) return; f.disabled = true; try { const x = await api.kartInvite(d.room.code, f.dataset.ftag); toast('Invited ' + x.name); f.textContent = '✓ @' + f.dataset.ftag; } catch (err) { f.disabled = false; failed(el, err); } });
     }
   });
 
@@ -301,7 +310,7 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       <div class="kart-land" id="land"></div>
       <div class="kart-count" id="count"></div>
       <div class="kart-bubbles" id="bubbles"></div>
-      <button class="kart-quit" id="pause" aria-label="Pause">❚❚</button>
+      <button class="kart-quit" id="pause" aria-label="Pause">❚❚</button><button class="kart-quit kart-cam" id="cambtn" aria-label="Change camera">🎥</button>
       <div class="kart-lines" id="lines"></div>
       <div class="kart-splat" id="splat"></div><div class="kart-dark" id="dark"><b>NEPA took light!</b></div>
       <div class="kart-wrong" id="wrong">WRONG WAY</div>
@@ -386,8 +395,10 @@ class Race {
     this.buildTrack(); if (this.circuit.twin) buildExpressway(this, { mergeGeos, rockGeometry, foliageGeometries, foliageMaterial, flagTexture });
     this.buildWorld(); this.buildLandmarks(); this.buildBarriers(); if (!this.circuit.noGate) this.buildCityGate(); if (this.circuit.id === 'gp') this.buildGrandPrix();
     try { await buildAds(this, { roadW: ROAD_W, twin: !!this.circuit.twin, clearOfTrack: (x, z, r) => this.clearOfTrack(x, z, r) }); } catch (e) { console.warn('ads', e); }
+    if (E.rain) this.buildRain();
     try { buildLife(this, { mergeGeos, rockGeometry, flagTexture, foliageGeometries, foliageMaterial, roadW: ROAD_W, BOOST_V }); } catch (e) { console.error('life', e); }
     this.bakeStatic();   // fuse everything that never moves into one object per material: far fewer draw calls
+    if (E.rain && this.roadMat) { this.roadMat.color.multiplyScalar(0.7); if (this.roadMat.roughness != null) this.roadMat.roughness = 0.3; this.roadMat.envMapIntensity = 1.1; }   // wet tarmac: darker, and shiny where the sky reflects
     if (T === 'high') this.calmReflections(); else this.cheapMaterials(T === 'low' ? 2 : 0.3);   // Medium keeps real reflections only on metal and glass
     this.fx = new KartFX(this.scene, this.tier);
     this.items = this.mode === 'bots' || this.mode === 'gp'; if (this.items) this.buildItemBoxes();
@@ -756,6 +767,7 @@ class Race {
     this._rot = () => setTimeout(() => { this.resize(); this.el.querySelectorAll('.kctl').forEach((c) => { c.style.display = 'none'; void c.offsetHeight; c.style.display = ''; }); }, 250); window.addEventListener('orientationchange', this._rot); screen.orientation && screen.orientation.addEventListener && screen.orientation.addEventListener('change', this._rot);
     const wake = () => this.audio.wake(); this.el.addEventListener('touchstart', wake, { passive: true }); this.el.addEventListener('mousedown', wake);
     this.el.querySelector('#pause').addEventListener('click', () => this.togglePause());
+    this.el.querySelector('#cambtn').addEventListener('click', () => { this.camMode = ((this.camMode || 0) + 1) % 3; try { localStorage.setItem('buja_kart_cam', String(this.camMode)); } catch {} this.callout(['🎥 Chase camera', '🎥 High camera', '🎥 Bumper camera'][this.camMode], true); this._camSnap = true; });
     const use = (e) => { e && e.preventDefault(); if (this.phase === 'race') this.useItem(this.player); }; const ki = this.el.querySelector('#ki'); ki.addEventListener('touchstart', use, { passive: false }); ki.addEventListener('mousedown', use);
     window.addEventListener('keydown', (e) => { if (e.key === 'e' || e.key === 'E' || e.key === 'Enter') use(e); });
     this._vis = () => { if (document.hidden && this.phase === 'race' && this.mode !== 'room' && !this.paused) this.togglePause(); }; document.addEventListener('visibilitychange', this._vis);
@@ -770,7 +782,7 @@ class Race {
   drive(k, dt, steer, brake, drift, isAI = false, gas = true) {
     const on = this.nearest(k.position.x, k.position.z, k.idx); k.idx = on.i;
     const off = !k.air && Math.abs(on.lateral) > ROAD_W / 2 + 1.2;
-    const sm = this.speedMul || 1; let top = off ? OFF_V + (k.offBonus || 0) : MAX_V * sm * (isAI ? k.skill : 1) * (k.topMul || 1); if (k.boost > 0) { top = BOOST_V * sm * (k.topMul || 1); k.boost -= dt; }
+    const sm = (this.speedMul || 1) * (k.draft ? 1.07 : 1); let top = off ? OFF_V + (k.offBonus || 0) : MAX_V * sm * (isAI ? k.skill : 1) * (k.topMul || 1); if (k.boost > 0) { top = BOOST_V * sm * (k.topMul || 1); k.boost -= dt; }
     if (k.slow > 0) { k.slow -= dt; top *= 0.6; k.boost = 0; }
     if (k.held > 0) { k.held -= dt; top = 0; k.v = 0; k.boost = 0; }   // stopped by the police
     if (k.spin > 0) { k.spin -= dt; steer = 0; drift = false; top = Math.min(top, 8); }
@@ -809,10 +821,10 @@ class Race {
     if (this.fx && (isAI ? Math.random() < 0.3 : true)) {
       const back = -1.15, sx = Math.sin(k.h), cz = Math.cos(k.h), px = Math.cos(k.h), pz = -Math.sin(k.h);
       const drifting = drift && Math.abs(steer) > 0 && k.v > 12;
-      const dust = this.circuit.surface === 'dirt' && k.v > 12 && !k.air && Math.random() < (isAI ? 0.18 : 0.1);   // a light trail of red dust on the laterite
+      const wet = !!(this.env && this.env.rain), dust = (this.circuit.surface === 'dirt' || wet) && k.v > 12 && !k.air && Math.random() < (isAI ? 0.18 : 0.1);   // red dust on the laterite, spray in the rain
       if (drifting || dust || (off && k.v > 6)) for (const side of [-0.95, 0.95]) {
         const x = k.position.x + sx * back + px * side, z = k.position.z + cz * back + pz * side;
-        if (Math.random() < (drifting ? 0.8 : 0.5)) this.fx.puff(x, 0.3, z, off || dust ? [0.72, 0.5, 0.34] : [0.9, 0.9, 0.9], dust ? 1.3 : off ? 1.4 : 1.2, dust ? 0.45 : off ? 0.6 : 1.2);
+        if (Math.random() < (drifting ? 0.8 : 0.5)) this.fx.puff(x, 0.3, z, dust && wet ? [0.82, 0.86, 0.9] : off || dust ? [0.72, 0.5, 0.34] : [0.9, 0.9, 0.9], dust ? 1.3 : off ? 1.4 : 1.2, dust ? 0.45 : off ? 0.6 : 1.2);
         if (drifting && !off && !dust) this.fx.mark(x, z, k.h);
       }
       if (!isAI) { k._drifting = drifting; k._off = off; }
@@ -883,7 +895,7 @@ class Race {
       (this._wrongEl || (this._wrongEl = this.el.querySelector('#wrong'))).classList.toggle('on', !!this._wrongSince && now - this._wrongSince > 1000);
       // overtakes and being overtaken
       if (this.phase === 'race' && (this.bots.length || Object.keys(this.remotes).length)) { const place = this.placing(); if (this._place && place !== this._place && now - (this._placeAt || 0) > 900) { this.callout(place < this._place ? '▲ ' + this.ord(place) : '▼ ' + this.ord(place), place < this._place); this.audio.overtake(place < this._place); this._placeAt = now; } this._place = place; }
-      (this._linesEl || (this._linesEl = this.el.querySelector('#lines'))).classList.toggle('on', P.boost > 0);
+      (this._linesEl || (this._linesEl = this.el.querySelector('#lines'))).classList.toggle('on', P.boost > 0 || !!P.draft);
       const others = [...this.bots, ...Object.values(this.remotes).map((r) => r.kart).filter(Boolean)]; let rival = null;
       for (const o of others) {
         const dx = o.position.x - P.position.x, dz = o.position.z - P.position.z, dist = Math.hypot(dx, dz);
@@ -895,10 +907,16 @@ class Race {
         if (!rival || dist < rival.d) rival = { d: dist, pan: Math.max(-1, Math.min(1, -side / 6)), v: o.v || 0, closing: Math.max(-25, Math.min(25, closing)) };
       }
       this._rival = rival;
+      // slipstream: tuck in right behind a rival for most of a second and you pull faster, like real racing
+      let tucked = false;
+      if (this.phase === 'race') for (const o of others) { const dx = o.position.x - P.position.x, dz = o.position.z - P.position.z; const ahead = dx * Math.sin(P.h) + dz * Math.cos(P.h), side = Math.abs(dx * Math.cos(P.h) - dz * Math.sin(P.h)); if (ahead > 2.5 && ahead < 16 && side < 1.7 && P.v > 18) { tucked = true; break; } }
+      this._draftT = tucked ? (this._draftT || 0) + dt : Math.max(0, (this._draftT || 0) - dt * 2);
+      const drafting = this._draftT > 0.7; if (drafting && !P.draft) this.callout('🌀 Slipstream!', true); P.draft = drafting;
     }
     this.flagWave(now);
     if (this.adTick) this.adTick(now);
     if (this.lifeTick && (this.phase === 'race' || this.phase === 'done' || this.phase === 'count')) this.lifeTick(now, dt);
+    if (this.rainTick) this.rainTick(now, dt);
     if (this.trafficTick) this.trafficTick(dt);
     this.chase(dt);
     if (this.skyFx) this.skyFx.update(dt);
@@ -908,13 +926,41 @@ class Race {
     requestAnimationFrame(this.loop);
   }
   chase(dt) {
-    const k = this.player, back = 9.5 + k.v * 0.07, up = 4.6 + k.v * 0.03;
-    const want = new THREE.Vector3(k.position.x - Math.sin(k.h) * back, up + (k.position.y || 0) * 0.8, k.position.z - Math.cos(k.h) * back);
-    this.camera.position.lerp(want, 1 - Math.pow(0.001, dt));
+    if (this.camMode == null) { try { this.camMode = +(localStorage.getItem('buja_kart_cam') || 0) % 3; } catch { this.camMode = 0; } }
+    const k = this.player, cm = this.camMode, sx = Math.sin(k.h), cz = Math.cos(k.h), ky = k.position.y || 0;
+    if (cm === 2) {   // bumper: low on the nose, looking down the road
+      this.camera.position.set(k.position.x + sx * 1.9, 0.95 + ky, k.position.z + cz * 1.9);
+      this.camera.lookAt(k.position.x + sx * 30, 0.8 + ky, k.position.z + cz * 30);
+      const fov = 70 + Math.min(12, k.v * 0.25) + (k.boost > 0 ? 6 : 0); if (Math.abs(fov - this.camera.fov) > 0.3) { this.camera.fov += (fov - this.camera.fov) * 0.1; this.camera.updateProjectionMatrix(); }
+      if (this.sun.castShadow) { this.sun.position.copy(k.position).addScaledVector(this.sunDir, 300); this.sun.target.position.copy(k.position); }
+      this.kartLights(k); return;
+    }
+    const back = (cm === 1 ? 15 : 9.5) + k.v * 0.07, up = (cm === 1 ? 8.5 : 4.6) + k.v * 0.03;
+    const want = new THREE.Vector3(k.position.x - sx * back, up + ky * 0.8, k.position.z - cz * back);
+    if (this._camSnap) { this.camera.position.copy(want); this._camSnap = false; } else this.camera.position.lerp(want, 1 - Math.pow(0.001, dt));
     if (this.shake > 0) { this.shake = Math.max(0, this.shake - dt); const s = this.shake * 0.6; this.camera.position.x += (Math.random() - 0.5) * s; this.camera.position.y += (Math.random() - 0.5) * s; }
     if (this.sun.castShadow) { this.sun.position.copy(k.position).addScaledVector(this.sunDir, 300); this.sun.target.position.copy(k.position); } // shadows follow the kart
     this.camera.lookAt(k.position.x + Math.sin(k.h) * 12, 1.2 + (k.position.y || 0) * 0.7, k.position.z + Math.cos(k.h) * 12);
     const fov = 62 + Math.min(14, k.v * 0.3) + (k.boost > 0 ? 6 : 0); if (Math.abs(fov - this.camera.fov) > 0.3) { this.camera.fov += (fov - this.camera.fov) * 0.1; this.camera.updateProjectionMatrix(); }
+    this.kartLights(k);
+  }
+  /** Rainy season: streaks of rain round the camera, a steady hiss, and thunder now and then. */
+  buildRain() {
+    const n = this.tier === 'low' ? 350 : this.tier === 'medium' ? 700 : 1100, pos = new Float32Array(n * 6);
+    for (let i = 0; i < n; i++) { const x = (Math.random() - 0.5) * 70, y = Math.random() * 32, z = (Math.random() - 0.5) * 70; pos.set([x, y, z, x + 0.05, y + 1.1, z], i * 6); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#C9D3DC', transparent: true, opacity: 0.38, depthWrite: false })); lines.frustumCulled = false; this.scene.add(lines);
+    let hiss = null, nextBolt = performance.now() + 9000;
+    this.rainTick = (now, dt) => {
+      const p = g.attributes.position.array, fall = 24 * dt;
+      for (let i = 0; i < n; i++) { const o = i * 6; p[o + 1] -= fall; p[o + 4] -= fall; if (p[o + 1] < 0) { p[o + 1] += 32; p[o + 4] += 32; } }
+      g.attributes.position.needsUpdate = true; lines.position.set(this.camera.position.x, 0, this.camera.position.z);
+      const a = this.audio; if (!hiss && a && a.ctx && a.noiseBuf) { try { const src = a.ctx.createBufferSource(); src.buffer = a.noiseBuf; src.loop = true; const f = a.ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 1400; const gn = a.ctx.createGain(); gn.gain.value = 0.045; src.connect(f); f.connect(gn); gn.connect(a.sfx || a.master); src.start(); hiss = src; } catch {} }
+      if (now > nextBolt) { nextBolt = now + 18000 + Math.random() * 22000; const st = this.el.querySelector('#stage'); st.classList.add('kart-flash'); setTimeout(() => st.classList.remove('kart-flash'), 160); setTimeout(() => { try { this.audio.noise(2.6, 0.2, 90, 0, 'lowpass'); this.audio.noise(1.2, 0.12, 300, 0.1, 'lowpass'); } catch {} }, 900 + Math.random() * 1200); }
+    };
+  }
+  /** Nitro flames and brake lights on every kart. */
+  kartLights(k) {
     const t = performance.now() / 1000;
     for (const o of [k, ...this.bots, ...Object.values(this.remotes).map((r) => r.kart).filter(Boolean)]) {
       if (o.flames) o.flames.set(o.boost > 0 ? 1 : o.drift > 0.55 ? 0.5 : 0, !(o.boost > 0) && o.drift > 0.55, t);
@@ -958,7 +1004,7 @@ class Race {
         ${bonus && bonus.coinsEarned ? `<div class="kart-coins">+${bonus.coinsEarned} 🪙 Grand Prix bonus</div>` : ''}</div>`;
       this._gpNext = done ? null : GP_ROUNDS[st.round];
     }
-    try { this.reportPerf(); saved = await this.api.kartSaveTime({ place: this.mode === 'solo' ? 1 : place, track: this.trackId, lapMs: this.bestLap, raceMs, mode: this.mode, ghost: this.bestPath, pickups: this.life ? this.life.pickups : 0, stats: { stunts: this.life ? this.life.stunts : 0, drifts: this._drifts || 0, bananaHits: this._bananaHits || 0, ghostFriend: this.ghostWho === 'friend' ? this.ghostFriend : 0 } }); } catch {}
+    try { this.reportPerf(); saved = await this.api.kartSaveTime({ place: this.mode === 'solo' ? 1 : place, track: this.trackId, lapMs: this.bestLap, raceMs, mode: this.mode, ghost: this.bestPath, pickups: this.life ? this.life.pickups : 0, stats: { stunts: this.life ? this.life.stunts : 0, escaped: this.life ? this.life.escapes || 0 : 0, rain: this.env && this.env.rain ? 1 : 0, drifts: this._drifts || 0, bananaHits: this._bananaHits || 0, ghostFriend: this.ghostWho === 'friend' ? this.ghostFriend : 0 } }); } catch {}
     if (this.mode === 'room') { try { await this.api.kartFinish(this.code, raceMs); } catch {} }
     const r = this.el.querySelector('#result');
     r.innerHTML = `<div class="kart-card"><div class="kart-place"><img class="kart-face" src="/assets/kart/driver-${this.driver}.jpg" alt="" style="--c:${DRIVERS[this.driver].colour}"><span>${this.mode === 'solo' ? '🏁' : place === 1 ? '🏆' : '🏁'}</span></div>

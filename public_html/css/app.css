@@ -340,6 +340,8 @@ body.kart-on .tabbar{display:none}
 
 /* ---------- Buja Kart: pause, callouts, speed lines, landscape (Phase 32) ---------- */
 .kart-quit{font:900 14px Inter,system-ui;letter-spacing:-2px}
+.kart-stage.kart-flash::before{content:'';position:absolute;inset:0;z-index:3;pointer-events:none;background:rgba(235,240,255,.55)}
+.kart-quit.kart-cam{top:calc(60px + var(--safe-t,0px));font:400 18px system-ui;letter-spacing:0}
 .kart-pause{position:absolute;inset:0;background:rgba(16,16,20,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:8;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
 .kart-pause.on{display:flex}
 .kart-toggles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0}

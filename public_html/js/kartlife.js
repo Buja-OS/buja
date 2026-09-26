@@ -208,6 +208,11 @@ export function buildLife(R, H) {
   const sirenStop = () => { if (!siren) return; try { siren.g.gain.setTargetAtTime(0, R.audio.ctx.currentTime, 0.2); const s = siren; setTimeout(() => { try { s.o.stop(); s.lfo.stop(); } catch {} }, 900); } catch {} siren = null; };
   R.lifeStop = () => { try { sirenStop(); } catch {} R.el.querySelector('#stage')?.classList.remove('kart-police'); };
 
+  /* ------------------------------ the Abuja light rail, overhead ------------------------------ */
+  let rail = null;
+  try { rail = buildRail(R, { at, head, N, RW, pickStraight, straight, free, busy, wrap }); } catch (e) { console.warn('rail', e); }
+  life.rail = rail;
+
   /* ------------------------------ plane overhead (airport) ------------------------------ */
   let plane = null;
   if (C.airfield) { plane = airliner(R, true); plane.visible = false; R.scene.add(plane); plane.userData.next = performance.now() + 9000; }
@@ -326,8 +331,8 @@ export function buildLife(R, H) {
           chase.v += (Math.min(H.BOOST_V * sm * 0.93, Math.max(pl.v + 5, 27 * sm)) - chase.v) * Math.min(1, dt * 1.5);
           chase.lat += Math.sign(latOf(pl) - chase.lat) * Math.min(Math.abs(latOf(pl) - chase.lat), 3.2 * dt);
           if (gap < 3.4 && Math.abs(latOf(pl) - chase.lat) < 2.3 && !pl.air) { chase.state = 'caught'; chase.since = now; chase.el = 0; chase.s = wrap(pl.idx - 1.4); chase.lat = latOf(pl); chase.v = 0; pl.v = 0; pl.held = 1.8; pl.boost = 0; R.audio.bump(); R.shake = 0.5; R.callout('🚔 Caught! Stopped for checks', false); R.buzz && R.buzz(80); }
-          else if (chase.el > 20) { chase.state = 'escaped'; chase.since = now; chase.el = 0; addPickups(5); R.callout('😅 You escaped! +10 🪙', true); }
-          else if (gap > 260) { chase.state = 'escaped'; chase.since = now; chase.el = 0; addPickups(5); R.callout('😅 Lost them! +10 🪙', true); }
+          else if (chase.el > 20) { chase.state = 'escaped'; chase.since = now; chase.el = 0; addPickups(5); life.escapes = (life.escapes || 0) + 1; R.callout('😅 You escaped! +10 🪙', true); }
+          else if (gap > 260) { chase.state = 'escaped'; chase.since = now; chase.el = 0; addPickups(5); life.escapes = (life.escapes || 0) + 1; R.callout('😅 Lost them! +10 🪙', true); }
         } else { chase.v = Math.max(0, chase.v - dt * (chase.state === 'caught' ? 30 : 12)); chase.lat += ((RW / 2 + 3) - chase.lat) * Math.min(1, dt); if (chase.el > 6) { chase.state = 'gone'; chase.car.visible = false; sirenStop(); R.el.querySelector('#stage')?.classList.remove('kart-police'); } }
         chase.s = wrap(chase.s + (chase.v * dt) / 4);
         const [x, z] = at(chase.s, chase.lat); chase.car.position.set(x, 0, z); chase.car.rotation.y = head(chase.s);
@@ -335,6 +340,7 @@ export function buildLife(R, H) {
         sirenLevel(chase.state === 'gone' ? 0 : Math.max(0, 0.16 * (1 - Math.min(1, gap / 220))) + 0.02);
       }
     }
+    if (rail) rail.update(now, dt);
     // an airliner coming in low over the runway every half minute or so
     if (plane) {
       const u = plane.userData;
@@ -349,6 +355,83 @@ export function buildLife(R, H) {
   return life;
 }
 
+
+
+/* ================================== the Abuja light rail ================================== */
+/**
+ * An elevated line crossing the circuit on a concrete viaduct, and the green-and-white Abuja light rail train
+ * running across it every half minute or so, so you race underneath. The viaduct is fused with the scenery;
+ * the train is one mesh (three cars) that slides along the deck.
+ */
+function buildRail(R, { at, head, N, RW, straight, free, busy, wrap }) {
+  const C = R.circuit, P = R.samples, TN = R.tangents;
+  const L = 560, H = 9.6, latC = C.twin ? -(RW + C.twin.median) / 2 : 0;
+  const marks = C.landmarks || [];
+  // a straight stretch away from the start, where the deck clears every landmark
+  let s = -1, best = 1e9;
+  for (let k = Math.floor(N * 0.28); k < N * 0.8; k += 5) {
+    if (!free(k, 45)) continue;
+    const t = TN[k], [cx, cz] = at(k, latC); let ok = true;
+    for (let d = -L / 2; d <= L / 2 && ok; d += 20) { const x = cx - t.z * -d, z = cz + t.x * -d; if (marks.some((l) => (l.x - x) ** 2 + (l.z - z) ** 2 < 70 * 70)) ok = false; }
+    if (!ok) continue; const v = straight(k) + Math.abs(k / N - 0.42) * 0.3; if (v < best) { best = v; s = k; }
+  }
+  if (s < 0) return null; busy.push(s);
+  const g = new THREE.Group(); R.placeAlong(g, s, latC);
+  const concrete = M({ color: '#CFCAC0', roughness: 0.85, map: R.tex.pave }), dark = M({ color: '#4C4F55', roughness: 0.4, metalness: 0.7 }), rail = M({ color: '#8E9197', roughness: 0.35, metalness: 0.9 });
+  const box = (w, h, d, m, x, y, z = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = true; b.receiveShadow = true; g.add(b); return b; };
+  box(L, 1.3, 8, concrete, 0, H - 0.65);
+  for (const z of [-3.9, 3.9]) { box(L, 1.1, 0.25, concrete, 0, H + 0.55, z); box(L, 0.08, 0.08, dark, 0, H + 1.15, z); }   // parapets with a handrail
+  for (const z of [-2.2, -0.8, 0.8, 2.2]) box(L, 0.16, 0.12, rail, 0, H + 0.08, z);
+  for (let x = -L / 2; x <= L / 2; x += 4) box(0.3, 0.1, 5.6, dark, x, H + 0.02, 0);   // sleepers
+  // piers every 32 m, left out wherever one would stand on the circuit
+  g.updateMatrixWorld(true);
+  for (let x = -L / 2 + 10; x <= L / 2 - 10; x += 32) {
+    const w = g.localToWorld(new THREE.Vector3(x, 0, 0)); if (!R.clearOfTrack(w.x, w.z, RW / 2 + 7)) continue;
+    box(2.4, H - 1.3, 3.4, concrete, x, (H - 1.3) / 2); box(3.2, 0.9, 8.4, concrete, x, H - 1.75);
+  }
+  R.scene.add(g);
+  // the train: white body, a green band and green-framed cab ends with a dark windscreen, as on the Abuja Metro
+  const parts = [];
+  const add = (geo, hex) => { const c = new THREE.Color(hex); geo = geo.index ? geo.toNonIndexed() : geo; const a = new Float32Array(geo.attributes.position.count * 3); for (let i = 0; i < a.length; i += 3) { a[i] = c.r; a[i + 1] = c.g; a[i + 2] = c.b; } geo.setAttribute('color', new THREE.BufferAttribute(a, 3)); parts.push(geo); return geo; };
+  const bx = (w, h, d, hex, x, y, z = 0) => { const b = new THREE.BoxGeometry(w, h, d); b.translate(x, y, z); return add(b, hex); };
+  const CAR = 20, GAP = 1.2;
+  for (let c = 0; c < 3; c++) {
+    const x0 = -c * (CAR + GAP);
+    bx(CAR, 2.7, 2.8, '#F2F3F1', x0, 2.35);                    // body
+    const roof = new THREE.CylinderGeometry(1.4, 1.4, CAR, 14, 1, false, 0, Math.PI); roof.rotateZ(Math.PI / 2); roof.rotateX(Math.PI / 2); roof.scale(1, 0.28, 1); roof.translate(x0, 3.7, 0); add(roof, '#E9EBEA');
+    bx(CAR + 0.02, 0.9, 2.84, '#1C2A33', x0, 2.9);             // window band
+    bx(CAR + 0.02, 0.28, 2.86, '#0E8A4A', x0, 1.55);           // green waist stripe
+    bx(CAR - 1, 0.7, 2.4, '#2A2D31', x0, 0.75);                // underframe
+    for (const bxo of [-CAR / 2 + 3.2, CAR / 2 - 3.2]) bx(2.4, 0.8, 2.3, '#1A1B1E', x0 + bxo, 0.45);   // bogies
+    for (const dx of [-4, 3]) bx(1.1, 1.9, 2.88, '#DADCDA', x0 + dx, 2.1);   // doors
+  }
+  // cab ends: a sloped green-framed nose with a black windscreen and headlights, at both ends
+  for (const [x, dir] of [[CAR / 2, 1], [-(2 * (CAR + GAP)) - CAR / 2, -1]]) {
+    const nose = new THREE.BoxGeometry(2.4, 3.0, 2.8, 2, 2, 1); const p = nose.attributes.position;
+    for (let i = 0; i < p.count; i++) { const lx = p.getX(i), ly = p.getY(i); if (lx > 0) p.setX(i, lx - (ly > 0 ? 0.9 : 0.1) * (ly + 1.5) / 3); }   // raked windscreen
+    nose.computeVertexNormals(); if (dir < 0) nose.rotateY(Math.PI); nose.translate(x + dir * 1.1, 2.4, 0); add(nose, '#0E8A4A');
+    const ws = new THREE.PlaneGeometry(2.3, 1.2); ws.rotateY(dir > 0 ? Math.PI / 2 : -Math.PI / 2); ws.rotateZ(dir * -0.35); ws.translate(x + dir * 2.05, 3.0, 0); add(ws, '#0B0F14');
+    for (const z of [-0.95, 0.95]) bx(0.12, 0.22, 0.42, '#FFF6D0', x + dir * 2.3, 1.75, z);
+  }
+  const merged = new THREE.BufferGeometry();
+  for (const name of ['position', 'normal', 'color']) { const size = parts[0].attributes[name].itemSize; const arr = new Float32Array(parts.reduce((n, q) => n + q.attributes[name].array.length, 0)); let o = 0; parts.forEach((q) => { arr.set(q.attributes[name].array, o); o += q.attributes[name].array.length; }); merged.setAttribute(name, new THREE.BufferAttribute(arr, size)); }
+  const train = new THREE.Mesh(merged, M({ vertexColors: true, roughness: 0.35, metalness: 0.15, envMapIntensity: 0.8 }));
+  train.castShadow = true; train.userData.dynamic = true; train.visible = false; train.frustumCulled = false; g.add(train);
+  const TL = 3 * CAR + 2 * GAP;
+  const state = { x: 0, dir: 1, next: performance.now() + 6000, running: false, honked: false };
+  return {
+    s, state, update(now, dt) {
+      if (!state.running) { if (now < state.next) return; state.running = true; state.dir = -state.dir; state.x = state.dir > 0 ? -L / 2 - 10 : L / 2 + 10; train.rotation.y = state.dir > 0 ? 0 : Math.PI; train.visible = true; state.honked = false; }
+      state.x += state.dir * 17 * dt; train.position.set(state.x, H + 0.15, state.dir > 0 ? -1.5 : 1.5);
+      // a double horn as it comes over the road, when you are near
+      if (!state.honked && Math.abs(state.x) < 90 && R.player) { const d = Math.hypot(R.player.position.x - g.position.x, R.player.position.z - g.position.z); if (d < 160) { state.honked = true; R.audio.tone(330, 0.5, 'sawtooth', 0.07); R.audio.tone(415, 0.5, 'sawtooth', 0.06); R.audio.tone(330, 0.7, 'sawtooth', 0.07, 0.6); R.audio.tone(415, 0.7, 'sawtooth', 0.06, 0.6); R.audio.noise(3.5, 0.05, 160, 0, 'lowpass'); } }
+      const tail = state.x - state.dir * TL;
+      if ((state.dir > 0 && tail > L / 2) || (state.dir < 0 && tail < -L / 2)) { state.running = false; train.visible = false; state.next = now + 9000 + Math.random() * 12000; }
+      // the part of the train beyond the ends of the deck is hidden by keeping it short of them
+      train.visible = !(state.dir > 0 ? state.x - TL > L / 2 : state.x + TL < -L / 2);
+    },
+  };
+}
 
 /* ================================== the cow ================================== */
 /** Merge geometries keeping vertex colours (white where a piece has none). */
