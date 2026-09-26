@@ -166,7 +166,8 @@ export function registerKart({ route, go, state, api, ui, failed }) {
       api.kartGarage().then((r) => { const c = el.querySelector('#coins'); if (c) c.textContent = '🪙 ' + r.garage.coins; }).catch(() => {});
       el.querySelectorAll('[data-track]').forEach((b) => b.addEventListener('click', () => { if (locked(b.dataset.track)) { toast('Locked: ' + ROUTES[b.dataset.track].need.map((n) => n.label + ' (' + Math.min(n.have, n.want) + '/' + n.want + ')').join(', ')); return; } try { localStorage.setItem('buja_kart_track', b.dataset.track); } catch {} go('/kart'); location.reload(); }));
       el.querySelectorAll('[data-driver]').forEach((b) => b.addEventListener('click', () => { try { localStorage.setItem('buja_kart_driver', b.dataset.driver); } catch {} el.querySelectorAll('[data-driver]').forEach((x) => x.classList.toggle('on', x === b)); toast(DRIVERS[b.dataset.driver].name + ' is ready'); }));
-      el.querySelector('#gfx')?.addEventListener('change', (e) => { try { localStorage.setItem('buja_kart_gfx', e.target.value); } catch {} toast('Graphics: ' + e.target.value); });
+      el.querySelector('#gfx')?.addEventListener('change', (e) => { try { localStorage.setItem('buja_kart_gfx', e.target.value); } catch {} const hint = (() => { try { return JSON.parse(localStorage.getItem('buja_kart_hint') || 'null'); } catch { return null; } })(); const order = ['low', 'medium', 'high'];
+        if (hint && hint.gpu === gpuName() && order.indexOf(e.target.value) > order.indexOf(hint.tier)) toast(`Races on phones like this one run choppy on ${e.target.value[0].toUpperCase() + e.target.value.slice(1)}. ${hint.tier[0].toUpperCase() + hint.tier.slice(1)} (or Auto) is the smooth one.`, 6000); else toast('Graphics: ' + e.target.value); });
       const mvol = el.querySelector('#menuvol'); if (mvol) mvol.addEventListener('input', () => { try { localStorage.setItem('buja_kart_music_vol', mvol.value); if (+mvol.value > 0) localStorage.setItem('buja_kart_music', '1'); } catch {} el.querySelector('#menuvoln').textContent = mvol.value + '%'; const sel = el.querySelector('[data-set="buja_kart_music"]'); if (sel && +mvol.value > 0) sel.value = '1'; });
       el.querySelectorAll('[data-set]').forEach((s) => s.addEventListener('change', (e) => { try { localStorage.setItem(s.dataset.set, e.target.value); } catch {} }));
       el.querySelector('#newroom').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.kartNewRoom({ track: myTrack() }); go('/kart/room/' + r.code); } catch (err) { busy(b, false); failed(el, err); } });
@@ -353,7 +354,8 @@ class Race {
     const T = this.tier;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: T === 'high', powerPreference: 'high-performance', stencil: false });
     // resolution: a ceiling per tier, then adjusted live to hold a smooth frame rate (see fitResolution)
-    this.dprMax = Math.min(window.devicePixelRatio || 1, T === 'high' ? 1.6 : T === 'medium' ? 1.2 : 1); this.dpr = this.dprMax;
+    const weak = /PowerVR|Mali-(G5[0-9]|T|4)|Adreno \(TM\) [3-5]/i.test(gpuName());   // entry-level phone chips: the ones behind most choppy races
+    this.dprMax = Math.min(window.devicePixelRatio || 1, T === 'high' ? 1.6 : T === 'medium' ? 1.2 : weak ? 0.9 : 1); this.dpr = this.dprMax;
     this.renderer.setPixelRatio(this.dpr);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 0.78;
@@ -476,8 +478,8 @@ class Race {
     const ms = (now - f.t) / f.n; f.t = now; f.n = 0;
     if (f.changes >= 6) return;
     const min = this.dprMax * 0.6;
-    if (ms > 24) { f.good = 0; if (++f.bad >= 2 && this.dpr > min) { this.dpr = Math.max(min, this.dpr * 0.8); f.bad = 0; f.changes++; } else return; }
-    else if (ms < 15) { f.bad = 0; if (++f.good >= 4 && this.dpr < this.dprMax) { this.dpr = Math.min(this.dprMax, this.dpr * 1.12); f.good = 0; f.changes++; } else return; }
+    if (ms > 19) { f.good = 0; if (++f.bad >= 2 && this.dpr > min) { this.dpr = Math.max(min, this.dpr * 0.85); f.bad = 0; f.changes++; } else return; }   // below about 52 fps: fewer pixels
+    else if (ms < 14.5) { f.bad = 0; if (++f.good >= 4 && this.dpr < this.dprMax) { this.dpr = Math.min(this.dprMax, this.dpr * 1.12); f.good = 0; f.changes++; } else return; }
     else { f.bad = 0; f.good = 0; return; }
     this.renderer.setPixelRatio(this.dpr); this.resize();
   }
@@ -617,7 +619,7 @@ class Race {
     // Trees along the verges: royal palms and neem, instanced
     const palmTrunk = new THREE.CylinderGeometry(0.22, 0.38, 9, 7); palmTrunk.translate(0, 4.5, 0);
     const fol = foliageGeometries(); const frond = fol.palm; const neem = fol.crown; const neemTrunk = new THREE.CylinderGeometry(0.35, 0.5, 4.5, 6); neemTrunk.translate(0, 2.25, 0);
-    const TN = T === 'low' ? 160 : 300;
+    const TN = T === 'low' ? 80 : T === 'medium' ? 180 : 300;
     const trunkM = new THREE.MeshStandardMaterial({ color: '#8C7A5E', roughness: 0.9, map: this.tex.rock }), palmF = foliageMaterial('palm'), leafF = foliageMaterial('leaves'); const leafM = palmF.m, neemM = leafF.m;
     const pt = new THREE.InstancedMesh(palmTrunk, trunkM, TN), pf = new THREE.InstancedMesh(frond, leafM, TN), nt = new THREE.InstancedMesh(neemTrunk, trunkM, TN), nc = new THREE.InstancedMesh(neem, neemM, TN);
     let np = 0, nn = 0; const col = new THREE.Color();

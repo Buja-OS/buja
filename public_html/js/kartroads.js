@@ -112,7 +112,7 @@ export async function buildAds(R, { roadW, twin, clearOfTrack }) {
   const hm = ads.strips.map((t) => M({ map: t, roughness: 0.55, emissive: '#FFFFFF', emissiveMap: t, emissiveIntensity: night ? 0.5 : 0.06 }));
   const HN = 90, hMesh = hm.map((m) => new THREE.InstancedMesh(hoard, m, HN)); const hn = [0, 0];
   const sides = twin ? [1] : [-1, 1]; const offB = roadW / 2 + 10.1;
-  for (const at of [0.06, 0.22, 0.38, 0.55, 0.72, 0.88]) {
+  for (const at of T === 'low' ? [0.06, 0.38, 0.72] : [0.06, 0.22, 0.38, 0.55, 0.72, 0.88]) {
     const s0 = Math.floor(at * N);
     for (const side of sides) for (let j = 0; j < 6; j++) {
       const s = (s0 + j * 2) % N; const p = R.samples[s], t = R.tangents[s];

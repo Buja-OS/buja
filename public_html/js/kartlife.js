@@ -561,7 +561,7 @@ function bushWorld(R, H, { at, head, N, RW }) {
   });
   const card = new THREE.PlaneGeometry(1.6, 1.3); card.translate(0, 0.62, 0); const card2 = card.clone(); card2.rotateY(Math.PI / 2);
   const tuft = mergeC([card, card2]);
-  const GN = T === 'low' ? 260 : T === 'medium' ? 700 : 1600;   // see-through cards cost a lot of pixel work on phones: keep them few
+  const GN = T === 'low' ? 140 : T === 'medium' ? 700 : 1600;   // see-through cards cost a lot of pixel work on phones: keep them few
   const gm = new THREE.InstancedMesh(tuft, M({ map: bladeTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1, envMapIntensity: 0.15 }), GN); let n = 0;
   for (let tries = 0; tries < GN * 3 && n < GN; tries++) {
     const s = Math.random() * N, side = Math.random() < 0.5 ? -1 : 1, off = side * (RW / 2 + 0.8 + Math.pow(Math.random(), 1.7) * 55);
