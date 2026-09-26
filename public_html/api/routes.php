@@ -281,6 +281,8 @@ $router->get('/cron/tidy',                   [OpsController::class, 'tidy']);
 $router->get('/admin/launch',                [OpsController::class, 'launch']);
 
 $router->post('/admin/spots-import',         [AdminController::class, 'importSpots']);
+$router->get('/admin/spots-query',           [AdminController::class, 'spotsQuery']);
+$router->post('/admin/spots-ingest',         [AdminController::class, 'spotsIngest']);
 
 // City Pulse
 

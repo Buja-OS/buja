@@ -111,32 +111,57 @@ export function registerTrust({ route, go, state, setState, api, ui, failed }) {
 
   route('/admin/spots', { auth: true, tabs: 'Me' }, async () => {
     const g = guard(); if (g) return g; const { items } = await api.adminSpots();
-    return `${topbar('Places to verify', '/admin')}<div class="pad" style="padding-bottom:0"><div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Fill the directory from OpenStreetMap</div><div class="small muted" style="line-height:1.5">Pulls every named place of a category across the FCT. Real places, real coordinates, marked as unreviewed until somebody rates them. Run each once; running again only adds what is new.</div><button class="btn btn-primary" id="importall">Import everything</button><div class="small muted" style="margin-top:-4px">All 11 kinds of place, in four parts of the FCT each. Keep this screen open; it can take 10 to 20 minutes. Or do one kind:</div><div class="row" style="gap:6px;flex-wrap:wrap">${['food', 'lounge', 'worship', 'health', 'hotel', 'shopping', 'relax', 'nightlife', 'culture', 'kids', 'services'].map((c) => `<button class="btn btn-sm btn-outline" data-import="${c}" style="width:auto">${c}</button>`).join('')}</div><div class="small" id="importres" style="line-height:1.5;white-space:pre-line"></div><div class="row" style="gap:8px;margin-top:4px"><button class="btn btn-sm btn-ink" id="fuelimport" style="width:auto">Import fuel stations</button><span class="small muted">for the Fuel board</span></div></div></div>
+    return `${topbar('Places to verify', '/admin')}<div class="pad" style="padding-bottom:0"><div class="card stack" style="padding:14px;gap:10px"><div class="h-sm">Fill the directory from OpenStreetMap</div><div class="small muted" style="line-height:1.5">Pulls every named place of a category across the FCT. Real places, real coordinates, marked as unreviewed until somebody rates them. Run each once; running again only adds what is new.</div><button class="btn btn-primary" id="importall">Import everything</button><div class="small muted" style="margin-top:-4px">All 11 kinds of place, in four parts of the FCT each. Your phone fetches the map data itself (about 10 to 20 MB of data), so keep this screen open; it usually takes 5 to 15 minutes. Or do one kind:</div><div class="row" style="gap:6px;flex-wrap:wrap">${['food', 'lounge', 'worship', 'health', 'hotel', 'shopping', 'relax', 'nightlife', 'culture', 'kids', 'services'].map((c) => `<button class="btn btn-sm btn-outline" data-import="${c}" style="width:auto">${c}</button>`).join('')}</div><div class="small" id="importres" style="line-height:1.5;white-space:pre-line"></div><div class="row" style="gap:8px;margin-top:4px"><button class="btn btn-sm btn-ink" id="fuelimport" style="width:auto">Import fuel stations</button><span class="small muted">for the Fuel board</span></div></div></div>
     <main class="pad stack" style="gap:12px">${items.length ? items.map((i) => `<div class="card stack" style="padding:14px;gap:8px" data-s="${i.id}"><div class="h-sm">${h(i.name)}</div><div class="small muted">${i.category} · ${h(i.district)}${i.area ? ' · ' + h(i.area) : ''} · added by ${h(i.addedBy || 'Buja')} · ${i.createdAt.slice(0, 10)}</div><div class="small" style="line-height:1.5">${h(i.description)}</div>${i.tags.length ? `<div class="row" style="flex-wrap:wrap;gap:6px">${i.tags.map((t) => `<span class="tag" style="background:var(--surface);color:var(--ink-2)">${h(t)}</span>`).join('')}</div>` : ''}<div class="row" style="gap:8px"><button class="btn btn-sm btn-ink" data-act="verify" style="flex:1">${icon('circle-check')} Verify</button><button class="btn btn-sm btn-outline" data-act="remove" style="flex:1">Remove</button></div></div>`).join('') : `<div class="placeholder" style="padding:50px 0"><div class="h-md">Nothing to verify</div></div>`}</main>`;
   }, { mount(el) {
       // Each kind of place is fetched in four parts of the FCT, one request each, so a busy map server never has to answer one huge query.
       const PARTS = ['south-west', 'south-east', 'north-west', 'north-east'];
       const out = (t) => { const r = el.querySelector('#importres'); if (r) r.textContent = t; };
       let running = false;
-      const runKind = async (cat, log) => {
-        let added = 0, seen = 0; const bad = [];
-        for (let t = 0; t < 4; t++) {
-          out(log.concat(`${cat}: part ${t + 1} of 4 (${PARTS[t]})…`).join('\n'));
-          let r = null;
-          for (let attempt = 0; attempt < 2 && !(r && !r.result.error); attempt++) {
-            if (attempt) { out(log.concat(`${cat}: part ${t + 1} busy, trying again in 20 s…`).join('\n')); await new Promise((ok) => setTimeout(ok, 20000)); }
-            try { r = cat === 'fuel' ? await api.fuelImport(t) : await api.importSpots(cat, t); } catch (err) { r = { result: { added: 0, seen: 0, error: (err && err.message) || 'request failed' } }; }
+      /** Buja's server is refused by the main map server, so this phone asks it directly and sends the answer
+       *  back to be saved. Tries each public map server in turn; a "too many requests" waits and tries again. */
+      const fetchMap = async (query, endpoints, note) => {
+        const why = [];
+        for (const ep of endpoints) {
+          const host = new URL(ep).host;
+          for (let tries = 0; tries < 2; tries++) {
+            const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 90000);
+            try {
+              const res = await fetch(ep, { method: 'POST', body: 'data=' + encodeURIComponent(query), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ctl.signal });
+              clearTimeout(tm);
+              if (res.status === 429 && !tries) { note(`${host} is busy, waiting 15 s…`); await new Promise((ok) => setTimeout(ok, 15000)); continue; }
+              if (!res.ok) { why.push(`${host}: HTTP ${res.status}${res.status === 504 ? ' (overloaded)' : res.status === 429 ? ' (too many requests)' : ''}`); break; }
+              const j = await res.json().catch(() => null);
+              if (!j) { why.push(`${host}: busy, sent a page instead of map data`); break; }
+              if (j.remark && /error|timed out|out of memory|runtime/i.test(j.remark)) { why.push(`${host}: ${String(j.remark).slice(0, 80)}`); break; }
+              return { elements: j.elements || [], why };
+            } catch (err) { clearTimeout(tm); why.push(`${host}: ${err && err.name === 'AbortError' ? 'no answer in 90 s' : 'could not reach it from this phone'}`); break; }
           }
-          added += r.result.added || 0; seen += r.result.seen || 0; if (r.result.error) bad.push(`part ${t + 1}: ${r.result.error}`);
-          var total = r.total;
         }
-        const line = `${cat}: ${added} new, ${seen} found${bad.length ? `. ${bad.length} of 4 parts failed` : ''}.`;
-        return { line, bad, total };
+        return { elements: null, why };
+      };
+      const runKind = async (cat, log) => {
+        let added = 0, seen = 0, total = null; const bad = [];
+        for (let t = 0; t < 4; t++) {
+          const head = `${cat}: part ${t + 1} of 4 (${PARTS[t]})`;
+          const note = (x) => out(log.concat(`${head}: ${x}`).join('\n'));
+          note('asking the map server…');
+          let q; try { q = await api.spotsQuery(cat, t); } catch (err) { bad.push(`part ${t + 1}: ${(err && err.message) || 'could not start'}`); continue; }
+          const got = await fetchMap(q.query, q.endpoints, note);
+          if (!got.elements) { bad.push(`part ${t + 1}: ${got.why.join('; ')}`); continue; }
+          note(`saving ${got.elements.length} places…`);
+          for (let i = 0; i < got.elements.length || i === 0; i += 800) {
+            try { const r = await api.spotsIngest(cat, got.elements.slice(i, i + 800)); added += r.result.added || 0; seen += r.result.seen || 0; total = r.total; }
+            catch (err) { bad.push(`part ${t + 1}: saving failed, ${(err && err.message) || 'error'}`); break; }
+            if (!got.elements.length) break;
+          }
+        }
+        return { line: `${cat}: ${added} new, ${seen} found${bad.length ? `. ${bad.length} of 4 parts failed` : ''}.`, bad, total };
       };
       const go1 = async (btn, cats) => {
         if (running) { toast('An import is already running'); return; } running = true; busy(btn, true);
         const log = []; const errs = [];
-        for (const c of cats) { const r = await runKind(c, log); log.push(r.line); r.bad.forEach((x) => { const i = x.indexOf('): '); (i > 0 ? x.slice(i + 3) : x).split(/; | \| /).forEach((m) => { if (!errs.includes(m)) errs.push(m); }); }); out(log.join('\n') + (r.total != null ? `\n${c === 'fuel' ? 'Fuel board' : 'Directory'} now has ${r.total}.` : '')); }
+        for (const c of cats) { const r = await runKind(c, log); log.push(r.line); r.bad.forEach((x) => { x.replace(/^part \d+: /, '').split(/; | \| /).forEach((m) => { if (!errs.includes(m)) errs.push(m); }); }); out(log.join('\n') + (r.total != null ? `\n${c === 'fuel' ? 'Fuel board' : 'Directory'} now has ${r.total}.` : '')); }
         if (errs.length) out(log.join('\n') + '\n\nWhat the map servers said:\n' + errs.slice(0, 8).join('\n') + '\n\nRun it again later to fill the gaps; places already in are skipped.');
         busy(btn, false); running = false;
       };

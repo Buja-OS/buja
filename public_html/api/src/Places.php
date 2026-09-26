@@ -28,7 +28,8 @@ final class Places
         $ch = curl_init($url);
         curl_setopt_array($ch, [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_USERAGENT => self::UA, CURLOPT_FOLLOWLOCATION => true]);
         $body = curl_exec($ch); $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-        return $code === 200 && is_string($body) ? $body : null;
+        if ($code !== 200 || !is_string($body)) { error_log('[buja photos] ' . parse_url($url, PHP_URL_HOST) . ' ' . ($code ?: 'no answer')); return null; }
+        return $body;
     }
 
     /* ------------------------------------------------ photos ------------------------------------------------ */

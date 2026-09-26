@@ -284,6 +284,36 @@ final class AdminController
         Http::json(['result' => $r, 'category' => $cat, 'total' => $total]);
     }
 
+    /** GET /admin/spots-query?category=&tile= : the Overpass query for the admin's phone to run itself */
+    public function spotsQuery(): void
+    {
+        $this->staff();
+        $q = Osm::queryFor((string) ($_GET['category'] ?? ''), (int) ($_GET['tile'] ?? 0));
+        if (!$q) Http::json(['error' => 'validation', 'message' => 'Unknown kind of place.'], 422);
+        Http::json(['query' => $q, 'endpoints' => Osm::endpoints()]);
+    }
+    /** POST /admin/spots-ingest { category, elements } : saves what the phone got from the map server */
+    public function spotsIngest(): void
+    {
+        $this->staff(); @set_time_limit(0);
+        $b = Http::body(); $cat = (string) ($b['category'] ?? ''); $els = is_array($b['elements'] ?? null) ? $b['elements'] : [];
+        if (count($els) > 2000) Http::json(['error' => 'validation', 'message' => 'Send at most 2000 places at a time.'], 422);
+        // only real FCT points, only the fields a map server sends
+        $clean = [];
+        foreach ($els as $e) {
+            if (!is_array($e)) continue;
+            $lat = (float) ($e['lat'] ?? $e['center']['lat'] ?? 0); $lng = (float) ($e['lon'] ?? $e['center']['lon'] ?? 0);
+            if ($lat < 8.3 || $lat > 9.7 || $lng < 6.7 || $lng > 8.0) continue;
+            $type = in_array($e['type'] ?? '', ['node', 'way', 'relation'], true) ? $e['type'] : 'node';
+            $tags = []; foreach ((array) ($e['tags'] ?? []) as $k => $v) if (is_string($k) && is_scalar($v) && strlen($k) <= 40) $tags[$k] = mb_substr((string) $v, 0, 300);
+            $clean[] = ['type' => $type, 'id' => (int) ($e['id'] ?? 0), 'lat' => $lat, 'lon' => $lng, 'tags' => $tags];
+        }
+        if ($cat === 'fuel') { $r = Osm::saveFuel($clean); Http::json(['result' => $r, 'total' => (int) (Db::one('SELECT COUNT(*) AS n FROM fuel_stations')['n'] ?? 0)]); }
+        $q = Osm::queryFor($cat, 0); if (!$q) Http::json(['error' => 'validation', 'message' => 'Unknown kind of place.'], 422);
+        $r = Osm::saveAll($clean, $cat);
+        Http::json(['result' => $r, 'total' => (int) (Db::one('SELECT COUNT(*) AS n FROM spots WHERE active = 1')['n'] ?? 0)]);
+    }
+
     /** POST /admin/storage/test and POST /admin/storage/migrate { batch } */
     public function storageTest(): void { $this->admin(); Http::json(Media::selfTest()); }
     public function migrate(): void

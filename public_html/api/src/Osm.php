@@ -182,12 +182,24 @@ final class Osm
         $added = 0; $seen = 0; $failed = [];
         foreach ($tiles as $i) {
             $box = implode(',', self::TILES[$i]); $errs = [];
-            $els = self::overpass('[out:json][timeout:55];(' . self::clauses($category, $box) . ');out center ' . $limit . ';', 60, $errs, 130.0);
+            $els = self::overpass((string) self::queryFor($category, $i, $limit), 60, $errs, 130.0);
             if ($els === null) { $failed[] = self::TILE_NAMES[$i] . ': ' . implode('; ', array_slice(array_unique($errs), 0, 4)); continue; }
             $r = self::saveAll($els, $category); $added += $r['added']; $seen += $r['seen'];
         }
         return ['added' => $added, 'seen' => $seen, 'error' => $failed ? implode(' | ', $failed) : null];
     }
+
+    /** The exact Overpass query for one kind of place (or 'fuel') in one quarter of the FCT. The admin's phone runs
+     *  it when Buja's server cannot reach the map servers itself, then sends the answer back to be saved. */
+    public static function queryFor(string $category, int $tile, int $limit = 3000): ?string
+    {
+        $tile = max(0, min(3, $tile)); $box = implode(',', self::TILES[$tile]);
+        if ($category === 'fuel') return '[out:json][timeout:40];(node["amenity"="fuel"](' . $box . ');way["amenity"="fuel"](' . $box . '););out center 600;';
+        if (!isset(self::TAGS[$category])) return null;
+        return '[out:json][timeout:55];(' . self::clauses($category, $box) . ');out center ' . $limit . ';';
+    }
+    /** Public servers the phone may try, in order. */
+    public static function endpoints(): array { return self::ENDPOINTS; }
 
     /** Saves a batch of OSM elements; returns counts. Split out so it can be tested without a network. */
     public static function saveAll(array $els, string $category): array
@@ -203,10 +215,16 @@ final class Osm
         $els = []; $failed = [];
         foreach ($tile === null ? array_keys(self::TILES) : [max(0, min(3, $tile))] as $i) {
             [$so, $we, $no, $ea] = self::TILES[$i]; $box = "$so,$we,$no,$ea"; $errs = [];
-            $got = self::overpass('[out:json][timeout:40];(node["amenity"="fuel"](' . $box . ');way["amenity"="fuel"](' . $box . '););out center 600;', 45, $errs, 100.0);
+            $got = self::overpass((string) self::queryFor('fuel', $i), 45, $errs, 100.0);
             if ($got === null) $failed[] = self::TILE_NAMES[$i] . ': ' . implode('; ', array_slice(array_unique($errs), 0, 4)); else $els = array_merge($els, $got);
         }
         if (!$els && $failed) return ['added' => 0, 'seen' => 0, 'error' => implode(' | ', $failed)];
+        return ['error' => $failed ? implode(' | ', $failed) : null] + self::saveFuel($els);
+    }
+
+    /** Saves fuel stations from Overpass elements; skips ones already on the board. */
+    public static function saveFuel(array $els): array
+    {
         $added = 0; $seen = 0;
         foreach ($els as $e) {
             $plat = (float) ($e['lat'] ?? $e['center']['lat'] ?? 0); $plng = (float) ($e['lon'] ?? $e['center']['lon'] ?? 0); if (!$plat || !$plng) continue;
@@ -217,7 +235,7 @@ final class Osm
             Db::run('INSERT INTO fuel_stations (name, brand, district, lat, lng, osm_id, created_at) VALUES (?,?,?,?,?,?,?)', [mb_substr($name, 0, 90), $brand ? mb_substr((string) $brand, 0, 40) : null, self::districtFor($plat, $plng) ?: 'Abuja', $plat, $plng, $osmId, Db::now()]);
             $added++;
         }
-        return ['added' => $added, 'seen' => $seen, 'error' => $failed ? implode(' | ', $failed) : null];
+        return ['added' => $added, 'seen' => $seen, 'error' => null];
     }
 
     /**
