@@ -478,7 +478,7 @@ function bushWorld(R, H, { at, head, N, RW }) {
   });
   const card = new THREE.PlaneGeometry(1.6, 1.3); card.translate(0, 0.62, 0); const card2 = card.clone(); card2.rotateY(Math.PI / 2);
   const tuft = mergeC([card, card2]);
-  const GN = T === 'low' ? 700 : T === 'medium' ? 1500 : 2600;
+  const GN = T === 'low' ? 260 : T === 'medium' ? 700 : 1600;   // see-through cards cost a lot of pixel work on phones: keep them few
   const gm = new THREE.InstancedMesh(tuft, M({ map: bladeTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1, envMapIntensity: 0.15 }), GN); let n = 0;
   for (let tries = 0; tries < GN * 3 && n < GN; tries++) {
     const s = Math.random() * N, side = Math.random() < 0.5 ? -1 : 1, off = side * (RW / 2 + 0.8 + Math.pow(Math.random(), 1.7) * 55);
@@ -494,7 +494,7 @@ function bushWorld(R, H, { at, head, N, RW }) {
   const trunk = new THREE.CylinderGeometry(0.22, 0.34, 4, 6); trunk.translate(0, 2, 0);
   const fol = H.foliageGeometries ? H.foliageGeometries() : null; const leafF = fol ? H.foliageMaterial('leaves') : null;
   let crown; if (fol) { crown = fol.crown.clone(); crown.scale(0.9, 0.42, 0.9); crown.translate(0, 1.75, 0); } else { crown = new THREE.SphereGeometry(3, 10, 6); crown.scale(1, 0.42, 1); crown.translate(0, 4.6, 0); }   // the flat umbrella of an acacia
-  const TNn = T === 'low' ? 90 : 170; const tm = new THREE.InstancedMesh(trunk, M({ color: '#5E4630', roughness: 0.9 }), TNn), cm = new THREE.InstancedMesh(crown, leafF ? leafF.m : M({ color: '#FFFFFF', roughness: 0.95 }), TNn); let nt = 0; if (leafF) cm.customDepthMaterial = leafF.depth;
+  const TNn = T === 'low' ? 60 : T === 'medium' ? 110 : 170; const tm = new THREE.InstancedMesh(trunk, M({ color: '#5E4630', roughness: 0.9 }), TNn), cm = new THREE.InstancedMesh(crown, leafF ? leafF.m : M({ color: '#FFFFFF', roughness: 0.95 }), TNn); let nt = 0; if (leafF) cm.customDepthMaterial = leafF.depth;
   for (let tries = 0; tries < TNn * 4 && nt < TNn; tries++) {
     const s = Math.random() * N, side = Math.random() < 0.5 ? -1 : 1, off = side * (RW / 2 + 7 + Math.random() * 110);
     const [x, z] = at(s, off); if (!clear(x, z, RW / 2 + 5)) continue;

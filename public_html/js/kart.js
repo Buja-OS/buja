@@ -363,12 +363,15 @@ class Race {
     this.envId = (this.garage && this.garage.equipped && this.garage.equipped.env) || 'day';
     this.scene.environment = await loadEnvironment(this.renderer, this.envId, envScene);   // light and reflections from a real photographed sky
     this.scene.add(sky);
+    // Below High, the sky is drawn once into a cube and shown as a still backdrop: the live sky shader works out
+    // the atmosphere for every sky pixel, every frame, which is a big cost on phones.
+    if (T !== 'high') { try { const rt = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType }); const cc = new THREE.CubeCamera(1, 20000, rt); const sc = new THREE.Scene(); sc.add(sky.clone()); cc.update(this.renderer, sc); if (!E.night) this.scene.background = rt.texture; this.scene.remove(sky); } catch {} }
     this.skyFx = buildSky(this.scene, { night: !!E.night, harmattan: this.envId === 'harmattan', sunset: this.envId === 'sunset' }, T);
     this.post = T === 'high' ? makePost(this.renderer, this.scene, this.camera, T) : null;   // bloom and grading only on High: a dozen full-screen passes
     this.scene.fog = new THREE.Fog(E.fog, E.near, Math.min(E.far, T === 'low' ? 1500 : E.far));
     this.camera.far = this.scene.fog.far + (T === 'low' ? 250 : 600); this.camera.updateProjectionMatrix();   // nothing is drawn past the haze
     sky.scale.setScalar(Math.min(9000, this.camera.far * 1.05));   // the sky dome sits inside the new far plane
-    this.scene.add(new THREE.HemisphereLight(E.night ? '#5B6E9A' : '#E4F1FF', E.night ? '#1A1F2B' : '#9A8260', E.hemi * 0.45 * (T === 'high' ? 1 : 2.6)));   // Low has no sky reflections, so more fill light
+    this.scene.add(new THREE.HemisphereLight(E.night ? '#5B6E9A' : '#E4F1FF', E.night ? '#1A1F2B' : '#9A8260', E.hemi * 0.45 * (T === 'high' ? 1 : 1.8)));   // Low has no sky reflections, so more fill light
     if (E.night) this.scene.background = new THREE.Color('#070B16');
     this.sun = new THREE.DirectionalLight(E.sun, E.sunI); this.sun.position.copy(this.sunDir).multiplyScalar(300);
     if (T === 'high') { const sh = this.sun.shadow; sh.mapSize.set(T === 'high' ? 2048 : 1024, T === 'high' ? 2048 : 1024); sh.camera.left = sh.camera.bottom = -70; sh.camera.right = sh.camera.top = 70; sh.camera.near = 50; sh.camera.far = 700; sh.bias = -0.0004; sh.normalBias = 0.6; this.sun.castShadow = true; }
@@ -456,13 +459,15 @@ class Race {
   }
   /** Adaptive resolution: if frames run slow, draw fewer pixels (down to 55%); when there is headroom, go back up. */
   fitResolution(now) {
-    const f = this._fr || (this._fr = { t: now, n: 0, good: 0 }); f.n++;
-    if (now - f.t < 1200) return;
+    // steps down only after two slow readings in a row, back up only after four smooth ones, and at most 6 changes a race: resizing costs a hitch itself
+    const f = this._fr || (this._fr = { t: now, n: 0, good: 0, bad: 0, changes: 0 }); f.n++;
+    if (now - f.t < 1500) return;
     const ms = (now - f.t) / f.n; f.t = now; f.n = 0;
-    const min = this.dprMax * 0.55;
-    if (ms > 21 && this.dpr > min) { this.dpr = Math.max(min, this.dpr * 0.85); f.good = 0; }
-    else if (ms < 15.5 && this.dpr < this.dprMax) { if (++f.good >= 3) { this.dpr = Math.min(this.dprMax, this.dpr * 1.1); f.good = 0; } else return; }
-    else return;
+    if (f.changes >= 6) return;
+    const min = this.dprMax * 0.6;
+    if (ms > 24) { f.good = 0; if (++f.bad >= 2 && this.dpr > min) { this.dpr = Math.max(min, this.dpr * 0.8); f.bad = 0; f.changes++; } else return; }
+    else if (ms < 15) { f.bad = 0; if (++f.good >= 4 && this.dpr < this.dprMax) { this.dpr = Math.min(this.dprMax, this.dpr * 1.12); f.good = 0; f.changes++; } else return; }
+    else { f.bad = 0; f.good = 0; return; }
     this.renderer.setPixelRatio(this.dpr); this.resize();
   }
   resize() { const w = this.el.clientWidth || innerWidth, hgt = this.el.clientHeight || innerHeight; this.renderer.setSize(w, hgt, false); if (this.post) this.post.setSize(w, hgt); this.camera.aspect = w / hgt; this.camera.updateProjectionMatrix(); }
@@ -563,7 +568,8 @@ class Race {
     const sparse = !!this.circuit.sparse, noCity = !!this.circuit.noCity; const N = noCity ? 1 : Math.round((T === 'low' ? 140 : T === 'medium' ? 240 : 340) * (sparse ? 0.45 : 1));
     const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, 0);
     const style = new Float32Array(N);
-    const mat = new THREE.MeshStandardMaterial({ map: this.tex.facades, roughness: 0.55, metalness: 0.15, envMapIntensity: 0.9 });
+    // below High the facades use plain diffuse shading (the same texture tricks work on it): buildings fill much of the screen
+    const mat = T === 'high' ? new THREE.MeshStandardMaterial({ map: this.tex.facades, roughness: 0.55, metalness: 0.15, envMapIntensity: 0.9 }) : new THREE.MeshLambertMaterial({ map: this.tex.facades });
     const nightTex = this.env && this.env.night ? this.tex.get('facades_night.webp') : null; if (nightTex) { nightTex.wrapS = nightTex.wrapT = THREE.ClampToEdgeWrapping; }
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uNight = { value: nightTex };
@@ -803,10 +809,10 @@ class Race {
     if (this.fx && (isAI ? Math.random() < 0.3 : true)) {
       const back = -1.15, sx = Math.sin(k.h), cz = Math.cos(k.h), px = Math.cos(k.h), pz = -Math.sin(k.h);
       const drifting = drift && Math.abs(steer) > 0 && k.v > 12;
-      const dust = this.circuit.surface === 'dirt' && k.v > 10 && !k.air && Math.random() < 0.5;   // red dust behind you on the laterite
+      const dust = this.circuit.surface === 'dirt' && k.v > 12 && !k.air && Math.random() < (isAI ? 0.18 : 0.1);   // a light trail of red dust on the laterite
       if (drifting || dust || (off && k.v > 6)) for (const side of [-0.95, 0.95]) {
         const x = k.position.x + sx * back + px * side, z = k.position.z + cz * back + pz * side;
-        if (Math.random() < (drifting ? 0.8 : 0.5)) this.fx.puff(x, 0.4, z, off || dust ? [0.72, 0.47, 0.3] : [0.9, 0.9, 0.9], dust ? 2.2 + k.v * 0.03 : off ? 1.8 : 1.4, dust ? 0.7 : off ? 0.8 : 1.4);
+        if (Math.random() < (drifting ? 0.8 : 0.5)) this.fx.puff(x, 0.3, z, off || dust ? [0.72, 0.5, 0.34] : [0.9, 0.9, 0.9], dust ? 1.3 : off ? 1.4 : 1.2, dust ? 0.45 : off ? 0.6 : 1.2);
         if (drifting && !off && !dust) this.fx.mark(x, z, k.h);
       }
       if (!isAI) { k._drifting = drifting; k._off = off; }
@@ -1242,8 +1248,9 @@ class Race {
     const sc = 96 / Math.max(maxX - minX, maxZ - minZ); this.mm = (x, z) => [8 + (x - minX) * sc, 8 + (z - minZ) * sc];
   }
   drawMini() {
-    const g = this.mini; g.clearRect(0, 0, 112, 112); g.fillStyle = 'rgba(16,16,20,.55)'; g.beginPath(); g.roundRect(0, 0, 112, 112, 14); g.fill();
-    g.strokeStyle = '#E8E8EC'; g.lineWidth = 4; g.beginPath(); this.samples.forEach((p, i) => { const [x, y] = this.mm(p.x, p.z); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); g.stroke();
+    // the track outline is drawn once into a spare canvas; each update only copies it and adds the dots
+    if (!this._miniBg) { const c = document.createElement('canvas'); c.width = c.height = 112; const g = c.getContext('2d'); g.fillStyle = 'rgba(16,16,20,.55)'; g.beginPath(); g.roundRect(0, 0, 112, 112, 14); g.fill(); g.strokeStyle = '#E8E8EC'; g.lineWidth = 4; g.beginPath(); this.samples.forEach((p, i) => { const [x, y] = this.mm(p.x, p.z); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); g.stroke(); this._miniBg = c; }
+    const g = this.mini; g.clearRect(0, 0, 112, 112); g.drawImage(this._miniBg, 0, 0);
     const dot = (k, c, r = 3.5) => { const [x, y] = this.mm(k.position.x, k.position.z); g.fillStyle = c; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); };
     this.bots.forEach((b) => dot(b, b.paint.color.getStyle()));
     Object.values(this.remotes).forEach((r) => r.kart && dot(r.kart, r.colour));
@@ -1617,8 +1624,8 @@ class KartFX {
     const id = x.getImageData(0, 0, 128, 128); for (let py = 0; py < 128; py++) for (let px = 0; px < 128; px++) { const d = Math.hypot(px - 64, py - 64) / 64; const k = (py * 128 + px) * 4 + 3; id.data[k] = Math.round(id.data[k] * Math.max(0, 1 - d * d)); } x.putImageData(id, 0, 0);
     const tex = new THREE.CanvasTexture(c);
     const m = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: { scale: { value: 400 }, map: { value: tex }, light: { value: new THREE.Color('#FFF4E2') } },
-      vertexShader: 'attribute float size; attribute float alpha; attribute float rot; attribute vec3 color; varying float vA; varying vec3 vC; varying float vR; uniform float scale; void main(){ vA = alpha; vC = color; vR = rot; vec4 mv = modelViewMatrix * vec4(position,1.0); gl_PointSize = size * scale / -mv.z; gl_Position = projectionMatrix * mv; }',
-      fragmentShader: 'uniform sampler2D map; uniform vec3 light; varying float vA; varying vec3 vC; varying float vR; void main(){ vec2 p = gl_PointCoord - 0.5; float c = cos(vR), s = sin(vR); p = mat2(c, -s, s, c) * p; vec4 t = texture2D(map, p + 0.5); if (t.a < 0.01) discard; vec3 col = vC * light * (0.78 + 0.35 * (1.0 - gl_PointCoord.y)); gl_FragColor = vec4(col, vA * t.a * 1.15); }' });
+      vertexShader: 'attribute float size; attribute float alpha; attribute float rot; attribute vec3 color; varying float vA; varying vec3 vC; varying float vR; uniform float scale; void main(){ vC = color; vR = rot; vec4 mv = modelViewMatrix * vec4(position,1.0); float d = -mv.z; vA = alpha * smoothstep(6.0, 16.0, d); gl_PointSize = min(size * scale / d, 110.0); gl_Position = projectionMatrix * mv; }',
+      fragmentShader: 'uniform sampler2D map; uniform vec3 light; varying float vA; varying vec3 vC; varying float vR; void main(){ vec2 p = gl_PointCoord - 0.5; float c = cos(vR), s = sin(vR); p = mat2(c, -s, s, c) * p; vec4 t = texture2D(map, p + 0.5); if (t.a < 0.01) discard; vec3 col = vC * light * (0.78 + 0.35 * (1.0 - gl_PointCoord.y)); gl_FragColor = vec4(col, vA * t.a * 0.8); }' });
     this.points = new THREE.Points(g, m); this.points.frustumCulled = false; scene.add(this.points);
     // skid marks: a ring of thin dark quads laid on the road
     const S = this.S = tier === 'low' ? 120 : 260; this.si = 0;
@@ -1637,9 +1644,9 @@ class KartFX {
   }
   update(dt) {
     for (let i = 0; i < this.N; i++) { if (this.life[i] <= 0) { this.alpha[i] = 0; continue; }
-      this.life[i] -= dt * 0.7; this.pos[i * 3] += this.vel[i * 3] * dt; this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt; this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
+      this.life[i] -= dt * 1.1; this.pos[i * 3] += this.vel[i * 3] * dt; this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt; this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
       this.vel[i * 3 + 1] *= 1 - dt * 0.8; this.rot[i] += this.spin[i] * dt;
-      this.size[i] += dt * 2.6; const age = 1 - this.life[i]; this.alpha[i] = Math.max(0, Math.min(1, age * 7) * this.life[i] * 0.5); }   // fades in quickly, drifts, spreads and thins out
+      this.size[i] += dt * 1.6; const age = 1 - this.life[i]; this.alpha[i] = Math.max(0, Math.min(1, age * 7) * this.life[i] * 0.4); }   // fades in quickly, drifts, spreads and thins out
     const g = this.points.geometry; g.attributes.position.needsUpdate = g.attributes.size.needsUpdate = g.attributes.alpha.needsUpdate = g.attributes.color.needsUpdate = g.attributes.rot.needsUpdate = true;
   }
 }
