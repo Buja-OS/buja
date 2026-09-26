@@ -75,11 +75,12 @@ export async function buildAds(R, { roadW, twin, clearOfTrack }) {
   const phase = [0, 1].map((k) => { const t = ads.board.clone(); t.needsUpdate = true; t.repeat.set(1, 0.5); t.offset.set(0, k ? 0 : 0.5); return t; });
   const frame = M({ color: '#1B1E23', roughness: 0.5, metalness: 0.6 });
   const screens = phase.map((t) => M({ map: t, emissive: '#FFFFFF', emissiveMap: t, emissiveIntensity: night ? 0.9 : 0.16, roughness: 0.35 }));
-  const panel = new THREE.BoxGeometry(10.5, 5.25, 0.4);
+  const panel = new THREE.BoxGeometry(10.5, 5.25, 0.4); panel.clearGroups();   // one material for every face: one draw call per set of boards
   const pole = new THREE.CylinderGeometry(0.42, 0.55, 9.6, 10); pole.translate(0, 4.8, 0);
   const every = 52, max = Math.ceil(N / every) + 2;
   const polesM = new THREE.InstancedMesh(pole, M({ color: '#6B7079', roughness: 0.45, metalness: 0.7 }), max);
-  const boards = [0, 1].map((k) => new THREE.InstancedMesh(panel, [frame, frame, frame, frame, screens[k], screens[k]], max));
+  const boards = [0, 1].map((k) => new THREE.InstancedMesh(panel, screens[k], max));
+  const rim = new THREE.BoxGeometry(10.9, 5.6, 0.3); rim.translate(0, 0, -0.1); const rims = new THREE.InstancedMesh(rim, frame, max * 2); let nr = 0;
   const bridges = (R.circuit.bridges || []).map((b) => b.s); const marks = R.circuit.landmarks || [];
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1); let np = 0; const nb = [0, 0];
   for (let s = 20, k = 0; s < N; s += every, k++) {
@@ -92,10 +93,10 @@ export async function buildAds(R, { roadW, twin, clearOfTrack }) {
       // face the karts coming towards it, turned a little towards the road
       const nx = -t.x + 0.4 * side * t.z, nz = -t.z - 0.4 * side * t.x; q.setFromAxisAngle(Y, Math.atan2(nx, nz));
       m4.compose(new THREE.Vector3(x, 0, z), q, one); polesM.setMatrixAt(np++, m4);
-      const b = k % 2; m4.compose(new THREE.Vector3(x, 12.1, z), q, one); boards[b].setMatrixAt(nb[b]++, m4);
+      const b = k % 2; m4.compose(new THREE.Vector3(x, 12.1, z), q, one); boards[b].setMatrixAt(nb[b]++, m4); rims.setMatrixAt(nr++, m4);
     }
   }
-  polesM.count = np; boards.forEach((b, i) => { b.count = nb[i]; b.castShadow = T !== 'low'; R.scene.add(b); }); polesM.castShadow = T !== 'low'; R.scene.add(polesM);
+  polesM.count = np; rims.count = nr; R.scene.add(rims); boards.forEach((b, i) => { b.count = nb[i]; b.castShadow = T !== 'low'; R.scene.add(b); }); polesM.castShadow = T !== 'low'; R.scene.add(polesM);
   // switch the screens every seven seconds, with a quick blank between, the way LED boards do
   let last = 0, showing = 0;
   R.adTick = (now) => {
@@ -172,12 +173,12 @@ export function buildExpressway(R, H) {
     const crown = H.mergeGeos([cone, cone2]); const trunk = new THREE.CylinderGeometry(0.16, 0.24, 2.4, 6); trunk.translate(0, 1.2, 0);
     const cm = new THREE.InstancedMesh(crown, M({ color: '#FFFFFF', roughness: 0.92, envMapIntensity: 0.25 }), treeN * 2), tm = new THREE.InstancedMesh(trunk, M({ color: '#6B5842', roughness: 0.9 }), treeN * 2);
     const col = new THREE.Color(); let n = 0;
-    for (let s = 0; s < N; s += 3) { if (bridgeNear(C, s, N, 5)) continue; for (const d of MED > 10 ? [-2.2, 2.2] : [0]) { if (s % 10 === 0 && d === 0) continue; const [x, z] = at(s, mid + d + (Math.random() - 0.5) * 0.6); const k = 0.8 + Math.random() * 0.45; m4.compose(v.set(x, 0.26, z), q.setFromAxisAngle(Y, Math.random() * 6), sc.set(k, k * (0.9 + Math.random() * 0.3), k)); cm.setMatrixAt(n, m4); tm.setMatrixAt(n, m4); cm.setColorAt(n, col.setHSL(0.25 + Math.random() * 0.06, 0.38 + Math.random() * 0.15, 0.2 + Math.random() * 0.08)); n++; } }
+    for (let s = 0; s < N; s += T === 'low' ? 5 : 3) { if (bridgeNear(C, s, N, 5)) continue; for (const d of MED > 10 && T !== 'low' ? [-2.2, 2.2] : [0]) { if (s % 10 === 0 && d === 0) continue; const [x, z] = at(s, mid + d + (Math.random() - 0.5) * 0.6); const k = 0.8 + Math.random() * 0.45; m4.compose(v.set(x, 0.26, z), q.setFromAxisAngle(Y, Math.random() * 6), sc.set(k, k * (0.9 + Math.random() * 0.3), k)); cm.setMatrixAt(n, m4); tm.setMatrixAt(n, m4); cm.setColorAt(n, col.setHSL(0.25 + Math.random() * 0.06, 0.38 + Math.random() * 0.15, 0.2 + Math.random() * 0.08)); n++; } }
     cm.count = tm.count = n; [cm, tm].forEach((m) => { m.castShadow = T !== 'low'; R.scene.add(m); });
   }
   // double-arm lamps: a tall pole in the median, a curved arm out over each carriageway
   const pole = new THREE.CylinderGeometry(0.14, 0.24, 12, 8); pole.translate(0, 6, 0);
-  const armGeo = (dir) => { const c = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 11.2, 0), new THREE.Vector3(dir * 1.2, 12.2, 0), new THREE.Vector3(dir * 3.2, 12.4, 0)]); return new THREE.TubeGeometry(c, 8, 0.08, 5); };
+  const armGeo = (dir) => { const c = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 11.2, 0), new THREE.Vector3(dir * 1.2, 12.2, 0), new THREE.Vector3(dir * 3.2, 12.4, 0)]); return new THREE.TubeGeometry(c, T === 'low' ? 4 : 8, 0.08, T === 'low' ? 3 : 5); };
   const head = (dir) => { const g = new THREE.BoxGeometry(1.1, 0.2, 0.45); g.translate(dir * 3.5, 12.3, 0); return g; };
   const lampG = H.mergeGeos([pole, armGeo(1), armGeo(-1), head(1), head(-1)]);
   const LN = Math.ceil(N / 10) + 1, lm = new THREE.InstancedMesh(lampG, M({ color: '#9AA1A9', roughness: 0.35, metalness: 0.8 }), LN); let nl = 0; const heads = [];
@@ -320,7 +321,8 @@ function signGantry(R, sg, { RW, MED, steel }) {
   });
   const face = M({ map: tex, roughness: 0.45, emissive: '#fff', emissiveMap: tex, emissiveIntensity: R.env && R.env.night ? 0.35 : 0.05 });
   const back = M({ color: '#8C9198', roughness: 0.5, metalness: 0.6 });
-  const sign = new THREE.Mesh(new THREE.BoxGeometry(RW * 0.62, RW * 0.31, 0.2), [back, back, back, back, back, face]); sign.position.set(0, hgt + RW * 0.155 - 0.5, -0.65); sign.castShadow = true; g.add(sign);
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(RW * 0.62, RW * 0.31, 0.2), back); sign.position.set(0, hgt + RW * 0.155 - 0.5, -0.65); sign.castShadow = true; g.add(sign);
+  const faceP = new THREE.Mesh(new THREE.PlaneGeometry(RW * 0.62, RW * 0.31), face); faceP.position.set(0, hgt + RW * 0.155 - 0.5, -0.76); faceP.rotation.y = Math.PI; g.add(faceP);
   R.scene.add(g);
 }
 
@@ -333,7 +335,7 @@ function hills(R, H) {
     const a = (i / n) * Math.PI * 2 + 0.3 * Math.sin(i * 7.1), d = 1900 + 500 * ((i * 37) % 7) / 7;
     const x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d;
     if ((R.circuit.landmarks || []).some((l) => (l.x - x) ** 2 + (l.z - z) ** 2 < 700 ** 2)) continue;
-    const m = new THREE.Mesh(H.rockGeometry(3, 0.55 + 0.25 * ((i * 13) % 5) / 5, 3 + i * 1.7), mat); m.scale.set(420 + (i % 3) * 140, 260 + (i % 4) * 60, 360 + (i % 2) * 180); m.position.set(x, -10, z); m.rotation.y = i; R.scene.add(m);
+    const m = new THREE.Mesh(H.rockGeometry(R.tier === 'low' ? 2 : 3, 0.55 + 0.25 * ((i * 13) % 5) / 5, 3 + i * 1.7), mat); m.scale.set(420 + (i % 3) * 140, 260 + (i % 4) * 60, 360 + (i % 2) * 180); m.position.set(x, -10, z); m.rotation.y = i; R.scene.add(m);
   }
 }
 

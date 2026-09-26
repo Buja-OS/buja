@@ -343,10 +343,12 @@ class Race {
     this.tier = pickTier();
     const T = this.tier;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: T === 'high', powerPreference: 'high-performance', stencil: false });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, T === 'high' ? 1.6 : T === 'medium' ? 1.25 : 1));
+    // resolution: a ceiling per tier, then adjusted live to hold a smooth frame rate (see fitResolution)
+    this.dprMax = Math.min(window.devicePixelRatio || 1, T === 'high' ? 1.6 : T === 'medium' ? 1.2 : 1); this.dpr = this.dprMax;
+    this.renderer.setPixelRatio(this.dpr);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 0.78;
-    this.renderer.shadowMap.enabled = T !== 'low'; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.enabled = T === 'high'; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;   // real shadows only on High: they draw every caster twice
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(62, 1, 0.5, 6000);
     // A physically based sky with the Abuja afternoon sun; it also lights and reflects on everything (image-based lighting).
@@ -362,12 +364,14 @@ class Race {
     this.scene.environment = await loadEnvironment(this.renderer, this.envId, envScene);   // light and reflections from a real photographed sky
     this.scene.add(sky);
     this.skyFx = buildSky(this.scene, { night: !!E.night, harmattan: this.envId === 'harmattan', sunset: this.envId === 'sunset' }, T);
-    this.post = makePost(this.renderer, this.scene, this.camera, T);   // bloom, grade and speed blur on phones that can take it
+    this.post = T === 'high' ? makePost(this.renderer, this.scene, this.camera, T) : null;   // bloom and grading only on High: a dozen full-screen passes
     this.scene.fog = new THREE.Fog(E.fog, E.near, Math.min(E.far, T === 'low' ? 1500 : E.far));
-    this.scene.add(new THREE.HemisphereLight(E.night ? '#5B6E9A' : '#E4F1FF', E.night ? '#1A1F2B' : '#8A7A55', E.hemi * 0.45));
+    this.camera.far = this.scene.fog.far + (T === 'low' ? 250 : 600); this.camera.updateProjectionMatrix();   // nothing is drawn past the haze
+    sky.scale.setScalar(Math.min(9000, this.camera.far * 1.05));   // the sky dome sits inside the new far plane
+    this.scene.add(new THREE.HemisphereLight(E.night ? '#5B6E9A' : '#E4F1FF', E.night ? '#1A1F2B' : '#9A8260', E.hemi * 0.45 * (T === 'high' ? 1 : 2.6)));   // Low has no sky reflections, so more fill light
     if (E.night) this.scene.background = new THREE.Color('#070B16');
     this.sun = new THREE.DirectionalLight(E.sun, E.sunI); this.sun.position.copy(this.sunDir).multiplyScalar(300);
-    if (T !== 'low') { const sh = this.sun.shadow; sh.mapSize.set(T === 'high' ? 2048 : 1024, T === 'high' ? 2048 : 1024); sh.camera.left = sh.camera.bottom = -70; sh.camera.right = sh.camera.top = 70; sh.camera.near = 50; sh.camera.far = 700; sh.bias = -0.0004; sh.normalBias = 0.6; this.sun.castShadow = true; }
+    if (T === 'high') { const sh = this.sun.shadow; sh.mapSize.set(T === 'high' ? 2048 : 1024, T === 'high' ? 2048 : 1024); sh.camera.left = sh.camera.bottom = -70; sh.camera.right = sh.camera.top = 70; sh.camera.near = 50; sh.camera.far = 700; sh.bias = -0.0004; sh.normalBias = 0.6; this.sun.castShadow = true; }
     this.scene.add(this.sun, this.sun.target);
     this.tex = await loadTextures(this.renderer, T);
     if (this.garage && this.garage.routes) ROUTES = this.garage.routes;
@@ -379,8 +383,9 @@ class Race {
     this.buildTrack(); if (this.circuit.twin) buildExpressway(this, { mergeGeos, rockGeometry, foliageGeometries, foliageMaterial, flagTexture });
     this.buildWorld(); this.buildLandmarks(); this.buildBarriers(); if (!this.circuit.noGate) this.buildCityGate(); if (this.circuit.id === 'gp') this.buildGrandPrix();
     try { await buildAds(this, { roadW: ROAD_W, twin: !!this.circuit.twin, clearOfTrack: (x, z, r) => this.clearOfTrack(x, z, r) }); } catch (e) { console.warn('ads', e); }
-    try { buildLife(this, { mergeGeos, rockGeometry, flagTexture, roadW: ROAD_W, BOOST_V }); } catch (e) { console.error('life', e); }
+    try { buildLife(this, { mergeGeos, rockGeometry, flagTexture, foliageGeometries, foliageMaterial, roadW: ROAD_W, BOOST_V }); } catch (e) { console.error('life', e); }
     this.bakeStatic();   // fuse everything that never moves into one object per material: far fewer draw calls
+    if (T === 'high') this.calmReflections(); else this.cheapMaterials(T === 'low' ? 2 : 0.3);   // Medium keeps real reflections only on metal and glass
     this.fx = new KartFX(this.scene, this.tier);
     this.items = this.mode === 'bots' || this.mode === 'gp'; if (this.items) this.buildItemBoxes();
     this.audio.wake();
@@ -408,6 +413,7 @@ class Race {
     window.__bujaKart = this; // lets tests and support look inside a race
     this.clock = new THREE.Clock(); this.running = true;
     this.phase = 'count'; this.countFrom = this.mode === 'room' && this.room && this.room.startAt ? null : performance.now() + 3200;
+    await this.precompile();   // build every shader now, not the first time something comes into view mid-race (that was a stutter)
     this.loop = this.loop.bind(this); requestAnimationFrame(this.loop);
   }
   /** Send how this race ran on this phone, once. Auto learns from it; admins see it. */
@@ -426,6 +432,39 @@ class Race {
     if (auto && fpsAvg < 24 && this.tier !== 'low') { try { localStorage.setItem('buja_kart_autodown', JSON.stringify({ gpu: gpuName(), tier: LEVELS[LEVELS.indexOf(this.tier) - 1] })); } catch {} this._lowered = true; }
   }
   stop() { if (this.lifeStop) this.lifeStop(); this.reportPerf(); window.removeEventListener('orientationchange', this._rot); try { screen.orientation && screen.orientation.removeEventListener && screen.orientation.removeEventListener('change', this._rot); } catch {} this.audio.stop(); try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch {} try { if (document.fullscreenElement) document.exitFullscreen(); } catch {} window.removeEventListener('deviceorientation', this._tilt); document.removeEventListener('visibilitychange', this._vis); this.running = false; window.removeEventListener('resize', this._onResize); window.removeEventListener('keydown', this._kd); window.removeEventListener('keyup', this._ku); try { if (this.post) this.post.dispose(); this.renderer.dispose(); } catch {} }
+  /** Low: the world in plain diffuse (Lambert) shading instead of full physically based shading: much cheaper per pixel. Karts keep theirs. */
+  cheapMaterials(maxMetal = 2) {
+    const karts = new Set(); const cache = new Map();
+    const swap = (m) => {
+      if (!m || !(m.isMeshStandardMaterial) || m.metalness > maxMetal || m.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile || (m.userData && m.userData.keep)) return m;
+      if (cache.has(m)) return cache.get(m);
+      const l = new THREE.MeshLambertMaterial({ map: m.map, color: m.color, emissive: m.emissive, emissiveMap: m.emissiveMap, emissiveIntensity: m.emissiveIntensity, vertexColors: m.vertexColors, transparent: m.transparent, opacity: m.opacity, alphaTest: m.alphaTest, side: m.side, depthWrite: m.depthWrite, polygonOffset: m.polygonOffset, polygonOffsetFactor: m.polygonOffsetFactor });
+      if (maxMetal < 1) { if (m.bumpMap) { l.bumpMap = m.bumpMap; l.bumpScale = m.bumpScale; } if (m.normalMap) { l.normalMap = m.normalMap; l.normalScale = m.normalScale; } }   // Medium keeps surface relief
+      cache.set(m, l); return l;
+    };
+    this.scene.traverse((o) => { if (!o.isMesh) return; let dyn = false; for (let a = o; a; a = a.parent) if (a.userData && (a.userData.dynamic || a.userData.kart)) { dyn = true; break; } if (dyn) return; o.material = Array.isArray(o.material) ? o.material.map(swap) : swap(o.material); });
+  }
+  /** The photographed sky tints everything it lights; on matte things (grass, trees, walls, animals) keep that to a hint, so colours stay true. */
+  calmReflections() {
+    this.scene.traverse((o) => { if (!o.isMesh) return; for (let a = o; a; a = a.parent) if (a.userData && a.userData.kart) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { if (m && m.isMeshStandardMaterial && m.metalness < 0.5 && m.envMapIntensity > 0.5) m.envMapIntensity = 0.5; }); });
+  }
+  /** Compile every material's shader before the race starts, hidden things included. */
+  async precompile() {
+    const hidden = []; this.scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    try { if (this.renderer.compileAsync) await this.renderer.compileAsync(this.scene, this.camera); else this.renderer.compile(this.scene, this.camera); } catch {}
+    hidden.forEach((o) => { o.visible = false; });
+  }
+  /** Adaptive resolution: if frames run slow, draw fewer pixels (down to 55%); when there is headroom, go back up. */
+  fitResolution(now) {
+    const f = this._fr || (this._fr = { t: now, n: 0, good: 0 }); f.n++;
+    if (now - f.t < 1200) return;
+    const ms = (now - f.t) / f.n; f.t = now; f.n = 0;
+    const min = this.dprMax * 0.55;
+    if (ms > 21 && this.dpr > min) { this.dpr = Math.max(min, this.dpr * 0.85); f.good = 0; }
+    else if (ms < 15.5 && this.dpr < this.dprMax) { if (++f.good >= 3) { this.dpr = Math.min(this.dprMax, this.dpr * 1.1); f.good = 0; } else return; }
+    else return;
+    this.renderer.setPixelRatio(this.dpr); this.resize();
+  }
   resize() { const w = this.el.clientWidth || innerWidth, hgt = this.el.clientHeight || innerHeight; this.renderer.setSize(w, hgt, false); if (this.post) this.post.setSize(w, hgt); this.camera.aspect = w / hgt; this.camera.updateProjectionMatrix(); }
   /** One frame: through bloom and grading when the phone can take it, straight to the screen when it cannot. */
   draw() { if (this.post) this.post.render(this.player && this.player.boost > 0 ? 1 : 0); else this.renderer.render(this.scene, this.camera); }
@@ -662,7 +701,7 @@ class Race {
   makeKart(colour, isPlayer = false, ghost = false, look = null) {
     const L = look || {};
     const driver = L.driver || Object.keys(DRIVERS).find((d) => DRIVERS[d].colour === colour) || 'green';
-    const g = buildKart({ colour, paint: L.paint, design: L.design, helmet: L.helmet, driver, stats: L.stats, tier: this.tier, ghost, night: !!(this.env && this.env.night) });
+    const g = buildKart({ colour, paint: L.paint, design: L.design, helmet: L.helmet, driver, stats: L.stats, tier: this.tier, ghost, night: !!(this.env && this.env.night) }); g.userData.kart = true;
     this.scene.add(g); return g;
   }
   /** Kart designs from the shop: decals built into the kart, so they merge with the rest and cost almost nothing to draw. */
@@ -767,7 +806,7 @@ class Race {
       const dust = this.circuit.surface === 'dirt' && k.v > 10 && !k.air && Math.random() < 0.5;   // red dust behind you on the laterite
       if (drifting || dust || (off && k.v > 6)) for (const side of [-0.95, 0.95]) {
         const x = k.position.x + sx * back + px * side, z = k.position.z + cz * back + pz * side;
-        if (Math.random() < (drifting ? 0.8 : 0.5)) this.fx.puff(x, 0.35, z, off || dust ? [0.66, 0.4, 0.25] : [0.88, 0.88, 0.88], off || dust ? 1.6 : 1.3, off ? 0.8 : 1.4);
+        if (Math.random() < (drifting ? 0.8 : 0.5)) this.fx.puff(x, 0.4, z, off || dust ? [0.72, 0.47, 0.3] : [0.9, 0.9, 0.9], dust ? 2.2 + k.v * 0.03 : off ? 1.8 : 1.4, dust ? 0.7 : off ? 0.8 : 1.4);
         if (drifting && !off && !dust) this.fx.mark(x, z, k.h);
       }
       if (!isAI) { k._drifting = drifting; k._off = off; }
@@ -796,6 +835,7 @@ class Race {
     if (!this.running) return;
     if (this.phase === 'race' && !this.paused) { if (this._lastFrame) (this._ft || (this._ft = [])).push(now - this._lastFrame); this._lastFrame = now; } else this._lastFrame = 0;
     const dt = Math.min(0.05, this.clock.getDelta());
+    if (this.phase === 'race' && !this.paused) this.fitResolution(now);
     const count = this.el.querySelector('#count');
     if (this.phase === 'count') {
       const startAt = this.countFrom ?? (this.room && this.room.startAt ? performance.now() + (this.room.startAt - (Date.now() + (this.skew || 0))) : null);
@@ -834,10 +874,10 @@ class Race {
       const t = this.tangents[P.idx], dot = Math.sin(P.h) * t.x + Math.cos(P.h) * t.z;
       // counted in real time, so a slow phone shows it as quickly as a fast one
       if (dot < -0.3 && P.v > 4 && this.phase === 'race') { this._wrongSince = this._wrongSince || now; } else this._wrongSince = 0;
-      this.el.querySelector('#wrong').classList.toggle('on', !!this._wrongSince && now - this._wrongSince > 1000);
+      (this._wrongEl || (this._wrongEl = this.el.querySelector('#wrong'))).classList.toggle('on', !!this._wrongSince && now - this._wrongSince > 1000);
       // overtakes and being overtaken
       if (this.phase === 'race' && (this.bots.length || Object.keys(this.remotes).length)) { const place = this.placing(); if (this._place && place !== this._place && now - (this._placeAt || 0) > 900) { this.callout(place < this._place ? '▲ ' + this.ord(place) : '▼ ' + this.ord(place), place < this._place); this.audio.overtake(place < this._place); this._placeAt = now; } this._place = place; }
-      this.el.querySelector('#lines').classList.toggle('on', P.boost > 0);
+      (this._linesEl || (this._linesEl = this.el.querySelector('#lines'))).classList.toggle('on', P.boost > 0);
       const others = [...this.bots, ...Object.values(this.remotes).map((r) => r.kart).filter(Boolean)]; let rival = null;
       for (const o of others) {
         const dx = o.position.x - P.position.x, dz = o.position.z - P.position.z, dist = Math.hypot(dx, dz);
@@ -937,13 +977,15 @@ class Race {
     return 1 + others.filter((o) => o > me).length;
   }
   hud(now) {
-    const k = this.player; const lap = Math.min(k.lap, LAPS);
-    this.el.querySelector('#lap').textContent = `LAP ${lap}/${LAPS}`;
-    this.el.querySelector('#time').textContent = this.fmt(Math.max(0, Math.round(now - (this.t0 || now))));
+    // the HUD is plain DOM: look the elements up once, and only write what changed (writes cost layout on phones)
+    const k = this.player; const lap = Math.min(k.lap, LAPS); const q = this._hq || (this._hq = { lap: this.el.querySelector('#lap'), time: this.el.querySelector('#time'), pos: this.el.querySelector('#pos'), spd: this.el.querySelector('#spd'), bar: this.el.querySelector('#boostbar'), v: {} });
+    const set = (key, val, el, prop = 'textContent') => { if (q.v[key] !== val) { q.v[key] = val; if (prop === 'width') el.style.width = val; else el[prop] = val; } };
+    set('lap', `LAP ${lap}/${LAPS}`, q.lap);
+    if (!q.tt || now - q.tt > 50) { q.tt = now; set('time', this.fmt(Math.max(0, Math.round(now - (this.t0 || now)))), q.time); }
     const racers = this.bots.length + Object.keys(this.remotes).length;
-    this.el.querySelector('#pos').textContent = racers ? `${this.ord(this.placing())} / ${racers + 1}` : (this.bestLap ? 'BEST ' + this.fmt(this.bestLap) : 'TIME TRIAL');
-    this.el.querySelector('#spd').textContent = Math.round(k.v * 3.6);
-    this.el.querySelector('#boostbar').style.width = Math.min(100, (k.boost > 0 ? 100 : k.drift / 2.2 * 100)) + '%';
+    set('pos', racers ? `${this.ord(this.placing())} / ${racers + 1}` : (this.bestLap ? 'BEST ' + this.fmt(this.bestLap) : 'TIME TRIAL'), q.pos);
+    set('spd', String(Math.round(k.v * 3.6)), q.spd);
+    set('bar', Math.round(Math.min(100, (k.boost > 0 ? 100 : k.drift / 2.2 * 100))) + '%', q.bar, 'width');
   }
   flash(t) { const c = this.el.querySelector('#count'); c.innerHTML = `<b class="pop" style="font-size:40px">${this.h(t)}</b>`; clearTimeout(this._fl); this._fl = setTimeout(() => { if (this.phase !== 'count') c.innerHTML = ''; }, 1400); }
   nearLandmark(i) { const l = this.landmarkAt.find((x) => Math.abs(x.s - i) < 22 || Math.abs(x.s - i) > SAMPLES - 22); const box = this.el.querySelector('#land'); const name = l ? l.name : ''; if (name !== this._land) { this._land = name; box.textContent = name; box.classList.toggle('on', !!name); } }
@@ -1093,15 +1135,18 @@ class Race {
     const buckets = new Map(); const drop = [];
     this.scene.updateMatrixWorld(true);
     this.scene.traverse((o) => {
-      if (!o.isMesh || o.isInstancedMesh || keep.has(o) || Array.isArray(o.material) || !o.geometry.attributes.position || o.geometry.attributes.color || o.geometry.attributes.aStyle) return;
+      let dyn = false; for (let a = o; a; a = a.parent) if (a.userData && a.userData.dynamic) { dyn = true; break; }
+      if (dyn || !o.isMesh || o.isInstancedMesh || keep.has(o) || Array.isArray(o.material) || !o.geometry.attributes.position || o.geometry.attributes.color || o.geometry.attributes.aStyle) return;
       if (!o.geometry.attributes.normal || !o.geometry.attributes.uv) return;
-      const key = o.material.uuid; if (!buckets.has(key)) buckets.set(key, { mat: o.material, geos: [], cast: false });
-      const b = buckets.get(key); const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld); b.geos.push(g); b.cast = b.cast || o.castShadow; drop.push(o);
+      // meshes whose materials look the same share a bucket, even when each was made with its own material object
+      const m = o.material; const key = (m.userData && m.userData.animated) || m.isShaderMaterial || m.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile || m.isMeshPhysicalMaterial ? m.uuid : [m.type, m.color && m.color.getHex(), m.map && m.map.uuid, m.normalMap && m.normalMap.uuid, m.emissive && m.emissive.getHex(), m.emissiveIntensity, m.emissiveMap && m.emissiveMap.uuid, m.roughness, m.metalness, m.transparent, m.opacity, m.side, m.alphaTest, m.envMapIntensity, m.depthWrite, m.polygonOffset].join('|');
+      if (!buckets.has(key)) buckets.set(key, { mat: o.material, geos: [], cast: false });
+      const b = buckets.get(key); const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld); b.geos.push(g); b.cast = b.cast || o.castShadow; drop.push([o, key]);
     });
     let before = drop.length, after = 0;
     for (const { mat, geos, cast } of buckets.values()) { if (geos.length < 2) { continue; } const m = new THREE.Mesh(mergeGeos(geos), mat); m.castShadow = cast; m.receiveShadow = true; this.scene.add(m); after++; }
     // only remove the originals whose bucket was merged
-    for (const o of drop) { const b = buckets.get(o.material.uuid); if (b.geos.length >= 2) o.parent && o.parent.remove(o); }
+    for (const [o, key] of drop) { const b = buckets.get(key); if (b.geos.length >= 2) o.parent && o.parent.remove(o); }
     this._baked = { before, after };
   }
   /** The Grand Prix start: two covered grandstands full of spectators, the START / FINISH gantry with five lights,
@@ -1562,32 +1607,39 @@ class KartAudio {
 /* ================================================================================================ */
 class KartFX {
   constructor(scene, tier) {
-    this.scene = scene; const N = this.N = tier === 'low' ? 60 : 140;
-    this.pos = new Float32Array(N * 3); this.col = new Float32Array(N * 3); this.size = new Float32Array(N); this.alpha = new Float32Array(N); this.life = new Float32Array(N); this.vel = new Float32Array(N * 3); this.next = 0;
+    this.scene = scene; const N = this.N = tier === 'low' ? 110 : 220;
+    this.pos = new Float32Array(N * 3); this.col = new Float32Array(N * 3); this.size = new Float32Array(N); this.alpha = new Float32Array(N); this.life = new Float32Array(N); this.vel = new Float32Array(N * 3); this.rot = new Float32Array(N); this.spin = new Float32Array(N); this.next = 0;
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(this.col, 3)); g.setAttribute('size', new THREE.BufferAttribute(this.size, 1)); g.setAttribute('alpha', new THREE.BufferAttribute(this.alpha, 1));
-    const m = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: { scale: { value: 400 } },
-      vertexShader: 'attribute float size; attribute float alpha; attribute vec3 color; varying float vA; varying vec3 vC; uniform float scale; void main(){ vA = alpha; vC = color; vec4 mv = modelViewMatrix * vec4(position,1.0); gl_PointSize = size * scale / -mv.z; gl_Position = projectionMatrix * mv; }',
-      fragmentShader: 'varying float vA; varying vec3 vC; void main(){ float d = length(gl_PointCoord - 0.5); if (d > 0.5) discard; gl_FragColor = vec4(vC, vA * smoothstep(0.5, 0.0, d)); }' });
+    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(this.col, 3)); g.setAttribute('size', new THREE.BufferAttribute(this.size, 1)); g.setAttribute('alpha', new THREE.BufferAttribute(this.alpha, 1)); g.setAttribute('rot', new THREE.BufferAttribute(this.rot, 1));
+    // a billowing puff: soft round falloff broken up by layered noise, so dust and smoke read as clouds, not discs
+    const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+    for (let i = 0; i < 70; i++) { const r = 10 + Math.random() * 26, px = 64 + (Math.random() - 0.5) * 60, py = 64 + (Math.random() - 0.5) * 60; const gr = x.createRadialGradient(px, py, 0, px, py, r); const a = 0.12 + Math.random() * 0.16; gr.addColorStop(0, `rgba(255,255,255,${a})`); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, 128, 128); }
+    const id = x.getImageData(0, 0, 128, 128); for (let py = 0; py < 128; py++) for (let px = 0; px < 128; px++) { const d = Math.hypot(px - 64, py - 64) / 64; const k = (py * 128 + px) * 4 + 3; id.data[k] = Math.round(id.data[k] * Math.max(0, 1 - d * d)); } x.putImageData(id, 0, 0);
+    const tex = new THREE.CanvasTexture(c);
+    const m = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: { scale: { value: 400 }, map: { value: tex }, light: { value: new THREE.Color('#FFF4E2') } },
+      vertexShader: 'attribute float size; attribute float alpha; attribute float rot; attribute vec3 color; varying float vA; varying vec3 vC; varying float vR; uniform float scale; void main(){ vA = alpha; vC = color; vR = rot; vec4 mv = modelViewMatrix * vec4(position,1.0); gl_PointSize = size * scale / -mv.z; gl_Position = projectionMatrix * mv; }',
+      fragmentShader: 'uniform sampler2D map; uniform vec3 light; varying float vA; varying vec3 vC; varying float vR; void main(){ vec2 p = gl_PointCoord - 0.5; float c = cos(vR), s = sin(vR); p = mat2(c, -s, s, c) * p; vec4 t = texture2D(map, p + 0.5); if (t.a < 0.01) discard; vec3 col = vC * light * (0.78 + 0.35 * (1.0 - gl_PointCoord.y)); gl_FragColor = vec4(col, vA * t.a * 1.15); }' });
     this.points = new THREE.Points(g, m); this.points.frustumCulled = false; scene.add(this.points);
     // skid marks: a ring of thin dark quads laid on the road
     const S = this.S = tier === 'low' ? 120 : 260; this.si = 0;
     const q = new THREE.PlaneGeometry(0.34, 1.1); q.rotateX(-Math.PI / 2);
     this.skid = new THREE.InstancedMesh(q, new THREE.MeshBasicMaterial({ color: '#0d0d0f', transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), S);
-    this.skid.count = 0; this.skid.frustumCulled = false; scene.add(this.skid); this.m4 = new THREE.Matrix4(); this.qq = new THREE.Quaternion(); this.up = new THREE.Vector3(0, 1, 0);
+    this.skid.count = 0; this.skid.frustumCulled = false; scene.add(this.skid); this.m4 = new THREE.Matrix4(); this.qq = new THREE.Quaternion(); this.up = new THREE.Vector3(0, 1, 0); this.v3 = new THREE.Vector3(); this.one = new THREE.Vector3(1, 1, 1);
   }
   puff(x, y, z, colour, size, vy = 1.2) {
-    const i = this.next++ % this.N; this.pos.set([x, y, z], i * 3); this.col.set(colour, i * 3); this.size[i] = size; this.alpha[i] = 0.55; this.life[i] = 1;
-    this.vel.set([(Math.random() - 0.5) * 1.5, vy * (0.6 + Math.random() * 0.8), (Math.random() - 0.5) * 1.5], i * 3);
+    const i = this.next++ % this.N; this.pos[i * 3] = x; this.pos[i * 3 + 1] = y; this.pos[i * 3 + 2] = z; this.col[i * 3] = colour[0]; this.col[i * 3 + 1] = colour[1]; this.col[i * 3 + 2] = colour[2];
+    this.size[i] = size * (0.8 + Math.random() * 0.5); this.alpha[i] = 0; this.life[i] = 1; this.rot[i] = Math.random() * 6.28; this.spin[i] = (Math.random() - 0.5) * 1.6;
+    this.vel[i * 3] = (Math.random() - 0.5) * 1.5; this.vel[i * 3 + 1] = vy * (0.6 + Math.random() * 0.8); this.vel[i * 3 + 2] = (Math.random() - 0.5) * 1.5;
   }
   mark(x, z, heading) {
-    const i = this.si++ % this.S; this.qq.setFromAxisAngle(this.up, heading); this.m4.compose(new THREE.Vector3(x, 0.07, z), this.qq, new THREE.Vector3(1, 1, 1));
+    const i = this.si++ % this.S; this.qq.setFromAxisAngle(this.up, heading); this.m4.compose(this.v3.set(x, 0.07, z), this.qq, this.one);
     this.skid.setMatrixAt(i, this.m4); this.skid.count = Math.min(this.S, this.si); this.skid.instanceMatrix.needsUpdate = true;
   }
   update(dt) {
     for (let i = 0; i < this.N; i++) { if (this.life[i] <= 0) { this.alpha[i] = 0; continue; }
-      this.life[i] -= dt * 0.9; this.pos[i * 3] += this.vel[i * 3] * dt; this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt; this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
-      this.size[i] += dt * 2.2; this.alpha[i] = Math.max(0, this.life[i] * 0.55); }
-    const g = this.points.geometry; g.attributes.position.needsUpdate = g.attributes.size.needsUpdate = g.attributes.alpha.needsUpdate = g.attributes.color.needsUpdate = true;
+      this.life[i] -= dt * 0.7; this.pos[i * 3] += this.vel[i * 3] * dt; this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt; this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
+      this.vel[i * 3 + 1] *= 1 - dt * 0.8; this.rot[i] += this.spin[i] * dt;
+      this.size[i] += dt * 2.6; const age = 1 - this.life[i]; this.alpha[i] = Math.max(0, Math.min(1, age * 7) * this.life[i] * 0.5); }   // fades in quickly, drifts, spreads and thins out
+    const g = this.points.geometry; g.attributes.position.needsUpdate = g.attributes.size.needsUpdate = g.attributes.alpha.needsUpdate = g.attributes.color.needsUpdate = g.attributes.rot.needsUpdate = true;
   }
 }

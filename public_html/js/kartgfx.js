@@ -267,7 +267,7 @@ function makeWheel(front, level, tier, ghostMat) {
   const rimG = merge(parts);
   const g = new THREE.Group();
   if (ghostMat) { g.add(new THREE.Mesh(tg, ghostMat)); return g; }
-  if (tier === 'low') { const one = merge([tint(tg.clone(), '#161616'), tint(rimG.clone(), rim.col)], true); g.add(new THREE.Mesh(one, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.4 }))); g.userData.R = R; return g; }
+  if (tier !== 'high') { const one = merge([tint(tg.clone(), '#161616'), tint(rimG.clone(), rim.col)], true); g.add(new THREE.Mesh(one, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.4 }))); g.userData.R = R; return g; }
   const tyreM = new THREE.MeshStandardMaterial({ color: '#141414', roughness: 0.86, normalMap: tier === 'low' ? null : tex('tread_n.webp', { srgb: false }), envMapIntensity: 0.4 });
   if (tyreM.normalMap) { tyreM.normalMap.repeat.set(10, 1); tyreM.normalScale.set(0.7, 0.7); }
   const rimM = new THREE.MeshStandardMaterial({ color: rim.col, metalness: rim.metal, roughness: rim.rough, envMapIntensity: 1.2 });
@@ -444,7 +444,14 @@ export function buildKart(opts) {
 
   /* assemble: one mesh per material */
   const add = (geos, mat, colour = false) => { const m = merge(geos, colour); if (!m) return null; const mesh = new THREE.Mesh(m, mat); mesh.castShadow = !ghost; mesh.receiveShadow = !ghost && !low; g.add(mesh); return mesh; };
+  // ordinary phones: every fixed part except the paint and helmet in one vertex-coloured mesh (3 draw calls instead of 8)
+  const lite = tier !== 'high' && !ghost;
   add(body, paintM); g.paint = paintM;
+  if (lite) {
+    const oneM = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.35, roughness: 0.5, envMapIntensity: 0.9 });
+    g.driver = add([...metal, ...matte, ...carbon.map((c) => tint(c, '#202226')), ...D, tint(visorG.clone(), '#0E1116')], oneM, true);
+    g.helmet = add([helmet, chin], helmetMaterial(S.suit === colour ? colour : (opts.helmetColour || colour), helm, tier));
+  } else {
   add(metal, metalM, true);
   if (low && !ghost) matte.push(tint(visorG.clone(), '#0E1116'));   // on low phones the visor rides along with the matte parts
   if (carbonM === matteM) add([...matte, ...carbon.map((c) => tint(c, '#202226'))], matteM, true); else { add(matte, matteM, true); add(carbon, carbonM); }
@@ -452,16 +459,17 @@ export function buildKart(opts) {
   g.driver = add(D, suitM, true);
   g.helmet = add([helmet, chin], ghost ? ghostMat : helmetMaterial(S.suit === colour ? colour : (opts.helmetColour || colour), helm, tier));
   if (!low || ghost) add([visorG], ghost ? ghostMat : (tier === 'high' ? new THREE.MeshPhysicalMaterial({ color: '#0B0E14', metalness: 1, roughness: 0.04, iridescence: 1, iridescenceIOR: 1.6, envMapIntensity: 1.6 }) : new THREE.MeshStandardMaterial({ color: '#10141B', metalness: 1, roughness: 0.06, envMapIntensity: 1.5 })));
+  }
   if (!ghost) {
     const gm = new THREE.MeshStandardMaterial({ color: '#FFF3D6', emissive: '#FFE7B0', emissiveIntensity: opts.night ? 4 : 0.6, toneMapped: true });
-    if (glow.length && (!low || opts.night)) g.lights = add(glow, gm);
+    if (glow.length && (tier === 'high' || opts.night)) g.lights = add(glow, gm);
     // brake light: its own material so its glow can follow the brake
     const bl = new THREE.Mesh(place(new THREE.BoxGeometry(1.1, 0.05, 0.02), { y: 0.5, z: -1.85 }), new THREE.MeshStandardMaterial({ color: '#400808', emissive: '#FF1A1A', emissiveIntensity: 0.25 })); g.add(bl); g.brakeLight = bl.material;
     if (g.userData.under) { const um = new THREE.Mesh(g.userData.under, new THREE.MeshBasicMaterial({ color: '#22E0FF', transparent: true, opacity: 0.4, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })); g.add(um); }
     // race numbers: the nose panel and both side pods
     const nt = numberTexture(S.num, '#FFFFFF', '#111418'); const nm = new THREE.MeshStandardMaterial({ map: nt, transparent: true, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2 });
     const num = merge([place(new THREE.PlaneGeometry(0.34, 0.34), { y: 0.8, z: 0.87, rx: -0.95 }), place(new THREE.PlaneGeometry(0.32, 0.32), { x: 1.04, y: 0.47, z: 0.0, ry: Math.PI / 2 }), place(new THREE.PlaneGeometry(0.32, 0.32), { x: -1.04, y: 0.47, z: 0.0, ry: -Math.PI / 2 })]);
-    if (!low) g.add(new THREE.Mesh(num, nm));
+    if (tier === 'high') g.add(new THREE.Mesh(num, nm));
     // a soft contact shadow so the kart sits on the road even where real shadows are off
     const sh = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 4.4), new THREE.MeshBasicMaterial({ map: blobShadowTexture(), transparent: true, depthWrite: false, opacity: low ? 1 : 0.75 }));
     sh.rotation.x = -Math.PI / 2; sh.position.y = 0.035; sh.renderOrder = 1; g.add(sh);
@@ -493,8 +501,9 @@ export function buildSky(scene, env, tier) {
   const mat = new THREE.SpriteMaterial({ map: t, color: tintC, transparent: true, depthWrite: false, fog: false, opacity: env.harmattan ? 0.55 : 0.9 });
   const clouds = []; const N = tier === 'low' ? 14 : 30;
   for (let i = 0; i < N; i++) {
-    const a = Math.random() * Math.PI * 2, r = 1400 + Math.random() * 2400, s = 380 + Math.random() * 520;
-    const c = new THREE.Sprite(mat); c.position.set(Math.cos(a) * r, 520 + Math.random() * 520, Math.sin(a) * r); c.scale.set(s * 1.8, s * 0.7, 1); scene.add(c); clouds.push(c);
+    const kk = tier === 'low' ? 0.42 : tier === 'medium' ? 0.85 : 1;   // inside each tier's far plane
+    const a = Math.random() * Math.PI * 2, r = (1400 + Math.random() * 2400) * kk, s = (380 + Math.random() * 520) * kk;
+    const c = new THREE.Sprite(mat); c.position.set(Math.cos(a) * r, (520 + Math.random() * 520) * kk, Math.sin(a) * r); c.scale.set(s * 1.8, s * 0.7, 1); scene.add(c); clouds.push(c);
   }
   out.update = (dt) => { for (const c of clouds) { c.position.x += dt * 6; if (c.position.x > 3800) c.position.x = -3800; } };
   return out;

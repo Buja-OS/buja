@@ -7,6 +7,7 @@ import * as THREE from './vendor/three.module.min.js';
 const M = (o) => new THREE.MeshStandardMaterial(o);
 const Y = new THREE.Vector3(0, 1, 0), X = new THREE.Vector3(1, 0, 0);
 const rnd = (a, b) => a + Math.random() * (b - a);
+const TMP = { m4: new THREE.Matrix4(), q: new THREE.Quaternion(), v: new THREE.Vector3(), one: new THREE.Vector3(1, 1, 1), zero: new THREE.Vector3(0, 0, 0) };   // reused every frame: no garbage
 function canvasTex(w, h, draw, repeat) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; } return t;
@@ -15,14 +16,23 @@ function canvasTex(w, h, draw, repeat) {
 /** Road surfaces that are not asphalt: red laterite with tyre ruts, and airfield concrete in slabs. UVs are in metres. */
 export function surfaceMaterial(kind, tex) {
   if (kind === 'dirt') {
-    const t = canvasTex(256, 256, (g) => {
-      g.fillStyle = '#A9572F'; g.fillRect(0, 0, 256, 256);
-      for (let i = 0; i < 2600; i++) { const v = Math.random(); g.fillStyle = `rgba(${v < 0.5 ? '90,40,20' : '215,140,90'},${0.08 + Math.random() * 0.12})`; const s = 1 + Math.random() * 4; g.fillRect(Math.random() * 256, Math.random() * 256, s, s); }
-      for (const x of [70, 96, 160, 186]) { g.fillStyle = 'rgba(70,30,15,.18)'; g.fillRect(x, 0, 14, 256); }   // wheel ruts
-      for (let i = 0; i < 40; i++) { g.fillStyle = 'rgba(240,200,150,.10)'; g.beginPath(); g.ellipse(Math.random() * 256, Math.random() * 256, 8 + Math.random() * 20, 3 + Math.random() * 6, 0, 0, 7); g.fill(); }
+    // compacted red laterite: blotchy colour, fine grit and pebbles, two worn wheel tracks; a matching bump map for relief
+    const S = 512, hc = document.createElement('canvas'); hc.width = hc.height = S; const h = hc.getContext('2d');
+    h.fillStyle = '#808080'; h.fillRect(0, 0, S, S);
+    const t = canvasTex(S, S, (g) => {
+      g.fillStyle = '#A65A33'; g.fillRect(0, 0, S, S);
+      for (let i = 0; i < 60; i++) { const x = Math.random() * S, y = Math.random() * S, r = 30 + Math.random() * 90; const gr = g.createRadialGradient(x, y, 0, x, y, r); const dark = Math.random() < 0.5; gr.addColorStop(0, dark ? 'rgba(110,50,25,.28)' : 'rgba(205,130,85,.26)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); }
+      for (const cx of [150, 362]) { const gr = g.createLinearGradient(cx - 40, 0, cx + 40, 0); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.5, 'rgba(95,42,20,.3)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(cx - 40, 0, 80, S);
+        const hg = h.createLinearGradient(cx - 40, 0, cx + 40, 0); hg.addColorStop(0, 'rgba(128,128,128,0)'); hg.addColorStop(0.5, 'rgba(90,90,90,.7)'); hg.addColorStop(1, 'rgba(128,128,128,0)'); h.fillStyle = hg; h.fillRect(cx - 40, 0, 80, S); }
+      for (let i = 0; i < 9000; i++) { const x = Math.random() * S, y = Math.random() * S, v = Math.random(); g.fillStyle = v < 0.5 ? `rgba(80,35,15,${0.15 + v * 0.3})` : `rgba(235,170,120,${0.08 + (v - 0.5) * 0.3})`; g.fillRect(x, y, 1.5, 1.5); }
+      for (let i = 0; i < 700; i++) { const x = Math.random() * S, y = Math.random() * S, r = 1.5 + Math.random() * 3.5; const tone = 120 + Math.random() * 90; g.fillStyle = `rgb(${tone},${tone * 0.62},${tone * 0.42})`; g.beginPath(); g.ellipse(x, y, r, r * 0.75, Math.random() * 3, 0, 7); g.fill();
+        g.fillStyle = 'rgba(255,230,200,.35)'; g.beginPath(); g.arc(x - r * 0.3, y - r * 0.3, r * 0.35, 0, 7); g.fill();
+        h.fillStyle = `rgba(230,230,230,.9)`; h.beginPath(); h.arc(x, y, r, 0, 7); h.fill(); }
     }, true);
-    t.repeat.set(1 / 11, 1 / 11);
-    return M({ map: t, roughness: 1, envMapIntensity: 0.25 });
+    t.repeat.set(1 / 9, 1 / 9);
+    // bump from the height canvas: pebbles stand up, wheel tracks sink
+    const bump = new THREE.CanvasTexture(hc); bump.wrapS = bump.wrapT = THREE.RepeatWrapping; bump.repeat.set(1 / 9, 1 / 9);
+    return M({ map: t, bumpMap: bump, bumpScale: 2.2, roughness: 1, envMapIntensity: 0.2 });
   }
   const t = canvasTex(256, 256, (g) => {
     g.fillStyle = '#C9C6BE'; g.fillRect(0, 0, 256, 256);
@@ -101,23 +111,16 @@ export function buildLife(R, H) {
   const herdCount = isGP ? 0 : C.cattle != null ? C.cattle : 2;
   const herds = [];
   if (herdCount) {
-    const body = []; const box = (w, h, d, x, y, z, rx = 0) => { const b = new THREE.BoxGeometry(w, h, d); if (rx) b.rotateX(rx); b.translate(x, y, z); body.push(b); };
-    box(0.74, 0.74, 1.8, 0, 1.12, 0); box(0.6, 0.3, 1.5, 0, 0.8, 0);
-    const hump = new THREE.SphereGeometry(0.3, 8, 6); hump.scale(1, 1.15, 1.3); hump.translate(0, 1.56, 0.55); body.push(hump);
-    box(0.4, 0.46, 0.5, 0, 1.32, 1.0, -0.45); box(0.3, 0.34, 0.56, 0, 1.2, 1.36, 0.55); box(0.36, 0.08, 0.14, 0, 1.36, 1.3);   // neck, head, ears
-    box(0.05, 0.75, 0.05, 0, 0.9, -0.92); box(0.12, 0.16, 0.12, 0, 0.5, -0.93);   // tail and its tuft
-    const bodyG = H.mergeGeos(body);
-    const horn = (sx) => new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(sx * 0.1, 1.4, 1.28), new THREE.Vector3(sx * 0.34, 1.62, 1.26), new THREE.Vector3(sx * 0.42, 1.95, 1.16), new THREE.Vector3(sx * 0.3, 2.25, 1.02)]), 8, 0.055, 5);
-    const hornG = H.mergeGeos([horn(1), horn(-1)]);
-    const legG = new THREE.BoxGeometry(0.15, 0.82, 0.15); legG.translate(0, -0.41, 0);
+    const { bodyG, hornG, legG, coat } = cowGeometry();
     const per = []; for (let h = 0; h < herdCount; h++) per.push(Math.round(rnd(5, 8)));
     const total = per.reduce((a, b) => a + b, 0);
-    const bodies = new THREE.InstancedMesh(bodyG, M({ color: '#FFFFFF', roughness: 0.85, envMapIntensity: 0.4 }), total);
-    const horns = new THREE.InstancedMesh(hornG, M({ color: '#EDE3CC', roughness: 0.5 }), total);
-    const legs = new THREE.InstancedMesh(legG, M({ color: '#FFFFFF', roughness: 0.85 }), total * 4);
+    const hide = M({ color: '#FFFFFF', map: coat, vertexColors: true, roughness: 0.9, envMapIntensity: 0.3 });
+    const bodies = new THREE.InstancedMesh(bodyG, hide, total);
+    const horns = new THREE.InstancedMesh(hornG, M({ vertexColors: true, roughness: 0.6, envMapIntensity: 0.2 }), total);
+    const legs = new THREE.InstancedMesh(legG, hide, total * 4);
     [bodies, horns, legs].forEach((m) => { m.castShadow = T !== 'low'; m.frustumCulled = false; R.scene.add(m); });
     const col = new THREE.Color(); let ci = 0;
-    const COATS = ['#EFEBE1', '#F3F0E8', '#E2DCCD', '#EAE4D6', '#8C3B1E', '#7A3319', '#D8D2C4', '#A1542C'];
+    const COATS = ['#F4F1EA', '#F7F5EF', '#EAE4D6', '#F0EBE0', '#B5582E', '#A34E28', '#E6E0D2', '#C0703F'];
     for (let h = 0; h < herdCount; h++) {
       const s = pickStraight(h / herdCount + 0.02, (h + 1) / herdCount - 0.02, 50); if (s < 0) continue;
       const side = C.twin ? 1 : Math.random() < 0.5 ? 1 : -1, verge = side * (RW / 2 + (surface === 'asphalt' ? 4.2 : 5));
@@ -133,8 +136,8 @@ export function buildLife(R, H) {
     }
     bodies.count = horns.count = ci; legs.count = ci * 4;
     life.herds = herds;
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), lm = new THREE.Matrix4(), lq = new THREE.Quaternion();
-    const LEGS = [[0.24, 0.8, 0.62], [-0.24, 0.8, 0.62], [0.24, 0.8, -0.62], [-0.24, 0.8, -0.62]];
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), lm = new THREE.Matrix4(), lq = new THREE.Quaternion(), tmpM = new THREE.Matrix4();
+    const LEGS = [[0.2, 0.86, 0.6], [-0.2, 0.86, 0.6], [0.2, 0.86, -0.66], [-0.2, 0.86, -0.66]];
     life.drawCows = (now, dt) => {
       for (const herd of herds) {
         let moving = false;
@@ -151,7 +154,7 @@ export function buildLife(R, H) {
           const want = Math.abs(latSpeed) > 0.05 ? crossH : walkAlong; let d = want - c.h; d = Math.atan2(Math.sin(d), Math.cos(d)); c.h += d * Math.min(1, dt * 3);
           c.phase += dt * (Math.abs(latSpeed) > 0.05 ? 7 : 4.5); if (Math.abs(latSpeed) > 0.05) moving = true;
           q.setFromAxisAngle(Y, c.h); m4.compose(v.set(x, Math.abs(Math.sin(c.phase)) * 0.03, z), q, one); bodies.setMatrixAt(c.idx, m4); horns.setMatrixAt(c.idx, m4);
-          LEGS.forEach(([lx, ly, lz], l) => { lq.setFromAxisAngle(X, Math.sin(c.phase + (l % 2 === (l < 2 ? 0 : 1) ? 0 : Math.PI)) * 0.38); lm.compose(v.set(lx, ly, lz), lq, one); legs.setMatrixAt(c.idx * 4 + l, m4.clone().multiply(lm)); });
+          LEGS.forEach(([lx, ly, lz], l) => { lq.setFromAxisAngle(X, Math.sin(c.phase + (l % 2 === (l < 2 ? 0 : 1) ? 0 : Math.PI)) * 0.38); lm.compose(v.set(lx, ly, lz), lq, one); legs.setMatrixAt(c.idx * 4 + l, tmpM.multiplyMatrices(m4, lm)); });
         }
         // the herder: walks behind the herd on the verge, stick across the shoulders; steps to the kerb and waves when they cross
         const hs = herd.s - herd.dir * (herd.cows.length * 1.6 + 3) / 4; const crossing = herd.cows.some((c) => c.target != null);
@@ -192,6 +195,7 @@ export function buildLife(R, H) {
   /* ------------------------------ the police chase ------------------------------ */
   const chaseOn = !isGP && R.mode !== 'room' && C.police !== false;
   const chase = { state: 'idle', at: rnd(20000, 45000), car: null, s: 0, lat: 0, v: 0, since: 0 };
+  if (chaseOn) { chase.car = policeCar(R); chase.car.visible = false; R.scene.add(chase.car); }   // built now so its shaders compile before the race
   let siren = null;
   const sirenStart = () => {
     const a = R.audio; if (!a || !a.ctx || siren) return; const c = a.ctx;
@@ -264,7 +268,7 @@ export function buildLife(R, H) {
     // coins spin; the player collects them; they come back every lap
     const pl = R.player;
     if (pl.lap !== coinLap) { coinLap = pl.lap; coins.forEach((c) => { c.taken = false; }); }
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), zero = new THREE.Vector3(0, 0, 0);
+    const { m4, q, v, one, zero } = TMP;
     q.setFromAxisAngle(Y, now / 260);
     coins.forEach((c, i) => {
       if (!c.taken && racing) { const dx = pl.position.x - c.x, dz = pl.position.z - c.z, dy = (pl.y || 0) + 0.6 - c.y; if (dx * dx + dz * dz < 2.6 && Math.abs(dy) < 1.5) { c.taken = true; addPickups(1); R.audio.tone(1320, 0.08, 'triangle', 0.14); R.audio.tone(1760, 0.14, 'triangle', 0.12, 0.06); } }
@@ -345,6 +349,56 @@ export function buildLife(R, H) {
   return life;
 }
 
+
+/* ================================== the cow ================================== */
+/** Merge geometries keeping vertex colours (white where a piece has none). */
+function mergeC(list) {
+  const geos = list.map((g) => { g = g.index ? g.toNonIndexed() : g; if (!g.attributes.color) { const c = new Float32Array(g.attributes.position.count * 3).fill(1); g.setAttribute('color', new THREE.BufferAttribute(c, 3)); } return g; });
+  const out = new THREE.BufferGeometry();
+  for (const name of ['position', 'normal', 'uv', 'color']) { const size = geos[0].attributes[name].itemSize; const arr = new Float32Array(geos.reduce((n, g) => n + g.attributes[name].count * size, 0)); let o = 0; geos.forEach((g) => { arr.set(g.attributes[name].array, o); o += g.attributes[name].array.length; }); out.setAttribute(name, new THREE.BufferAttribute(arr, size)); }
+  return out;
+}
+const paint = (g, hex) => { const c = new THREE.Color(hex); g = g.index ? g.toNonIndexed() : g; const a = new Float32Array(g.attributes.position.count * 3); for (let i = 0; i < a.length; i += 3) { a[i] = c.r; a[i + 1] = c.g; a[i + 2] = c.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
+/**
+ * A White Fulani (Bunaji) cow, the breed on every Abuja roadside: a deep rounded body, the hump over the shoulders,
+ * a hanging dewlap, a long face with a dark muzzle, and tall lyre-shaped horns. Built from smooth revolved shapes,
+ * not boxes, and coloured per animal by the instance colour (white, cream, or the red of the Bororo).
+ */
+function cowGeometry() {
+  const parts = [];
+  // the barrel of the body: a revolved profile from rump to chest, deeper than it is wide
+  const prof = [[0.02, -1.0], [0.2, -0.97], [0.33, -0.86], [0.4, -0.66], [0.43, -0.4], [0.44, -0.1], [0.43, 0.2], [0.41, 0.5], [0.36, 0.72], [0.24, 0.86], [0.02, 0.9]];
+  const barrel = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 12); barrel.rotateX(Math.PI / 2); barrel.scale(0.84, 1.08, 1); barrel.translate(0, 1.13, 0); parts.push(barrel);
+  // hip bones and the hump over the withers
+  for (const s of [-1, 1]) { const hip = new THREE.SphereGeometry(0.16, 7, 5); hip.translate(s * 0.26, 1.42, -0.72); parts.push(hip); }
+  const hump = new THREE.SphereGeometry(0.28, 10, 7); hump.scale(0.8, 1.05, 1.25); hump.translate(0, 1.5, 0.5); parts.push(hump);
+  // neck, falling towards the head, with the loose dewlap underneath
+  const neck = new THREE.CylinderGeometry(0.17, 0.26, 0.62, 9, 1, true); neck.rotateX(-1.05); neck.translate(0, 1.3, 0.98); parts.push(neck);
+  const dew = new THREE.SphereGeometry(0.3, 8, 6); dew.scale(0.28, 0.9, 1.1); dew.translate(0, 0.98, 0.92); parts.push(dew);
+  // the long face: skull, then a narrower muzzle, dark at the nose
+  const skull = new THREE.CapsuleGeometry(0.14, 0.28, 3, 9); skull.rotateX(1.05); skull.scale(0.95, 1, 1); skull.translate(0, 1.32, 1.3); parts.push(skull);
+  const muzzle = paint(new THREE.CapsuleGeometry(0.11, 0.12, 3, 8), '#3A2E2A'); muzzle.rotateX(1.2); muzzle.translate(0, 1.13, 1.5); parts.push(muzzle);
+  for (const s of [-1, 1]) { const eye = paint(new THREE.SphereGeometry(0.03, 4, 3), '#141010'); eye.translate(s * 0.12, 1.4, 1.34); parts.push(eye);
+    const ear = new THREE.ConeGeometry(0.07, 0.24, 5); ear.scale(1, 1, 0.45); ear.rotateZ(s * 1.8); ear.translate(s * 0.22, 1.43, 1.2); parts.push(ear); }
+  // tail with a dark tuft
+  const tail = new THREE.CylinderGeometry(0.025, 0.04, 0.8, 4, 1, true); tail.translate(0, 1.0, -1.0); parts.push(tail);
+  const tuft = paint(new THREE.SphereGeometry(0.07, 5, 4), '#2B2220'); tuft.scale(1, 1.8, 1); tuft.translate(0, 0.58, -1.0); parts.push(tuft);
+  const bodyG = mergeC(parts);
+  // lyre-shaped horns: up and out, then in, pale with darker tips
+  const horn = (sx) => { const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(sx * 0.1, 1.46, 1.2), new THREE.Vector3(sx * 0.3, 1.6, 1.18), new THREE.Vector3(sx * 0.38, 1.9, 1.08), new THREE.Vector3(sx * 0.26, 2.18, 0.98)]), 8, 0.045, 5);
+    const n = g.attributes.position.count, c = new Float32Array(n * 3), uv = g.attributes.uv; for (let i = 0; i < n; i++) { const t = uv.getX(i); const k = t > 0.8 ? 0.35 : 0.95 - t * 0.15; c[i * 3] = k * 0.98; c[i * 3 + 1] = k * 0.93; c[i * 3 + 2] = k * 0.82; } g.setAttribute('color', new THREE.BufferAttribute(c, 3)); return g; };
+  const hornG = mergeC([horn(1), horn(-1)]);
+  // a leg: tapered upper and lower parts with a knee, and a dark hoof; pivots at the top
+  const up = new THREE.CylinderGeometry(0.075, 0.1, 0.45, 6, 1, true); up.translate(0, -0.22, 0);
+  const knee = new THREE.SphereGeometry(0.075, 6, 4); knee.translate(0, -0.46, 0.01);
+  const low = new THREE.CylinderGeometry(0.05, 0.065, 0.36, 6, 1, true); low.translate(0, -0.64, 0);
+  const hoof = paint(new THREE.CylinderGeometry(0.06, 0.07, 0.09, 6), '#2A2320'); hoof.translate(0, -0.84, 0.01);
+  const legG = mergeC([up, knee, low, hoof]);
+  // a subtle hide: short hair and a little dust, so the white is not flat plastic
+  const coat = canvasTex(128, 128, (g) => { g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, 128, 128); for (let i = 0; i < 900; i++) { const v = 200 + Math.random() * 55; g.strokeStyle = `rgba(${v},${v - 6},${v - 16},.5)`; g.lineWidth = 1; const x = Math.random() * 128, y = Math.random() * 128; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 1, y + 3 + Math.random() * 3); g.stroke(); } for (let i = 0; i < 20; i++) { g.fillStyle = 'rgba(150,110,80,.08)'; g.beginPath(); g.arc(Math.random() * 128, 90 + Math.random() * 38, 6 + Math.random() * 14, 0, 7); g.fill(); } }, true);
+  return { bodyG, hornG, legG, coat };
+}
+
 /* ================================== people and vehicles ================================== */
 function herder(R) {
   const g = new THREE.Group(); const robes = ['#E9E4D6', '#2A3D6B', '#6B4A2A', '#3C6E47', '#8A2F2F'];
@@ -357,7 +411,7 @@ function herder(R) {
   const tip = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.12, 8), M({ color: '#5A3A1E', roughness: 0.8 })); tip.position.y = 1.86; g.add(tip);   // the leather top of the Fulani hat
   const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.9, 6), M({ color: '#6E4B2A', roughness: 0.8 })); stick.rotation.z = Math.PI / 2; stick.position.y = 1.32; g.add(stick);
   for (const s of [-1, 1]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.36, 0.08), skin); arm.position.set(s * 0.34, 1.42, 0); g.add(arm); }
-  g.userData.stick = stick; g.traverse((o) => { if (o.isMesh) o.castShadow = true; }); R.scene.add(g); return g;
+  g.userData.stick = stick; g.userData.dynamic = true; g.traverse((o) => { if (o.isMesh) o.castShadow = true; }); R.scene.add(g); return g;
 }
 function officer() {
   const g = new THREE.Group(); const uni = M({ color: '#1C2B4A', roughness: 0.8 }), skin = M({ color: '#4A2E1C', roughness: 0.7 });
@@ -368,7 +422,7 @@ function officer() {
   const beret = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.08, 12), M({ color: '#111', roughness: 0.8 })); beret.position.y = 1.74; g.add(beret);
   const arm = new THREE.Group(); const a = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.55, 0.1), uni); a.position.y = -0.27; arm.add(a); arm.position.set(0.28, 1.4, 0); g.add(arm);
   const arm2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.55, 0.1), uni); arm2.position.set(-0.28, 1.13, 0); g.add(arm2);
-  g.userData.arm = arm; return g;
+  g.userData.arm = arm; g.userData.dynamic = true; return g;
 }
 /** A Nigeria Police patrol pickup: dark blue, POLICE on the doors, a red and blue light bar. */
 export function policeCar(R) {
@@ -383,7 +437,7 @@ export function policeCar(R) {
   const t = canvasTex(256, 64, (x) => { x.fillStyle = '#16254A'; x.fillRect(0, 0, 256, 64); x.fillStyle = '#FFFFFF'; x.font = '900 40px Inter, system-ui'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('POLICE', 128, 34); x.fillStyle = '#C8102E'; x.fillRect(0, 56, 256, 8); });
   for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshStandardMaterial({ map: t, roughness: 0.5 })); p.position.set(s * 0.985, 0.85, 0.3); p.rotation.y = s * Math.PI / 2; g.add(p); }
   const hood = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4), new THREE.MeshStandardMaterial({ map: t })); hood.rotation.x = -Math.PI / 2; hood.position.set(0, 1.16, 1.9); g.add(hood);
-  g.userData.lights = lights; return g;
+  g.userData.lights = lights; g.userData.dynamic = true; return g;
 }
 /** A twin-engine airliner, white with a green tail. */
 function airliner(R, gearUp = false) {
@@ -397,7 +451,7 @@ function airliner(R, gearUp = false) {
   for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.1, 4.5, 14), grey); e.rotation.x = Math.PI / 2; e.position.set(s * 7, -2, 2.5); g.add(e); }
   const stripe = new THREE.Mesh(new THREE.CylinderGeometry(2.02, 2.02, 30, 16, 1, true, Math.PI * 0.35, Math.PI * 0.3), green); stripe.rotation.x = Math.PI / 2; g.add(stripe);
   if (!gearUp) for (const [x, z] of [[0, 12], [-3, -1], [3, -1]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.6, 12), M({ color: '#111' })); w.rotation.z = Math.PI / 2; w.position.set(x, -3.6, z); g.add(w); const l = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.6, 0.2), grey); l.position.set(x, -2.6, z); g.add(l); }
-  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; }); if (gearUp) g.userData.dynamic = true;   // parked ones are fused with the scenery
   return g;
 }
 /** A cow's moo: a low sawtooth sliding down, through a soft filter. */
@@ -414,25 +468,37 @@ function bushWorld(R, H, { at, head, N, RW }) {
   const T = R.tier; const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color();
   const clear = (x, z, r) => R.clearOfTrack(x, z, r);
   // savanna grass: thousands of tufts in dry greens and golds, thicker away from the road
-  const blades = []; for (let b = 0; b < 6; b++) { const c = new THREE.ConeGeometry(0.06, 0.8 + (b % 3) * 0.25, 4); c.translate(0, 0.45 + (b % 3) * 0.12, 0); c.rotateZ((b % 2 ? 1 : -1) * (0.15 + (b % 3) * 0.12)); c.rotateY(b * 1.05); blades.push(c); }
-  const tuft = H.mergeGeos(blades);
-  const GN = T === 'low' ? 900 : T === 'medium' ? 1800 : 2800;
-  const gm = new THREE.InstancedMesh(tuft, M({ color: '#FFFFFF', roughness: 1, envMapIntensity: 0.15 }), GN); let n = 0;
+  // savanna grass: clumps of drawn blades on two crossed cards (4 triangles a clump), dry gold and olive
+  const bladeTex = canvasTex(128, 128, (g) => {
+    g.clearRect(0, 0, 128, 128);
+    for (let i = 0; i < 46; i++) { const x = 20 + Math.random() * 88, h = 50 + Math.random() * 74, lean = (Math.random() - 0.5) * 50, w = 1.5 + Math.random() * 2.5;
+      const tone = 150 + Math.random() * 90; g.strokeStyle = `rgb(${tone},${tone * 0.82},${tone * 0.42})`; g.lineWidth = w; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(x, 128); g.quadraticCurveTo(x + lean * 0.3, 128 - h * 0.6, x + lean, 128 - h); g.stroke(); }
+    for (let i = 0; i < 10; i++) { const x = 25 + Math.random() * 78, y = 10 + Math.random() * 40; g.fillStyle = 'rgba(200,170,110,.9)'; g.beginPath(); g.ellipse(x, y, 2.5, 7, Math.random(), 0, 7); g.fill(); }   // seed heads
+  });
+  const card = new THREE.PlaneGeometry(1.6, 1.3); card.translate(0, 0.62, 0); const card2 = card.clone(); card2.rotateY(Math.PI / 2);
+  const tuft = mergeC([card, card2]);
+  const GN = T === 'low' ? 700 : T === 'medium' ? 1500 : 2600;
+  const gm = new THREE.InstancedMesh(tuft, M({ map: bladeTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1, envMapIntensity: 0.15 }), GN); let n = 0;
   for (let tries = 0; tries < GN * 3 && n < GN; tries++) {
-    const s = Math.random() * N, side = Math.random() < 0.5 ? -1 : 1, off = side * (RW / 2 + 1.5 + Math.pow(Math.random(), 1.6) * 60);
-    const [x, z] = at(s, off); if (!clear(x, z, RW / 2 + 1)) continue;
-    const k = 0.6 + Math.random() * 1.1; m4.compose(v.set(x, 0, z), q.setFromAxisAngle(Y, Math.random() * 6), sc.set(k, k * (0.8 + Math.random() * 0.8), k)); gm.setMatrixAt(n, m4);
-    gm.setColorAt(n, col.setHSL(0.1 + Math.random() * 0.1, 0.4 + Math.random() * 0.2, 0.3 + Math.random() * 0.14)); n++;
+    const s = Math.random() * N, side = Math.random() < 0.5 ? -1 : 1, off = side * (RW / 2 + 0.8 + Math.pow(Math.random(), 1.7) * 55);
+    const [x, z] = at(s, off); if (!clear(x, z, RW / 2 + 0.5)) continue;
+    const k = 0.7 + Math.random() * 0.9; m4.compose(v.set(x, 0, z), q.setFromAxisAngle(Y, Math.random() * 6), sc.set(k, k * (0.8 + Math.random() * 0.6), k)); gm.setMatrixAt(n, m4);
+    gm.setColorAt(n, col.setHSL(0.1 + Math.random() * 0.06, 0.25 + Math.random() * 0.2, 0.62 + Math.random() * 0.2)); n++;
   }
   gm.count = n; R.scene.add(gm);
+  // the road's edge frays into the grass instead of stopping on a hard line
+  const fray = (flip) => canvasTex(64, 64, (g) => { const id = g.createImageData(64, 64); for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) { const u = flip ? 1 - x / 63 : x / 63; const a = Math.max(0, Math.min(1, 1 - u * 1.25 + (Math.random() - 0.5) * 0.45)); const k = (y * 64 + x) * 4; id.data[k] = 168; id.data[k + 1] = 96; id.data[k + 2] = 58; id.data[k + 3] = Math.round(a * 235); } g.putImageData(id, 0, 0); }, true);
+  for (const [a, b, flip] of [[RW / 2 - 0.2, RW / 2 + 2.6, false], [-RW / 2 - 2.6, -RW / 2 + 0.2, true]]) { const t = fray(flip); t.wrapS = THREE.ClampToEdgeWrapping; t.repeat.set(1 / 2.8, 1 / 4); const m = new THREE.Mesh(R.ribbon(a, b, 0.025), M({ map: t, transparent: true, depthWrite: false, roughness: 1, envMapIntensity: 0.2 })); m.renderOrder = 1; m.receiveShadow = true; R.scene.add(m); }
   // shea and acacia trees: a thin trunk and a wide flat crown
   const trunk = new THREE.CylinderGeometry(0.22, 0.34, 4, 6); trunk.translate(0, 2, 0);
-  const crown = new THREE.SphereGeometry(3, 10, 6); crown.scale(1, 0.42, 1); crown.translate(0, 4.6, 0);
-  const TNn = T === 'low' ? 90 : 170; const tm = new THREE.InstancedMesh(trunk, M({ color: '#5E4630', roughness: 0.9 }), TNn), cm = new THREE.InstancedMesh(crown, M({ color: '#FFFFFF', roughness: 0.95 }), TNn); let nt = 0;
+  const fol = H.foliageGeometries ? H.foliageGeometries() : null; const leafF = fol ? H.foliageMaterial('leaves') : null;
+  let crown; if (fol) { crown = fol.crown.clone(); crown.scale(0.9, 0.42, 0.9); crown.translate(0, 1.75, 0); } else { crown = new THREE.SphereGeometry(3, 10, 6); crown.scale(1, 0.42, 1); crown.translate(0, 4.6, 0); }   // the flat umbrella of an acacia
+  const TNn = T === 'low' ? 90 : 170; const tm = new THREE.InstancedMesh(trunk, M({ color: '#5E4630', roughness: 0.9 }), TNn), cm = new THREE.InstancedMesh(crown, leafF ? leafF.m : M({ color: '#FFFFFF', roughness: 0.95 }), TNn); let nt = 0; if (leafF) cm.customDepthMaterial = leafF.depth;
   for (let tries = 0; tries < TNn * 4 && nt < TNn; tries++) {
     const s = Math.random() * N, side = Math.random() < 0.5 ? -1 : 1, off = side * (RW / 2 + 7 + Math.random() * 110);
     const [x, z] = at(s, off); if (!clear(x, z, RW / 2 + 5)) continue;
-    const k = 0.7 + Math.random() * 0.8; m4.compose(v.set(x, 0, z), q.setFromAxisAngle(Y, Math.random() * 6), sc.set(k, k, k)); tm.setMatrixAt(nt, m4); cm.setMatrixAt(nt, m4); cm.setColorAt(nt, col.setHSL(0.24 + Math.random() * 0.06, 0.35, 0.28 + Math.random() * 0.1)); nt++;
+    const k = 0.7 + Math.random() * 0.8; m4.compose(v.set(x, 0, z), q.setFromAxisAngle(Y, Math.random() * 6), sc.set(k, k, k)); tm.setMatrixAt(nt, m4); cm.setMatrixAt(nt, m4); cm.setColorAt(nt, col.setHSL(0.2 + Math.random() * 0.06, 0.3, leafF ? 0.62 + Math.random() * 0.15 : 0.3)); nt++;
   }
   tm.count = cm.count = nt; [tm, cm].forEach((m) => { m.castShadow = T !== 'low'; R.scene.add(m); });
   // a few baobabs: fat trunks and stubby branches
@@ -456,7 +522,7 @@ function bushWorld(R, H, { at, head, N, RW }) {
   [wm, rm, dm].forEach((m) => { m.castShadow = T !== 'low'; R.scene.add(m); });
   // granite outcrops close to the road, the way the hills rise out of the bush round Abuja
   const rock = M({ map: R.tex.rock, normalMap: R.tex.rockN, roughness: 0.95, color: '#A8A092' });
-  for (let i = 0; i < 7; i++) { const s = (i + 0.6) * N / 7, side = i % 2 ? -1 : 1; const [x, z] = at(s, side * (RW / 2 + 70 + Math.random() * 90)); if (!clear(x, z, 60)) continue; const m = new THREE.Mesh(H.rockGeometry(3, 0.7, 11 + i * 2.3), rock); m.scale.set(30 + Math.random() * 30, 26 + Math.random() * 30, 26 + Math.random() * 26); m.position.set(x, -2, z); m.castShadow = true; R.scene.add(m); }
+  for (let i = 0; i < 7; i++) { const s = (i + 0.6) * N / 7, side = i % 2 ? -1 : 1; const [x, z] = at(s, side * (RW / 2 + 70 + Math.random() * 90)); if (!clear(x, z, 60)) continue; const m = new THREE.Mesh(H.rockGeometry(R.tier === 'low' ? 2 : 3, 0.7, 11 + i * 2.3), rock); m.scale.set(30 + Math.random() * 30, 26 + Math.random() * 30, 26 + Math.random() * 26); m.position.set(x, -2, z); m.castShadow = true; R.scene.add(m); }
 }
 
 /* ================================== the airfield ================================== */
