@@ -193,27 +193,57 @@ export function metres(a, b) {
  * A Bolt-style bottom sheet over a full-screen map: drag the handle between peek, half and full.
  * Returns { el, set(state), body } where body is where content goes.
  */
+/**
+ * A draggable sheet over the map with three stops: peek, half and full. Two rules keep every button reachable:
+ * 1. Detail content (a place, a job, a person) opens tall enough to show all of it, up to 85% of the screen, so
+ *    its buttons are never cut off. Lists (content containing an element with data-sheet-list) keep the fixed
+ *    "half" so the map stays visible above them.
+ * 2. The sheet is only ever as tall as the part on screen, so whatever does not fit scrolls inside it instead of
+ *    hiding below the bottom edge of the phone.
+ */
 export function bottomSheet(host, { peek = 150, half = 0.48, start = 'half' } = {}) {
   const el = document.createElement('div'); el.className = 'bm-sheet';
   el.innerHTML = `<div class="bm-handle" aria-hidden="true"><span></span></div><div class="bm-sheet-body"></div>`;
   host.appendChild(el);
+  const body = el.querySelector('.bm-sheet-body'), handle = el.querySelector('.bm-handle');
   const H = () => host.clientHeight || window.innerHeight;
-  const pos = { peek: () => H() - peek, half: () => H() * (1 - half), full: () => 64 };
-  let state = start, y0 = 0, t0 = 0, dragging = false;
-  const place = (px, animate = true) => { el.style.transition = animate ? 'transform .28s cubic-bezier(.2,.8,.2,1)' : 'none'; el.style.transform = `translateY(${Math.max(56, px)}px)`; };
+  /** How tall the content really is, from the top of the sheet to the bottom of its last element, plus breathing room. */
+  const contentH = () => {
+    const kids = [...body.children].filter((k) => k.offsetParent !== null || k.getClientRects().length);
+    if (!kids.length) return peek;
+    const top = body.getBoundingClientRect().top - body.scrollTop, bottom = Math.max(...kids.map((k) => k.getBoundingClientRect().bottom));
+    return Math.ceil(handle.offsetHeight + (bottom - top) + 20);
+  };
+  const isList = () => !!body.querySelector('[data-sheet-list]');
+  const pos = {
+    peek: () => { if (isList()) return H() - peek; const c = contentH(); return H() - Math.max(peek, Math.min(c, H() * 0.45)); },
+    half: () => { if (isList()) return H() * (1 - half); const c = contentH(); return H() - Math.max(peek, Math.min(c, H() * 0.85, H() - 128)); },   // 128: the back button, top bar and locate button stay tappable
+    full: () => 64,
+  };
+  let state = start, y0 = 0, t0 = 0, dragging = false, shrinkT = null;
+  const place = (px, animate = true) => {
+    const top = Math.max(56, px), h = Math.max(120, H() - top);
+    el.style.transition = animate ? 'transform .28s cubic-bezier(.2,.8,.2,1)' : 'none';
+    el.style.transform = `translateY(${top}px)`;
+    // grow at once, shrink after the slide, so the content never jumps while it moves
+    clearTimeout(shrinkT);
+    if (!animate || h >= el.offsetHeight) el.style.height = h + 'px'; else shrinkT = setTimeout(() => { el.style.height = h + 'px'; }, 290);
+  };
   const set = (s) => { state = s; place(pos[s]()); el.dataset.state = s; };
-  const handle = el.querySelector('.bm-handle');
-  handle.addEventListener('pointerdown', (e) => { dragging = true; y0 = e.clientY; t0 = pos[state](); handle.setPointerCapture(e.pointerId); });
-  handle.addEventListener('pointermove', (e) => { if (dragging) place(t0 + (e.clientY - y0), false); });
+  handle.addEventListener('pointerdown', (e) => { dragging = true; y0 = e.clientY; t0 = pos[state](); el.style.height = H() + 'px'; handle.setPointerCapture(e.pointerId); });
+  handle.addEventListener('pointermove', (e) => { if (dragging) { el.style.transition = 'none'; el.style.transform = `translateY(${Math.max(56, t0 + (e.clientY - y0))}px)`; } });
   handle.addEventListener('pointerup', (e) => {
     if (!dragging) return; dragging = false; const y = t0 + (e.clientY - y0);
     if (Math.abs(e.clientY - y0) < 6) { set(state === 'full' ? 'half' : state === 'half' ? 'full' : 'half'); return; } // a tap cycles
     const cands = Object.entries(pos).map(([k, f]) => [k, Math.abs(f() - y)]).sort((a, b) => a[1] - b[1]);
     set(cands[0][0]);
   });
+  // When the content changes (a list turns into a detail card, a job moves on), refit so its buttons stay in view.
+  let refit = 0;
+  new MutationObserver(() => { if (dragging || state === 'full') return; cancelAnimationFrame(refit); refit = requestAnimationFrame(() => { const want = pos[state](); const now = new DOMMatrix(getComputedStyle(el).transform).m42; if (Math.abs(want - now) > 4) place(want); }); }).observe(body, { childList: true, subtree: true, characterData: true });
   window.addEventListener('resize', () => set(state));
   requestAnimationFrame(() => set(start));
-  return { el, body: el.querySelector('.bm-sheet-body'), set, get state() { return state; } };
+  return { el, body, set, get state() { return state; } };
 }
 
 /** Screen wake lock while live tracking, so the phone does not sleep and stop sending its position. */
