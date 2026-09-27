@@ -74,7 +74,7 @@ export function registerLearn({ route, go, state, api, ui, failed }) {
         catch (err) { toast('Could not build the PDF. The image download works offline.'); }
         busy(pdfBtn, false);
       });
-      el.querySelector('#share').addEventListener('click', () => { const t = `${c.holder} completed ${c.course} on Buja Learn. Verify: ${c.verifyUrl}`; if (navigator.share) navigator.share({ title: 'Buja Learn certificate', text: t }).catch(() => {}); else { navigator.clipboard?.writeText(t); toast('Copied'); } });
+      el.querySelector('#share').addEventListener('click', () => { const t = `${c.holder} completed ${c.course} on Buja Learn. Verify: ${c.verifyUrl}`; if (window.bujaShare) window.bujaShare({ title: 'Buja Learn certificate', text: t }).catch(() => {}); else { navigator.clipboard?.writeText(t); toast('Copied'); } });
     }
   });
 

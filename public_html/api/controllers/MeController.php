@@ -31,18 +31,32 @@ final class MeController
             $p = Validator::ngPhone((string) $b['phone']);
             if ($p === null) $errors['phone'] = 'Enter a valid Nigerian phone number.';
             elseif (Db::one('SELECT id FROM users WHERE phone = ? AND id <> ?', [$p, $u['id']])) $errors['phone'] = 'This phone number is already in use.';
-            else { $sets[] = 'phone = ?'; $params[] = $p; }
+            else { $sets[] = 'phone = ?'; $params[] = $p; if ($p !== $u['phone']) $phoneChanged = true; }
         }
         if (array_key_exists('name', $b)) {
             $n = Validator::name((string) $b['name']);
             if ($n === null) $errors['name'] = 'Enter your full name.';
             else { $sets[] = 'name = ?'; $params[] = $n; }
         }
+        if (array_key_exists('lang', $b)) {
+            // the app's language: English, Pidgin, Hausa or Yoruba. Kept apart so a missing column never blocks the rest.
+            $l = in_array($b['lang'], ['en', 'pcm', 'ha', 'yo'], true) ? $b['lang'] : null;
+            if ($l === null) $errors['lang'] = 'Choose English, Pidgin, Hausa or Yoruba.';
+            else { try { Db::run('UPDATE users SET lang = ? WHERE id = ?', [$l, $u['id']]); } catch (Throwable $e) {} if (count($b) === 1) { Http::json(['user' => Auth::publicUser(Db::one('SELECT * FROM users WHERE id = ?', [$u['id']]))]); } }
+        }
+        if (array_key_exists('email', $b) && Auth::placeholderEmail($u['email'])) {
+            // a phone-only account adding a real email later (receipts, password resets)
+            $e = Validator::email((string) $b['email']);
+            if ($e === null) $errors['email'] = 'Enter a valid email address.';
+            elseif (Db::one('SELECT id FROM users WHERE email = ? AND id <> ?', [$e, $u['id']])) $errors['email'] = 'Another account uses this email.';
+            else { $sets[] = 'email = ?'; $params[] = $e; $sets[] = 'email_verified_at = NULL'; }
+        }
         if ($errors) Http::json(['error' => 'validation', 'fields' => $errors], 422);
         if (!$sets)  Http::json(['error' => 'validation', 'message' => 'Nothing to update.'], 422);
 
         $sets[] = 'updated_at = ?'; $params[] = Db::now(); $params[] = $u['id'];
         Db::run('UPDATE users SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+        if (!empty($phoneChanged)) { try { Db::run('UPDATE users SET phone_verified_at = NULL WHERE id = ?', [$u['id']]); } catch (Throwable $e) {} }
         $fresh = Db::one('SELECT * FROM users WHERE id = ?', [$u['id']]);
         Http::json(['user' => Auth::publicUser($fresh)]);
     }

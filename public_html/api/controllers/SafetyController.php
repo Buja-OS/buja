@@ -11,9 +11,10 @@ final class SafetyController
     private function shape(array $s, bool $withTrack = false): array
     {
         $last = Db::one('SELECT lat, lng, created_at FROM safety_pings WHERE session_id = ? ORDER BY id DESC LIMIT 1', [$s['id']]);
+        $sos = !empty($s['sos']) || ($s['place'] ?? '') === 'SOS';
         $overdue = $s['status'] === 'active' && $s['expected_end'] < Db::now();
         $out = ['id' => (int) $s['id'], 'token' => $s['token'], 'place' => $s['place'], 'note' => $s['note'], 'with' => $s['with_name'], 'contact' => $s['contact_name'],
-            'status' => $overdue ? 'overdue' : $s['status'], 'expectedEnd' => $s['expected_end'], 'startedAt' => $s['created_at'], 'endedAt' => $s['ended_at'],
+            'status' => $sos && $s['status'] === 'active' ? 'sos' : ($overdue ? 'overdue' : $s['status']), 'sos' => $sos, 'expectedEnd' => $s['expected_end'], 'startedAt' => $s['created_at'], 'endedAt' => $s['ended_at'],
             'last' => $last ? ['lat' => (float) $last['lat'], 'lng' => (float) $last['lng'], 'at' => $last['created_at']] : null,
             'link' => (string) Http::config('app_origin') . '/#/trip/' . $s['token'],
             'kind' => $s['kind'] ?? 'meet', 'plate' => $s['plate'] ?? null, 'vehicle' => $s['vehicle'] ?? null, 'mode' => $s['mode'] ?? null,
@@ -147,9 +148,57 @@ final class SafetyController
         if ($what === 'extend') { Db::run('UPDATE safety_sessions SET expected_end = ? WHERE id = ?', [gmdate('Y-m-d H:i:s', strtotime($s['expected_end'] . ' UTC') + max(1, min(6, (int) ($b['hours'] ?? 1))) * 3600), $s['id']]); Http::json(['trip' => $this->shape(Db::one('SELECT * FROM safety_sessions WHERE id = ?', [$s['id']]))]); }
         if (!in_array($what, ['safe', 'alarm'], true)) Http::json(['error' => 'validation'], 422);
         Db::run('UPDATE safety_sessions SET status = ?, ended_at = ? WHERE id = ?', [$what, Db::now(), $s['id']]);
+        if ($what === 'safe' && (!empty($s['sos']) || $s['place'] === 'SOS')) {
+            // tell the same people the scare is over
+            $first = explode(' ', trim((string) $u['name']))[0];
+            $st = Db::pdo()->prepare('SELECT name, phone, email FROM trusted_contacts WHERE user_id = ?'); $st->execute([$u['id']]);
+            foreach ($st->fetchAll() as $c) {
+                if ($c['phone'] && Sms::configured()) Sms::send($c['phone'], $first . ' is safe now and has ended the SOS on Buja.');
+                if ($c['email']) Mail::send($c['email'], $c['name'], $first . ' is safe now', '<p>' . htmlspecialchars($first) . ' has ended the SOS and marked themselves safe.</p>');
+            }
+        }
         Track::hit($u, 'safety', $what);
         if ($what === 'alarm') Notify::user((int) $u['id'], 'match', 'Alarm raised on your trip', 'Your contact link now shows the alarm and your last position. Call someone you trust, and the police on 112 if you are in danger.', '/#/safety', true);
         Http::json(['trip' => $this->shape(Db::one('SELECT * FROM safety_sessions WHERE id = ?', [$s['id']]))]);
+    }
+
+    /**
+     * POST /safety/sos { lat, lng } : one tap when something is wrong. Turns the running trip into an SOS, or starts
+     * one, and tells every trusted contact at once: a text (when Termii is set up), an email, and a push if they
+     * are on Buja. The link shows a red SOS banner and the live position, updated every few seconds from the phone.
+     */
+    public function sos(): void
+    {
+        $u = Auth::require(); RateLimit::hit('sos', 12, 3600);
+        $b = Http::body(); $lat = (float) ($b['lat'] ?? 0); $lng = (float) ($b['lng'] ?? 0);
+        $s = Db::one("SELECT * FROM safety_sessions WHERE user_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1", [$u['id']]);
+        $fresh = false;
+        if (!$s) {
+            Db::run('INSERT INTO safety_sessions (user_id, place, note, token, status, expected_end, created_at) VALUES (?,?,?,?,?,?,?)',
+                [$u['id'], 'SOS', mb_substr(trim((string) ($b['note'] ?? '')), 0, 300) ?: null, bin2hex(random_bytes(16)), 'active', gmdate('Y-m-d H:i:s', time() + 3 * 3600), Db::now()]);
+            $s = Db::one('SELECT * FROM safety_sessions WHERE id = ?', [(int) Db::lastId()]); $fresh = true;
+        } elseif (!empty($s['sos'])) {
+            // already raised: just record where they are now, do not text everyone again
+            if ($lat && $lng) Db::run('INSERT INTO safety_pings (session_id, lat, lng, created_at) VALUES (?,?,?,?)', [$s['id'], $lat, $lng, Db::now()]);
+            Http::json(['trip' => $this->shape(Db::one('SELECT * FROM safety_sessions WHERE id = ?', [$s['id']])), 'told' => null]);
+        }
+        try { Db::run('UPDATE safety_sessions SET sos = 1, expected_end = ? WHERE id = ?', [gmdate('Y-m-d H:i:s', max(time() + 3600, strtotime($s['expected_end'] . ' UTC'))), $s['id']]); } catch (Throwable $e) { /* before migration 045 the place "SOS" still marks it */ }
+        if ($lat && $lng) Db::run('INSERT INTO safety_pings (session_id, lat, lng, created_at) VALUES (?,?,?,?)', [$s['id'], $lat, $lng, Db::now()]);
+        $first = explode(' ', trim((string) $u['name']))[0];
+        $link = (string) Http::config('app_origin') . '/#/trip/' . $s['token'];
+        $where = $lat && $lng ? ' Last seen: https://maps.google.com/?q=' . round($lat, 5) . ',' . round($lng, 5) : '';
+        $told = ['sms' => 0, 'email' => 0, 'push' => 0, 'contacts' => 0];
+        $st = Db::pdo()->prepare('SELECT name, phone, email FROM trusted_contacts WHERE user_id = ? ORDER BY id'); $st->execute([$u['id']]);
+        foreach ($st->fetchAll() as $c) {
+            $told['contacts']++;
+            if ($c['phone'] && Sms::configured() && Sms::send($c['phone'], 'SOS from ' . $first . ' on Buja. They need help now. Live location: ' . $link . $where . ' If in danger call 112.')) $told['sms']++;
+            if ($c['email'] && Mail::send($c['email'], $c['name'], 'SOS: ' . $first . ' needs help now',
+                '<p style="font-size:18px;font-weight:700;color:#D92D20">' . htmlspecialchars($first) . ' pressed SOS on Buja.</p><p>See where they are, live: <a href="' . htmlspecialchars($link) . '">' . htmlspecialchars($link) . '</a></p><p>Call them now. If they may be in danger, call the police on 112.</p>')) $told['email']++;
+            if ($c['phone'] && ($bu = Db::one('SELECT id FROM users WHERE phone = ? AND deleted_at IS NULL', [$c['phone']]))) { Notify::user((int) $bu['id'], 'match', 'SOS: ' . $first . ' needs help now', 'Tap to see their live location. Call them, or 112 if they are in danger.', '/#/trip/' . $s['token'], true); $told['push']++; }
+        }
+        Track::hit($u, 'safety', 'sos');
+        OrderPay::tellAdmins('SOS raised', $first . ' (user ' . (int) $u['id'] . ') pressed SOS.', '/#/trip/' . $s['token']);
+        Http::json(['trip' => $this->shape(Db::one('SELECT * FROM safety_sessions WHERE id = ?', [$s['id']])), 'told' => $told, 'fresh' => $fresh], 201);
     }
 
     /** POST /safety/fare-asked { id } : the rider has been offered the fare prompt; do not ask again for this ride */

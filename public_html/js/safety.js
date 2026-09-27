@@ -11,7 +11,9 @@ export function registerSafety({ route, go, state, api, ui, failed }) {
     const t = d.active;
     return `${topbar('Trip Share', '/me')}
     <main class="pad stack" style="gap:16px">
-      ${t ? `<div class="card stack" style="padding:18px;gap:12px;border:2px solid ${t.status === 'overdue' ? '#D92D20' : 'var(--green)'}">
+      ${t && t.status === 'sos' ? `<a class="card row sos-live sos-pulse" href="#/sos" style="padding:16px;gap:12px;text-decoration:none"><span style="font-size:20px;font-weight:900">SOS</span><span class="grow small" style="color:#fff">Your SOS is on. Tap to send it on WhatsApp, call 112, or end it.</span>${icon('chevron-right')}</a>` : ''}
+      ${!t ? `<a class="card row" href="#/sos" style="padding:14px 16px;gap:14px;text-decoration:none;color:inherit;border-color:#F3B2AC"><span class="sosbtn" style="margin:0">SOS</span><span class="grow"><span style="display:block;font-weight:700">In danger right now?</span><span class="small muted">Hold SOS and your trusted contacts get your live location</span></span>${icon('chevron-right')}</a>` : ''}
+      ${t && t.status !== 'sos' ? `<div class="card stack" style="padding:18px;gap:12px;border:2px solid ${t.status === 'overdue' ? '#D92D20' : 'var(--green)'}">
         <div class="row"><span class="tag ${t.status === 'overdue' ? '' : 'green'}" style="${t.status === 'overdue' ? 'background:#D92D20;color:#fff' : ''}">${t.status === 'overdue' ? 'OVERDUE' : 'TRIP RUNNING'}</span><div class="grow"></div><span class="small muted">${left(t.expectedEnd)}</span></div>
         <div><div class="h-md">${h(t.place)}</div>${t.kind === 'ride' && (t.plate || t.mode) ? `<div class="row small" style="gap:6px;margin-top:4px">${t.plate ? `<span class="tag" style="letter-spacing:1px;font-weight:800">${h(t.plate)}</span>` : ''}${t.vehicle ? `<span class="muted">${h(t.vehicle)}</span>` : ''}</div>` : ''}<div class="small muted" style="margin-top:2px">${t.with ? 'Meeting ' + h(t.with) + ' · ' : ''}due back ${when(t.expectedEnd)}${t.contact ? ' · ' + h(t.contact) + ' can see you' : ''}</div></div>
         <div style="height:170px;border-radius:14px;overflow:hidden;background:#ECEEE8" id="map"></div>
@@ -19,7 +21,7 @@ export function registerSafety({ route, go, state, api, ui, failed }) {
         <button class="btn btn-ink" id="safe">${icon('circle-check')} I am home safe</button>
         <button class="btn" id="alarm" style="background:#D92D20;color:#fff">${icon('triangle-exclamation')} Something is wrong</button>
         <div class="small muted" style="line-height:1.5">Your position updates every two minutes while this screen or the app is open. In real danger call 112 first, then hit the red button.</div>
-      </div>` : `
+      </div>` : t ? '' : `
       <div class="card stack" style="padding:18px;gap:10px">
         <div class="h-md">Going to meet someone?</div>
         <div class="small muted" style="line-height:1.55">Start a trip and one friend gets a private link showing where you are and when you are due back. They do not need Buja. If you do not end the trip in time, the link tells them.</div>
@@ -33,7 +35,7 @@ export function registerSafety({ route, go, state, api, ui, failed }) {
           <div class="h-sm">Add someone you trust</div>
           <div class="row" style="gap:10px">${field({ id: 'name', label: 'Name', placeholder: 'Sister Ada' })}${field({ id: 'phone', label: 'Phone', placeholder: '0803 000 0000' })}</div>
           <button class="btn btn-sm btn-outline" type="submit">Add contact</button>
-          <div class="small muted">Buja does not message them for you. You send the link yourself on WhatsApp, which is faster and free.</div>
+          <div class="small muted">For a trip you send the link yourself on WhatsApp. For SOS, Buja also texts and alerts them for you.</div>
         </form>
       </div>
 
@@ -51,7 +53,7 @@ export function registerSafety({ route, go, state, api, ui, failed }) {
       el.querySelector('#share')?.addEventListener('click', async () => {
         const d = await api.safety(); if (!d.active) return;
         const msg = `I am meeting someone at ${d.active.place}. If you do not hear from me by ${when(d.active.expectedEnd)}, check this: ${d.active.link}`;
-        if (navigator.share) { navigator.share({ title: 'My Buja trip', text: msg }).catch(() => {}); }
+        if (window.bujaShare) { window.bujaShare({ title: 'My Buja trip', text: msg }).catch(() => {}); }
         else { navigator.clipboard?.writeText(msg); toast('Message copied. Paste it to your friend.'); }
       });
       drawTrip(el);
@@ -99,16 +101,17 @@ export function registerSafety({ route, go, state, api, ui, failed }) {
   /* ---------- The friend's page, no sign-in ---------- */
   route('/trip/:token', { tabs: '' }, async ({ token }) => {
     let t; try { t = (await api.publicTrip(token)).trip; } catch { return `<div class="placeholder" style="padding:60px 20px"><div class="mi card">${icon('triangle-exclamation')}</div><div class="h-md">This link is not valid</div><div class="small muted">Ask them to send it again.</div></div>`; }
-    const tone = t.status === 'alarm' ? ['#D92D20', 'ALARM RAISED'] : t.status === 'overdue' ? ['#D92D20', 'OVERDUE'] : t.status === 'safe' ? ['#2E7D1E', 'HOME SAFE'] : ['#FF7A1A', 'ON A TRIP'];
+    const tone = t.status === 'sos' ? ['#D92D20', 'SOS'] : t.status === 'alarm' ? ['#D92D20', 'ALARM RAISED'] : t.status === 'overdue' ? ['#D92D20', 'OVERDUE'] : t.status === 'safe' ? ['#2E7D1E', 'HOME SAFE'] : ['#FF7A1A', 'ON A TRIP'];
     return `
     <header class="topbar"><h1 class="row" style="gap:8px">${icon('shield-halved')} Buja Trip Share</h1></header>
     <main class="pad stack" style="gap:14px">
       <div class="card stack" style="padding:18px;gap:10px;border:2px solid ${tone[0]}">
         <span class="tag" style="background:${tone[0]};color:#fff;align-self:flex-start">${tone[1]}</span>
-        <div class="h-lg" style="font-size:22px">${h(t.person)} ${t.kind === 'ride' ? 'is travelling' : 'is at'} ${h(t.place)}</div>
+        <div class="h-lg" style="font-size:22px">${t.status === 'sos' || t.place === 'SOS' ? h(t.person) + ' needs help' : `${h(t.person)} ${t.kind === 'ride' ? 'is travelling' : 'is at'} ${h(t.place)}`}</div>
         ${t.kind === 'ride' && t.plate ? `<div class="card row" style="padding:10px 12px;gap:10px;background:var(--surface);border:none"><span style="width:34px;height:34px;border-radius:17px;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center">${icon('car-side')}</span><span><span class="small muted" style="display:block">Vehicle</span><strong style="letter-spacing:2px;font-size:16px">${h(t.plate)}</strong>${t.vehicle ? ` <span class="small muted">${h(t.vehicle)}</span>` : ''}</span></div>` : ''}
-        <div class="small muted" style="line-height:1.55">${t.with ? 'Meeting ' + h(t.with) + '. ' : ''}Due back ${when(t.expectedEnd)}.${t.note ? ' ' + h(t.note) : ''}</div>
-        ${t.status === 'alarm' ? `<div style="padding:12px 14px;background:#FDECEA;color:#D92D20;border-radius:12px;font-size:14px;line-height:1.5"><strong>They pressed the alarm.</strong> Call them now. If you cannot reach them, call the police on 112 and give the last position below.</div>`
+        ${t.status === 'sos' || t.place === 'SOS' ? (t.note ? `<div class="small muted">${h(t.note)}</div>` : '') : `<div class="small muted" style="line-height:1.55">${t.with ? 'Meeting ' + h(t.with) + '. ' : ''}Due back ${when(t.expectedEnd)}.${t.note ? ' ' + h(t.note) : ''}</div>`}
+        ${t.status === 'sos' ? `<div class="sos-pulse" style="padding:14px;background:#D92D20;color:#fff;border-radius:12px;font-size:15px;line-height:1.5"><strong style="font-size:18px">${h(t.person)} pressed SOS.</strong><br>Call them now. If you cannot reach them, or they may be in danger, call the police on 112 and give them the position on this map. It updates every few seconds while their phone has signal.</div><a class="btn" href="tel:112" style="background:#D92D20;color:#fff">Call 112</a>`
+        : t.status === 'alarm' ? `<div style="padding:12px 14px;background:#FDECEA;color:#D92D20;border-radius:12px;font-size:14px;line-height:1.5"><strong>They pressed the alarm.</strong> Call them now. If you cannot reach them, call the police on 112 and give the last position below.</div>`
         : t.status === 'overdue' ? `<div style="padding:12px 14px;background:#FDECEA;color:#D92D20;border-radius:12px;font-size:14px;line-height:1.5"><strong>They are past their time and have not checked in.</strong> Try calling. This may be nothing, but check.</div>`
         : t.status === 'safe' ? `<div style="padding:12px 14px;background:var(--green-tint);color:var(--green-dark);border-radius:12px;font-size:14px">They marked themselves home safe.</div>` : ''}
       </div>
@@ -120,7 +123,9 @@ export function registerSafety({ route, go, state, api, ui, failed }) {
     mount(el, { token }) {
       const paint = async () => { try { const t = (await api.publicTrip(token)).trip; await drawTrip(el, t); } catch {} };
       paint();
-      const timer = setInterval(async () => { if (document.hidden) return; try { const t = (await api.publicTrip(token)).trip; if (t.status !== 'active') { location.reload(); return; } await drawTrip(el, t); } catch {} }, 60000);
+      // an SOS moves every few seconds, a normal trip every couple of minutes
+      let was = null;
+      const timer = setInterval(async () => { if (document.hidden) return; try { const t = (await api.publicTrip(token)).trip; if (was && t.status !== was) { window.dispatchEvent(new HashChangeEvent('hashchange')); clearInterval(timer); return; } was = t.status; if (!['active', 'sos', 'overdue'].includes(t.status)) return; await drawTrip(el, t); } catch {} }, el.querySelector('.sos-pulse') ? 10000 : 60000);
       window.addEventListener('hashchange', () => clearInterval(timer), { once: true });
     }
   });

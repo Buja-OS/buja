@@ -220,7 +220,7 @@ export function registerCity({ route, go, state, api, ui, DISTRICTS, failed, rad
       el.querySelector('#share')?.addEventListener('click', async () => {
         const t = el.querySelector('h1')?.textContent || 'A story on Buja';
         const url = location.origin + '/#/news/' + id;
-        if (navigator.share) navigator.share({ title: t, text: t, url }).catch(() => {});
+        if (window.bujaShare) window.bujaShare({ title: t, text: t, url }).catch(() => {});
         else { try { await navigator.clipboard.writeText(t + ' ' + url); toast('Link copied'); } catch { toast(url, 5000); } }
       });
     }

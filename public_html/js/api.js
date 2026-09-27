@@ -40,6 +40,15 @@ export const api = {
   login:    (b) => request('POST', '/auth/login', b),
   google:   (credential) => request('POST', '/auth/google', { credential }),
   logout:   () => request('POST', '/auth/logout'),
+  otpRequest: (phone) => request('POST', '/auth/otp/request', { phone }),
+  otpVerify:  (b) => request('POST', '/auth/otp/verify', b),
+  reportError: (b) => request('POST', '/errors', b),
+  adminErrors: () => request('GET', '/admin/errors'),
+  adminResolveError: (id) => request('POST', '/admin/errors/' + id + '/resolve'),
+  adminSystem: () => request('GET', '/admin/system'),
+  adminSystemTest: (b) => request('POST', '/admin/system/test', b),
+  sos:        (b) => request('POST', '/safety/sos', b || {}),
+  jobPay:     (id, pay) => request('POST', '/service-jobs/' + id + '/pay', { pay }),
   updateMe: (b) => request('PATCH', '/me', b),
   isMock:   () => mock,
   // Work
@@ -385,12 +394,13 @@ export const api = {
 };
 
 /* Detect the API once at boot. If /api/health is not there, switch to mock mode and say so. */
-export const serverInfo = { googleClientId: '' };
+export const serverInfo = { googleClientId: '', phoneLogin: false };
 export async function detectApi() {
   if (mock) return 'mock';
   try {
     const h = await request('GET', '/health');
     if (h && h.googleClientId) serverInfo.googleClientId = h.googleClientId;
+    if (h) serverInfo.phoneLogin = !!h.phoneLogin;
     return h && h.ok ? 'live' : 'degraded';
   } catch (e) {
     if (e && e.error === 'network' && !navigator.onLine) return 'offline';

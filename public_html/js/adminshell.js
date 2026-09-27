@@ -2,7 +2,7 @@
 // Also the two moderation screens the dashboard was missing: Social posts and the news feed.
 
 const NAV = [
-  ['Overview', [['/admin', 'gauge-high', 'Dashboard'], ['/admin/analytics', 'chart-line', 'Analytics'], ['/admin/launch', 'circle-check', 'Launch checklist']]],
+  ['Overview', [['/admin', 'gauge-high', 'Dashboard'], ['/admin/analytics', 'chart-line', 'Analytics'], ['/admin/launch', 'circle-check', 'Launch checklist'], ['/admin/system', 'bug', 'System and errors']]],
   ['People', [['/admin/users', 'user', 'Users'], ['/admin/verifications', 'shield-halved', 'Verifications'], ['/admin/reports', 'triangle-exclamation', 'Reports'], ['/admin/invite', 'paper-plane', 'Invites']]],
   ['Content', [['/admin/social', 'message', 'Social posts'], ['/admin/news', 'circle-info', 'News feed'], ['/admin/spots', 'location-dot', 'Places'], ['/admin/meetups', 'ticket', 'Events'], ['/admin/artisans', 'screwdriver-wrench', 'Artisans'], ['/admin/citizen', 'building-columns', 'Citizen reports']]],
   ['Learning', [['/admin/learn', 'book-open', 'Learn analytics'], ['/admin/learners', 'user', 'Learners']]],
@@ -34,6 +34,56 @@ export function registerAdminShell({ route, go, state, api, ui, failed }) {
   }
   window.addEventListener('hashchange', () => shell((location.hash.slice(1) || '/').split('?')[0]));
   shell((location.hash.slice(1) || '/').split('?')[0]);
+
+  /* ---------------- System: is everything working, errors, backups ---------------- */
+  route('/admin/system', { auth: true, tabs: '' }, async () => {
+    if (!(state.user && state.user.admin)) return guard() || `${topbar('', '/admin')}<div class="placeholder"><div class="h-md">Admins only</div></div>`;
+    const [d, e] = await Promise.all([api.adminSystem(), api.adminErrors()]);
+    const open = e.errors.filter((x) => !x.resolved);
+    const ok = d.checks.filter((c) => c.ok).length;
+    return `${topbar('System and errors', '/admin')}<main class="pad stack" style="gap:14px" data-noi18n>
+      <div class="card row" style="padding:14px 16px;gap:14px;border:2px solid ${ok === d.checks.length ? 'var(--green)' : 'var(--orange)'}"><div style="font-size:28px;font-weight:900">${ok}/${d.checks.length}</div><div class="grow small" style="line-height:1.45">${ok === d.checks.length ? 'Everything is working.' : 'Some things need you. Each one says how to fix it.'}</div><button class="btn btn-sm btn-outline" id="reload" style="width:auto">Check again</button></div>
+      <div class="card list">${d.checks.map((c) => `<div class="item" style="align-items:flex-start"><div class="mi" style="background:${c.ok ? 'var(--green-tint)' : '#FDECEA'};color:${c.ok ? 'var(--green-dark)' : '#D92D20'}">${icon(c.ok ? 'circle-check' : 'triangle-exclamation')}</div><div class="grow"><div class="t">${h(c.title)}</div><div class="s" style="line-height:1.45">${h(c.detail)}</div>${!c.ok && c.fix ? `<div class="small" style="margin-top:4px;color:var(--orange-dark);line-height:1.45">${h(c.fix)}</div>` : ''}</div></div>`).join('')}</div>
+
+      <div class="section">BACKUP</div>
+      <div class="card stack" style="padding:14px;gap:10px">
+        <div class="small muted" style="line-height:1.5">A copy of the whole database, as one file you keep. Download it weekly and put it in Google Drive. TiDB keeps its own daily backups too; this one is yours, and restores anywhere MySQL runs.</div>
+        <div class="row" style="gap:8px;flex-wrap:wrap"><a class="btn btn-sm btn-primary" href="/api/admin/backup?media=0" download style="width:auto">${icon('download')} Download backup</a><a class="btn btn-sm btn-outline" href="/api/admin/backup?media=1" download style="width:auto">With photo bytes (bigger)</a></div>
+      </div>
+
+      <div class="section">PHOTO STORAGE</div>
+      <div class="card stack" style="padding:14px;gap:10px">
+        <div class="small muted" style="line-height:1.5">${d.storage.configured ? `The bucket is set. ${d.storage.inDatabase} file${d.storage.inDatabase === 1 ? '' : 's'} still inside the database.` : 'No bucket yet: every photo sits inside the database, and the free TiDB plan fills up. Cloudflare R2 (10 GB free) or Backblaze B2 both work; the steps are in DEPLOY-RENDER.md.'}</div>
+        ${d.storage.configured && d.storage.inDatabase ? `<button class="btn btn-sm btn-ink" id="move" style="width:auto;align-self:flex-start">Move photos to the bucket</button>` : ''}
+        <div class="small" id="moveout"></div>
+      </div>
+
+      <div class="section">TEST</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-outline" id="tmail" style="width:auto">Send a test email</button><button class="btn btn-sm btn-outline" id="tsms" style="width:auto">Send a test text</button></div>
+      <div class="small" id="testout"></div>
+
+      <div class="row" style="align-items:flex-end"><div class="section grow" style="margin:0">ERRORS ${open.length ? `(${open.length} open)` : ''}</div>${open.length ? `<button class="btn btn-sm btn-outline" id="fixall" style="width:auto">Mark all fixed</button>` : ''}</div>
+      ${e.missing ? `<div class="card" style="padding:14px">Run migration 045 to start collecting errors.</div>` : e.errors.length ? `<div class="card list">${e.errors.map((x) => `<details class="item" style="display:block;${x.resolved ? 'opacity:.55' : ''}"><summary style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;list-style:none">
+          <span class="tag" style="background:${x.source === 'js' ? '#EAF1FB' : '#FDECEA'};color:${x.source === 'js' ? '#1F5FBF' : '#D92D20'};flex-shrink:0">${x.source === 'js' ? 'PHONE' : 'SERVER'}</span>
+          <span class="grow" style="min-width:0"><span style="display:block;font-size:14px;font-weight:650;word-break:break-word">${h(x.message)}</span><span class="small muted">${x.count}× · last ${ago(x.last)} · ${h(x.path || '')}</span></span></summary>
+          <div class="small" style="margin-top:8px;line-height:1.5"><div><strong>Where:</strong> ${h(x.where || '')}</div><div><strong>First seen:</strong> ${h(x.first)} UTC</div>${x.sample ? `<pre style="white-space:pre-wrap;font-size:11px;background:var(--surface);padding:10px;border-radius:10px;max-height:220px;overflow:auto">${h(x.sample)}</pre>` : ''}
+          ${x.resolved ? '' : `<button class="btn btn-sm btn-outline" data-fix="${x.id}" style="width:auto">Mark fixed</button>`}</div></details>`).join('')}</div>` : `<div class="card" style="padding:14px">No errors recorded. Good.</div>`}
+      <div class="small muted" style="line-height:1.5">The admin email gets one message the first time an error appears, and again if it returns a day later. Set ADMIN_EMAIL in Render to choose the address.</div>
+    </main>`;
+  }, { mount(el) {
+    const redo = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
+    el.querySelector('#reload')?.addEventListener('click', redo);
+    el.querySelector('#fixall')?.addEventListener('click', async () => { try { await api.adminResolveError(0); redo(); } catch (err) { failed(el, err); } });
+    el.querySelectorAll('[data-fix]').forEach((b) => b.addEventListener('click', async () => { try { await api.adminResolveError(b.dataset.fix); redo(); } catch (err) { failed(el, err); } }));
+    el.querySelector('#move')?.addEventListener('click', async (e) => {
+      const b = e.currentTarget; busy(b, true); const out = el.querySelector('#moveout'); let total = 0;
+      try { for (let i = 0; i < 30; i++) { const r = await api.adminMigrate(); total += r.moved; out.textContent = `Moved ${total}. ${r.remaining} left.`; if (!r.remaining || !r.moved) break; } }
+      catch (err) { out.textContent = (err && err.message) || 'The move stopped.'; }
+      busy(b, false);
+    });
+    el.querySelector('#tmail')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { const r = await api.adminSystemTest({ what: 'email' }); el.querySelector('#testout').textContent = r.message; } catch (err) { failed(el, err); } busy(e.currentTarget, false); });
+    el.querySelector('#tsms')?.addEventListener('click', async (e) => { const ph = prompt('Send a test text to which number?', state.user.phone || ''); if (!ph) return; busy(e.currentTarget, true); try { const r = await api.adminSystemTest({ what: 'sms', phone: ph }); el.querySelector('#testout').textContent = r.message; } catch (err) { failed(el, err); } busy(e.currentTarget, false); });
+  } });
 
   /* ---------------- Social moderation ---------------- */
   /* ---------- Buja Kart: how it runs on real phones ---------- */

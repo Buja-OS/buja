@@ -38,7 +38,7 @@ export function registerGrowth({ route, go, state, api, ui, failed }) {
   }, {
     mount(el) {
       const msg = async () => { const d = await api.myInvite(); return `I am using Buja for Abuja: jobs, houses without agents, what things cost on the bus, buying and selling nearby. Join with my link: ${d.link}`; };
-      el.querySelector('#share').addEventListener('click', async () => { const t = await msg(); if (navigator.share) navigator.share({ title: 'Buja', text: t }).catch(() => {}); else { navigator.clipboard?.writeText(t); toast('Copied. Paste it anywhere.'); } });
+      el.querySelector('#share').addEventListener('click', async () => { const t = await msg(); if (window.bujaShare) window.bujaShare({ title: 'Buja', text: t }).catch(() => {}); else { navigator.clipboard?.writeText(t); toast('Copied. Paste it anywhere.'); } });
       el.querySelector('#copy').addEventListener('click', async () => { const d = await api.myInvite(); navigator.clipboard?.writeText(d.link); toast('Link copied'); });
     }
   });

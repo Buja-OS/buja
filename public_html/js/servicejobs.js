@@ -346,7 +346,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       el.querySelectorAll('[data-busy]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.setBusy(+b.dataset.busy); toast(r.busyUntil ? 'New orders paused' : 'Taking orders again'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } }));
       el.querySelector('#anytime').addEventListener('change', (e) => { const box = el.querySelector('#hours'); box.style.opacity = e.target.checked ? .45 : 1; box.style.pointerEvents = e.target.checked ? 'none' : ''; });
       el.querySelector('#savehours').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { await api.artisanSchedule({ schedule: readHours() }); toast('Hours saved'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } });
-      el.querySelector('#share').addEventListener('click', async () => { const d = await api.artisanDashboard(); const t = `${d.artisan.name}, ${d.artisan.trade.toLowerCase()} on Buja. See my reviews and call me: ${d.artisan.profileUrl}`; if (navigator.share) navigator.share({ title: d.artisan.name, text: t }).catch(() => {}); else { try { await navigator.clipboard.writeText(t); toast('Copied'); } catch { toast(d.artisan.profileUrl, 5000); } } });
+      el.querySelector('#share').addEventListener('click', async () => { const d = await api.artisanDashboard(); const t = `${d.artisan.name}, ${d.artisan.trade.toLowerCase()} on Buja. See my reviews and call me: ${d.artisan.profileUrl}`; if (window.bujaShare) window.bujaShare({ title: d.artisan.name, text: t }).catch(() => {}); else { try { await navigator.clipboard.writeText(t); toast('Copied'); } catch { toast(d.artisan.profileUrl, 5000); } } });
     }
   });
 
@@ -427,6 +427,17 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
       });
     }
   });
+
+  /** Phone photos are often 4 to 8 MB. Resized to 1600 px on the phone before upload: quicker on data, well under the limit. */
+  const shrinkPhoto = async (f) => {
+    try {
+      const bmp = await createImageBitmap(f); const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.82));
+      return blob ? new File([blob], 'review.jpg', { type: 'image/jpeg' }) : f;
+    } catch { return f; }
+  };
 
   /* ============================== LIVE TRACKING ============================== */
   route('/jobs/:id', { auth: true, tabs: '' }, async () => `<div class="bm-screen"><div class="bm-mapbox" id="map"></div>
@@ -517,19 +528,52 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
         const tone = P.status === 'refunded' ? 'var(--surface)' : P.status === 'released' ? 'var(--green-tint)' : P.status === 'disputed' ? 'var(--orange-tint)' : 'var(--green-tint)';
         let msg = '', acts = '';
         if (j.role === 'customer') {
-          if (P.status === 'paid') { msg = j.status === 'done' ? `You paid ${N(P.total)}. Buja pays them ${P.releaseAt ? 'on ' + when(P.releaseAt) : 'soon'} unless you report a problem.` : `You paid ${N(P.total)}. Buja is holding it until you have your order, and refunds you in full if they cannot take it.`;
-            if (['arrived', 'done'].includes(j.status)) acts = `<div class="row" style="gap:8px"><button class="btn btn-sm btn-primary grow" data-act="received">${icon('circle-check')} I have my order</button><button class="btn btn-sm btn-outline" id="payproblem" style="width:auto">Report a problem</button></div>`;
+          if (P.status === 'paid') { msg = j.status === 'done' ? `You paid ${N(P.total)}. Buja pays them ${P.releaseAt ? 'on ' + when(P.releaseAt) : 'soon'} unless you report a problem.` : isOrder(j) && j.items && j.items.length ? `You paid ${N(P.total)}. Buja is holding it until you have your order, and refunds you in full if they cannot take it.` : `You paid ${N(P.total)}. Buja is holding it until the work is done, and refunds you in full if they never come.`;
+            if (['arrived', 'done'].includes(j.status)) acts = `<div class="row" style="gap:8px"><button class="btn btn-sm btn-primary grow" data-act="received">${icon('circle-check')} ${isOrder(j) ? 'I have my order' : 'The work is done'}</button><button class="btn btn-sm btn-outline" id="payproblem" style="width:auto">Report a problem</button></div>`;
             else if (j.status === 'enroute') acts = `<button class="linkbtn" id="payproblem">Report a problem</button>`; }
           else if (P.status === 'released') msg = `Paid to ${h(j.other.name)}. Thank you.`;
           else if (P.status === 'refunded') msg = `Refunded ${N(P.total)}. ${h(P.note || '')} Paystack returns it to how you paid, usually within 5 working days.`;
           else if (P.status === 'disputed') msg = 'You reported a problem. Buja is holding the money while we check, and will contact you both.';
         } else {
-          if (P.status === 'paid') msg = `The customer paid in the app. Buja holds ${N(owed)} for you and pays it ${j.status === 'done' ? (P.releaseAt ? 'on ' + when(P.releaseAt) + ', or sooner when they confirm' : 'soon') : 'once they have the order'}. Do not collect cash.`;
+          if (P.status === 'paid') msg = `The customer paid in the app. Buja holds ${N(owed)} for you and pays it ${j.status === 'done' ? (P.releaseAt ? 'on ' + when(P.releaseAt) + ', or sooner when they confirm' : 'soon') : isOrder(j) ? 'once they have the order' : 'once the work is done'}. Do not collect cash.`;
           else if (P.status === 'released') msg = P.payout === 'sent' ? `${N(owed)} has been sent to your bank.` : `${N(owed)} is yours. ${P.payout === 'queued' ? 'Add your bank account in the business dashboard so Buja can send it.' : 'It is on its way to your bank.'}`;
           else if (P.status === 'refunded') msg = `The customer was refunded: ${h(P.note || '')}`;
           else if (P.status === 'disputed') msg = `The customer reported a problem: "${h(P.note || '')}". Buja is checking and will contact you.`;
         }
         return `<div class="card stack" style="padding:12px 14px;gap:8px;background:${tone};border:none"><div class="row" style="gap:8px;align-items:flex-start">${icon('shield-halved')}<div class="small grow" style="line-height:1.5">${msg}</div></div>${acts}</div>`;
+      };
+      /**
+       * Buja Guarantee, for the customer: live arrival, the price agreed in writing, the money held until the work
+       * is done, and a full refund when they never turn up.
+       */
+      const guarBlock = (j) => {
+        const G = j.guarantee; if (j.role !== 'customer' || !G || ['requested', 'declined', 'expired'].includes(j.status)) return '';
+        const N = (n) => '₦' + Number(n || 0).toLocaleString();
+        if (G.noShow) return `<div class="card guar stack" style="padding:12px 14px;gap:6px"><div class="row" style="gap:8px">${icon('shield-halved')}<strong>Buja Guarantee</strong></div><div class="small" style="line-height:1.5">You told us they did not come. ${j.pay && j.pay.status === 'refunded' ? 'Your payment has been refunded in full.' : 'It counts against their record, so the next person is warned.'}</div></div>`;
+        if (['done', 'cancelled'].includes(j.status)) return '';
+        const fee = (t) => Math.max(100, Math.min(2500, Math.round(t * 0.025)));
+        const Q = j.quote;
+        return `<div class="card guar stack" style="padding:12px 14px;gap:8px">
+          <div class="row" style="gap:8px;align-items:center"><span style="color:var(--green-dark);display:inline-flex">${icon('shield-halved')}</span><strong class="grow">Buja Guarantee</strong><button class="linkbtn small" id="gwhat">What is covered</button></div>
+          <div class="small stack" id="gterms" style="gap:6px;line-height:1.45;display:none">
+            <span class="row" style="gap:8px;align-items:flex-start"><span style="color:var(--green-dark);flex-shrink:0;display:inline-flex;margin-top:2px">${icon('circle-check')}</span><span>You see them coming on the map, with the time they will arrive.</span></span>
+            <span class="row" style="gap:8px;align-items:flex-start"><span style="color:var(--green-dark);flex-shrink:0;display:inline-flex;margin-top:2px">${icon('circle-check')}</span><span>The price is agreed here, in writing, before any work starts.</span></span>
+            <span class="row" style="gap:8px;align-items:flex-start"><span style="color:var(--green-dark);flex-shrink:0;display:inline-flex;margin-top:2px">${icon('circle-check')}</span><span>Pay through Buja and the money is held until you say the work is done.</span></span>
+            <span class="row" style="gap:8px;align-items:flex-start"><span style="color:var(--green-dark);flex-shrink:0;display:inline-flex;margin-top:2px">${icon('circle-check')}</span><span>If they never turn up, you get every naira back.</span></span>
+            <span class="row" style="gap:8px;align-items:flex-start"><span style="color:var(--green-dark);flex-shrink:0;display:inline-flex;margin-top:2px">${icon('circle-check')}</span><span>Something wrong after? Report it before release and Buja holds the money while we sort it out.</span></span>
+          </div>
+          ${G.canPay && Q ? `<div class="small" style="line-height:1.45">Pay the agreed ${N(Q.amount)} into Buja's safe hold. They see it is paid, and get it when the work is done.</div>
+            <div class="row" style="gap:8px"><button class="btn btn-sm btn-primary grow" data-pay="online">Pay ${N(Q.amount + fee(Q.amount))}</button><button class="btn btn-sm btn-outline grow" data-pay="transfer">${icon('building-columns')} Bank transfer</button></div>
+            <div class="small muted">Includes ${N(fee(Q.amount))} protection. Card, bank app or USSD. Bank transfer gives you an account number just for this payment.</div>` : ''}
+          ${G.held ? `<div class="small" style="line-height:1.45"><strong>Your money is held by Buja.</strong> They are paid when you confirm the work is done.</div>` : ''}
+          ${G.canNoShow ? `<button class="btn btn-sm btn-outline" id="noshow" style="border-color:#D92D20;color:#D92D20">They did not come. ${G.held ? 'Refund me' : 'Close the job'}</button>`
+            : G.noShowInMin ? `<div class="small muted">Not here yet? If they still have not come, you can report a no-show in ${G.noShowInMin} min${G.held ? ' and get a full refund' : ''}.</div>` : ''}
+        </div>`;
+      };
+      const bindGuar = () => {
+        sheet.body.querySelector('#gwhat')?.addEventListener('click', () => { const t = sheet.body.querySelector('#gterms'); t.style.display = t.style.display === 'none' ? '' : 'none'; });
+        sheet.body.querySelectorAll('[data-pay]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.jobPay(id, b.dataset.pay); toast('Opening the secure payment page…'); location.href = r.payUrl; } catch (err) { busy(b, false); failed(el, err); } }));
+        sheet.body.querySelector('#noshow')?.addEventListener('click', async (e) => { if (!confirm('Report that they never came? The job closes' + (job.guarantee && job.guarantee.held ? ' and your payment comes back in full.' : '.'))) return; const b = e.currentTarget; busy(b, true); try { const r = await api.jobAct(id, 'noshow'); toast(r.job.pay && r.job.pay.status === 'refunded' ? 'Refund on its way. Sorry they let you down.' : 'Job closed. Sorry they let you down.', 5000); draw(r.job); render(r.job); } catch (err) { busy(b, false); failed(el, err); } });
       };
       /** Ordered, accepted, preparing, on the way, delivered: where an order is, at a glance. */
       const tracker = (j) => {
@@ -575,7 +619,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           else if (j.status === 'arrived') body = isOrder(j) ? `<div class="small muted">Handed over${j.items && j.items.length ? ' and collected ' + naira((j.subtotal || 0) + (j.deliveryFee || 0)) : ''}?</div><button class="btn btn-primary" data-act="done">${icon('circle-check')} Delivered</button>` : `<div class="small muted">When the work is finished:</div><button class="btn btn-primary" data-act="done">${icon('circle-check')} Job done</button>`;
           else body = `<div class="small muted">${j.status === 'done' ? 'Well done. Their rating will show on your profile.' : 'This job is closed.'}</div>`;
         }
-        sheet.body.innerHTML = `<div class="stack" style="gap:14px;padding-top:4px">${tracker(j)}${who}${j.items && j.items.length ? itemsBlock(j) : j.role === 'customer' || j.status !== 'requested' ? `<div class="small" style="color:var(--ink-2)"><strong>${isOrder(j) ? (j.role === 'artisan' ? 'The order' : 'Your order') : h(j.tradeLabel)}:</strong> ${h(j.problem)}</div>` : ''}${priceBlock(j)}${payBlock(j)}${body}</div>`;
+        sheet.body.innerHTML = `<div class="stack" style="gap:14px;padding-top:4px">${tracker(j)}${who}${j.items && j.items.length ? itemsBlock(j) : j.role === 'customer' || j.status !== 'requested' ? `<div class="small" style="color:var(--ink-2)"><strong>${isOrder(j) ? (j.role === 'artisan' ? 'The order' : 'Your order') : h(j.tradeLabel)}:</strong> ${h(j.problem)}</div>` : ''}${priceBlock(j)}${payBlock(j)}${guarBlock(j)}${body}</div>`;
         sheet.body.querySelectorAll('[data-prep]').forEach((b) => b.addEventListener('click', async () => { busy(b, true); try { const r = await api.jobAct(id, 'prepare', { minutes: +b.dataset.prep }); toast('Your customer can see it will be ready in ' + b.dataset.prep + ' min'); render(r.job); } catch (err) { busy(b, false); failed(el, err); } }));
         sheet.body.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
           const a = b.dataset.act; if ((a === 'cancel' || a === 'decline') && !confirm(a === 'cancel' ? 'Cancel this job?' : 'Decline this job?')) return;
@@ -584,7 +628,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           catch (err) { busy(b, false); if (err && (err.error === 'taken' || err.error === 'not_found')) { toast('Another mechanic took this one'); go('/jobs'); return; } failed(el, err); }
         }));
         sheet.body.querySelector('[data-start]')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); const p = await here(10000); try { const r = await api.jobAct(id, 'start', p || {}); startSharing(); draw(r.job); render(r.job); } catch (err) { busy(b, false); failed(el, err); } });
-        bindPrice();
+        bindPrice(); bindGuar();
         sheet.body.querySelector('#payproblem')?.addEventListener('click', async (e) => { const note = prompt('What went wrong with the order? Buja holds the payment while we check.'); if (!note) return; const b = e.currentTarget; busy(b, true); try { const r = await api.jobAct(id, 'problem', { note }); toast('Reported. Buja will contact you both.'); render(r.job); } catch (err) { busy(b, false); failed(el, err); } });
         sheet.body.querySelector('[data-rate]')?.addEventListener('click', () => rateForm());
         sheet.body.querySelector('[data-icall]')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.startCall(j.threadId, 'audio'); go('/rtc/' + r.call.room); } catch (err) { busy(b, false); failed(el, err); } });   // in-app call, no phone numbers
@@ -599,11 +643,22 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
           <div class="row" id="st" style="gap:6px;justify-content:center">${[1, 2, 3, 4, 5].map((i) => `<button data-s="${i}" aria-label="${i} stars" style="border:none;background:none;font-size:38px;color:var(--line);cursor:pointer">★</button>`).join('')}</div>
           <div class="row" id="tg" style="gap:6px;flex-wrap:wrap">${TAGS.map((t) => `<button class="chip" data-t="${h(t)}">${h(t)}</button>`).join('')}</div>
           <textarea class="input" id="cm" maxlength="400" placeholder="Anything else? (optional)" style="height:70px;padding:12px 14px;resize:none"></textarea>
+          <div class="stack" style="gap:8px"><div class="small" style="font-weight:700">Photos of the work (optional, up to 3)</div><div class="revpics" id="rpics"></div>
+            <label class="btn btn-sm btn-outline" style="width:auto;align-self:flex-start">${icon('camera')} Add photos<input type="file" accept="image/*" multiple id="rpick" hidden></label></div>
           <button class="btn btn-primary" id="rs" disabled>Submit rating</button></div>`;
         sheet.set('full');
         sheet.body.querySelectorAll('[data-s]').forEach((b) => b.addEventListener('click', () => { n = +b.dataset.s; sheet.body.querySelectorAll('[data-s]').forEach((x) => { x.style.color = +x.dataset.s <= n ? '#F5A623' : 'var(--line)'; }); sheet.body.querySelector('#rs').disabled = false; }));
         sheet.body.querySelectorAll('[data-t]').forEach((b) => b.addEventListener('click', () => { const t = b.dataset.t; pick.has(t) ? pick.delete(t) : pick.add(t); b.classList.toggle('on'); }));
-        sheet.body.querySelector('#rs').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.jobRate(id, { stars: n, tags: [...pick], comment: sheet.body.querySelector('#cm').value }); toast('Thank you'); sheet.set('half'); render(r.job); } catch (err) { busy(b, false); failed(el, err); } });
+        const photos = [];
+        sheet.body.querySelector('#rpick').addEventListener('change', async (e) => {
+          const files = [...e.target.files].slice(0, 3 - photos.length); e.target.value = '';
+          for (const f of files) {
+            const box = sheet.body.querySelector('#rpics'); const ph = document.createElement('div'); ph.style.cssText = 'width:76px;height:76px;border-radius:12px;background:var(--surface);display:flex;align-items:center;justify-content:center'; ph.textContent = '…'; box.appendChild(ph);
+            try { const small = await shrinkPhoto(f); const r = await api.upload(small, 'image'); photos.push(r.upload.id); ph.outerHTML = `<img src="${h(r.upload.url)}" alt="">`; }
+            catch (err) { ph.remove(); toast((err && (err.message || (err.fields && err.fields.file))) || 'That photo did not upload'); }
+          }
+        });
+        sheet.body.querySelector('#rs').addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.jobRate(id, { stars: n, tags: [...pick], comment: sheet.body.querySelector('#cm').value, photos }); toast('Thank you'); sheet.set('half'); render(r.job); } catch (err) { busy(b, false); failed(el, err); } });
       };
 
       /* The artisan's phone sends its position at most every 4 s, or when it has moved 20 m, and only while on the way. */

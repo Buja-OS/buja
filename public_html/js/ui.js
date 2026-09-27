@@ -153,3 +153,41 @@ export function viewImages(urls, start = 0) {
   stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
   show(i);
 }
+
+/**
+ * Share anything: WhatsApp first (that is where Abuja talks), then copy, a text message, or the phone's own share menu.
+ * Returns a promise so old `navigator.share(...).catch()` call sites keep working unchanged.
+ */
+export function share({ title = '', text = '', url = '' } = {}) {
+  const body = [text, url && !String(text).includes(url) ? url : ''].filter(Boolean).join(' ').trim() || title;
+  return new Promise((resolve) => {
+    document.getElementById('bjshare')?.remove();
+    const ov = document.createElement('div'); ov.className = 'ord-ov'; ov.id = 'bjshare';
+    const opt = (id, ic, bg, fg, label, sub) => `<button class="item" data-sh="${id}" style="width:100%;text-align:left;border:none;background:none"><div class="mi" style="background:${bg};color:${fg}">${ic}</div><div class="grow"><div class="t">${h(label)}</div>${sub ? `<div class="s">${h(sub)}</div>` : ''}</div></button>`;
+    const wa = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.2 2.2 2.2 0 0 0 .1-1.3c0-.1-.2-.2-.5-.3Z"/></svg>`;
+    ov.innerHTML = `<div class="ord-sheet" role="dialog" aria-label="Share" style="gap:6px"><div class="ord-grab"></div>
+      <div class="row" style="align-items:center"><div class="grow h-md">Share</div><button class="iconbtn" data-sh="x" aria-label="Close">${icon('xmark')}</button></div>
+      ${body ? `<div class="small muted" style="line-height:1.45;max-height:66px;overflow:hidden;margin-bottom:4px" data-noi18n>${h(body)}</div>` : ''}
+      <div class="card list">
+        ${opt('wa', wa, '#E7F8EE', '#128C4B', 'Share on WhatsApp', 'Send to a chat or a group')}
+        ${opt('copy', icon('copy'), 'var(--surface)', 'var(--ink)', 'Copy', 'Paste it anywhere')}
+        ${opt('sms', icon('message'), '#EAF1FB', '#1F5FBF', 'Text message', 'For people without data')}
+        ${navigator.share ? opt('more', icon('share-nodes'), 'var(--orange-tint)', 'var(--orange-dark)', 'More options', 'Instagram, Telegram, email and others') : ''}
+      </div></div>`;
+    const done = (v) => { ov.remove(); document.body.style.overflow = ''; resolve(v); };
+    ov.addEventListener('click', async (e) => {
+      if (e.target === ov) return done(false);
+      const b = e.target.closest('[data-sh]'); if (!b) return;
+      const k = b.dataset.sh;
+      if (k === 'x') return done(false);
+      if (k === 'wa') { window.open('https://wa.me/?text=' + encodeURIComponent(body), '_blank', 'noopener'); return done(true); }
+      if (k === 'sms') { location.href = 'sms:?&body=' + encodeURIComponent(body); return done(true); }
+      if (k === 'copy') { try { await navigator.clipboard.writeText(body); toast('Copied. Paste it anywhere.'); } catch { prompt('Copy this:', body); } return done(true); }
+      if (k === 'more') { try { await navigator.share({ title, text: text || body, ...(url ? { url } : {}) }); } catch {} return done(true); }
+    });
+    document.body.appendChild(ov); document.body.style.overflow = 'hidden';
+  });
+}
+/** A WhatsApp link that opens a chat with this text (and a number, when given). */
+export const waLink = (text, phone = '') => 'https://wa.me/' + String(phone).replace(/\D/g, '').replace(/^0/, '234') + '?text=' + encodeURIComponent(text);
+window.bujaShare = share;

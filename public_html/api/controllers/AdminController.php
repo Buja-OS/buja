@@ -378,12 +378,23 @@ final class AdminController
     public function storageTest(): void { $this->admin(); Http::json(Media::selfTest()); }
     public function migrate(): void
     {
-        $this->admin(); if (!Media::configured()) Http::json(['error' => 'unavailable', 'message' => 'R2 is not configured.'], 409);
-        $batch = max(1, min(50, (int) (Http::body()['batch'] ?? 20))); $moved = 0;
-        foreach ([['match_photos', 'match', 'jpg'], ['property_photos', 'homes', 'jpg'], ['listing_photos', 'declutter', 'jpg'], ['cv_files', 'cv', 'pdf']] as [$table, $folder, $ext]) {
-            $st = Db::pdo()->prepare("SELECT id, mime, data FROM $table WHERE storage_key IS NULL AND data IS NOT NULL LIMIT " . ($batch - $moved)); $st->execute();
-            foreach ($st->fetchAll() as $row) { $e = str_contains($row['mime'], 'pdf') ? 'pdf' : (str_contains($row['mime'], 'png') ? 'png' : (str_contains($row['mime'], 'webp') ? 'webp' : 'jpg')); if (str_contains($row['mime'], 'word')) $e = str_contains($row['mime'], 'openxml') ? 'docx' : 'doc'; $key = Media::put($folder, $row['data'], $row['mime'], $e); if ($key) { Db::run("UPDATE $table SET storage_key = ?, data = NULL WHERE id = ?", [$key, $row['id']]); $moved++; } if ($moved >= $batch) break 2; }
+        $this->admin(); if (!Media::configured()) Http::json(['error' => 'unavailable', 'message' => 'Object storage is not configured. Set R2_BUCKET, R2_ACCESS_KEY, R2_SECRET_KEY and R2_ENDPOINT in Render first.'], 409);
+        $batch = max(1, min(50, (int) (Http::body()['batch'] ?? 20))); $moved = 0; $failed = 0;
+        // Every table that can hold file bytes, with its key column. Chat and review uploads are usually the biggest.
+        $tables = [['uploads', 'id', 'chat'], ['avatars', 'user_id', 'avatars'], ['match_photos', 'id', 'match'], ['property_photos', 'id', 'homes'], ['listing_photos', 'id', 'declutter'], ['cv_files', 'id', 'cv'], ['verifications', 'id', 'verify']];
+        foreach ($tables as [$table, $pk, $folder]) {
+            try { $st = Db::pdo()->prepare("SELECT $pk AS k, mime, data FROM $table WHERE storage_key IS NULL AND data IS NOT NULL LIMIT " . ($batch - $moved)); $st->execute(); } catch (Throwable $e) { continue; }
+            foreach ($st->fetchAll() as $row) {
+                $m = (string) $row['mime'];
+                $e = str_contains($m, 'pdf') ? 'pdf' : (str_contains($m, 'png') ? 'png' : (str_contains($m, 'webp') ? 'webp' : (str_contains($m, 'gif') ? 'gif' : (str_contains($m, 'mp4') ? 'mp4' : (str_contains($m, 'webm') ? 'webm' : (str_contains($m, 'ogg') ? 'ogg' : (str_contains($m, 'mpeg') ? 'mp3' : 'jpg')))))));
+                if (str_contains($m, 'word')) $e = str_contains($m, 'openxml') ? 'docx' : 'doc';
+                $key = Media::put($folder, (string) $row['data'], $m ?: 'application/octet-stream', $e);
+                if ($key) { Db::run("UPDATE $table SET storage_key = ?, data = NULL WHERE $pk = ?", [$key, $row['k']]); $moved++; } else $failed++;
+                if ($moved + $failed >= $batch) break 2;
+            }
         }
-        Http::json(['moved' => $moved, 'remaining' => (int) (Db::one('SELECT (SELECT COUNT(*) FROM match_photos WHERE storage_key IS NULL) + (SELECT COUNT(*) FROM property_photos WHERE storage_key IS NULL) + (SELECT COUNT(*) FROM listing_photos WHERE storage_key IS NULL) + (SELECT COUNT(*) FROM cv_files WHERE storage_key IS NULL) AS n')['n'] ?? 0)]);
+        $left = 0; foreach ($tables as [$table]) { try { $left += (int) (Db::one("SELECT COUNT(*) AS n FROM $table WHERE storage_key IS NULL AND data IS NOT NULL")['n'] ?? 0); } catch (Throwable $e) {} }
+        if ($failed && !$moved) Http::json(['error' => 'unavailable', 'message' => 'The bucket refused the files. Check the storage keys and endpoint in Render.', 'remaining' => $left], 502);
+        Http::json(['moved' => $moved, 'failed' => $failed, 'remaining' => $left]);
     }
 }

@@ -26,10 +26,21 @@ final class Paystack
     }
 
     /** Returns ['url' => ..., 'reference' => ...] for the user to pay. Amount in naira. */
-    public static function initialize(string $email, int $naira, string $reference, array $metadata): array
+    /**
+     * With $transferOnly, Paystack's page goes straight to "Pay with Transfer": it shows a bank account made for this
+     * one payment, so someone without a card pays from any bank app and Paystack confirms it within a minute or two.
+     */
+    public static function initialize(string $email, int $naira, string $reference, array $metadata, bool $transferOnly = false): array
     {
-        $r = self::call('POST', '/transaction/initialize', ['email' => $email, 'amount' => $naira * 100, 'reference' => $reference, 'currency' => 'NGN', 'callback_url' => (string) Http::config('app_origin') . '/api/pay/callback', 'metadata' => $metadata, 'channels' => ['card', 'bank', 'ussd', 'bank_transfer']]);
+        $r = self::call('POST', '/transaction/initialize', ['email' => $email, 'amount' => $naira * 100, 'reference' => $reference, 'currency' => 'NGN', 'callback_url' => (string) Http::config('app_origin') . '/api/pay/callback', 'metadata' => $metadata, 'channels' => $transferOnly ? ['bank_transfer'] : ['card', 'bank', 'ussd', 'bank_transfer']]);
         return ['url' => (string) ($r['data']['authorization_url'] ?? ''), 'reference' => (string) ($r['data']['reference'] ?? $reference)];
+    }
+
+    /** The email Paystack needs. Accounts made with a phone number have no inbox, so Paystack gets a stable stand-in. */
+    public static function payerEmail(array $u): string
+    {
+        $e = (string) ($u['email'] ?? '');
+        return $e !== '' ? $e : 'u' . (int) $u['id'] . '@' . Auth::PHONE_MAIL_DOMAIN;
     }
 
     /** Verifies with Paystack; returns amount in naira on success, null otherwise. */

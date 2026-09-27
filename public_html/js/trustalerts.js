@@ -24,7 +24,8 @@ export function registerTrustAlerts({ route, go, state, api, ui, failed }) {
       ${d.ratings.length ? d.ratings.map((r) => `<div class="card stack" style="padding:14px;gap:8px">
         <div class="row" style="justify-content:space-between"><span>${stars(r.stars)}</span><span class="small muted">${h(r.by)} · ${h(r.module)} · ${h(r.at)}</span></div>
         ${r.tags.length ? `<div class="row" style="gap:6px;flex-wrap:wrap">${r.tags.map((t) => `<span class="tag" style="background:var(--surface);color:var(--ink-2)">${h(t)}</span>`).join('')}</div>` : ''}
-        ${r.comment ? `<div style="font-size:14px;line-height:1.55;color:var(--ink-2)">${h(r.comment)}</div>` : ''}
+        ${r.comment ? `<div style="font-size:14px;line-height:1.55;color:var(--ink-2)" data-noi18n>${h(r.comment)}</div>` : ''}
+        ${r.photos && r.photos.length ? `<div class="revpics">${r.photos.map((u) => `<img src="${h(u)}" alt="Photo from the review" loading="lazy" data-zoom="${h(u)}" data-zoom-group="rv${h(r.at)}${h(r.by)}">`).join('')}</div>` : ''}
       </div>`).join('') : `<div class="placeholder" style="padding:40px 0"><div class="small muted" style="max-width:280px;line-height:1.5">No ratings yet. People can rate each other after they have actually dealt with one another on Buja.</div></div>`}
       <div class="small muted" style="line-height:1.5">Ratings come only from people who held a real conversation here, one rating each, so they cannot be bought or spammed.</div>
     </main>`;

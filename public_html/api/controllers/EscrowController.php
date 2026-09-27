@@ -74,7 +74,6 @@ final class EscrowController
         $l = Db::one("SELECT * FROM listings WHERE id = ? AND status = 'active'", [$listingId]);
         if (!$l) Http::json(['error' => 'not_found', 'message' => 'This item is no longer for sale.'], 404);
         if ((int) $l['seller_id'] === (int) $u['id']) Http::json(['error' => 'validation', 'message' => 'You cannot buy your own item.'], 422);
-        if (empty($u['email'])) Http::json(['error' => 'validation', 'message' => 'Add an email to your account first; Paystack sends the receipt there.'], 422);
         if (Db::one("SELECT id FROM escrow_orders WHERE listing_id = ? AND status IN ('paid','shipped','disputed')", [$listingId])) Http::json(['error' => 'validation', 'message' => 'Someone has already paid for this item.'], 409);
         $price = (int) $l['price'];
         // an accepted offer from this buyer on this item sets the price
@@ -87,7 +86,7 @@ final class EscrowController
         Db::run('INSERT INTO escrow_orders (listing_id, buyer_id, seller_id, price, fee, total, reference, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)', [$listingId, $u['id'], $l['seller_id'], $price, $fee, $total, $ref, Db::now(), Db::now()]);
         $id = (int) Db::pdo()->lastInsertId();
         self::saveDrop($id, Http::body());
-        try { $p = Paystack::initialize($u['email'], $total, $ref, ['purpose' => 'escrow', 'order_id' => $id, 'listing_id' => $listingId]); }
+        try { $p = Paystack::initialize(Paystack::payerEmail($u), $total, $ref, ['purpose' => 'escrow', 'order_id' => $id, 'listing_id' => $listingId], (Http::body()['pay'] ?? '') === 'transfer'); }
         catch (Throwable $e) { Db::run("UPDATE escrow_orders SET status = 'cancelled', updated_at = ? WHERE id = ?", [Db::now(), $id]); Http::json(['error' => 'unavailable', 'message' => 'Payments are not available right now. Try again shortly.'], 503); }
         Track::hit($u, 'declutter', 'escrow_start');
         Http::json(['orderId' => $id, 'url' => $p['url'], 'price' => $price, 'fee' => $fee, 'total' => $total], 201);

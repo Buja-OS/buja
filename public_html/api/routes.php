@@ -8,6 +8,15 @@ $router->post('/auth/register',              [AuthController::class, 'register']
 $router->post('/auth/login',                 [AuthController::class, 'login']);
 $router->post('/auth/google',                [AuthController::class, 'google']);
 $router->post('/auth/logout',                [AuthController::class, 'logout']);
+$router->post('/auth/otp/request',           [AuthController::class, 'otpRequest']);
+$router->post('/auth/otp/verify',            [AuthController::class, 'otpVerify']);
+$router->post('/errors',                     [SystemController::class, 'report']);
+$router->get('/admin/errors',                [SystemController::class, 'errors']);
+$router->post('/admin/errors/{id}/resolve',  [SystemController::class, 'resolve']);
+$router->get('/admin/system',                [SystemController::class, 'check']);
+$router->post('/admin/system/test',          [SystemController::class, 'test']);
+$router->get('/admin/backup',                [SystemController::class, 'backup']);
+$router->post('/safety/sos',                 [SafetyController::class, 'sos']);
 $router->post('/auth/forgot',                [AccountController::class, 'forgot']);
 $router->post('/auth/reset',                 [AccountController::class, 'reset']);
 $router->get('/auth/verify',                 [AccountController::class, 'verify']);
@@ -363,6 +372,7 @@ $router->get('/service-jobs/{id}',           [ServiceJobController::class, 'show
 $router->post('/service-jobs/{id}/where',    [ServiceJobController::class, 'where']);
 $router->post('/service-jobs/{id}/ping',     [ServiceJobController::class, 'ping']);
 $router->post('/service-jobs/{id}/rate',     [ServiceJobController::class, 'rate']);
+$router->post('/service-jobs/{id}/pay',      [ServiceJobController::class, 'pay']);
 $router->post('/service-jobs/{id}/quote',    [ServiceJobController::class, 'quote']);
 $router->post('/service-jobs/{id}/quote/{answer}', [ServiceJobController::class, 'answerQuote']);
 $router->post('/service-jobs/{id}/{action}', [ServiceJobController::class, 'act']);

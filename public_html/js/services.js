@@ -110,7 +110,7 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
       el.querySelector('#buy')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { const r = await api.buyTicket(id, +el.querySelector('#qty').value); if (r.mock) { toast('Test payment done'); location.reload(); } else location.href = r.url; } catch (err) { busy(e.currentTarget, false); failed(el, err); } });
       el.querySelector('#pf')?.addEventListener('submit', (e) => { e.preventDefault(); const v = el.querySelector('#pbody').value.trim(); if (!v) return; act(() => api.eventPost(id, v)); });
       el.querySelector('#msghost')?.addEventListener('click', async () => { try { const { event: e } = await api.event(id); const r = await api.artisanChat(e.host.id).catch(() => null); if (r) go('/inbox/' + r.threadId); else toast('Message the host through the discussion below.'); } catch (err) { failed(el, err); } });
-      el.querySelector('#share')?.addEventListener('click', async () => { const { event: e } = await api.event(id); const t = `${e.title} · ${when(e.startsAt)} · ${e.venue}. Register on Buja: ${location.origin}/#/meetup/${e.id}`; if (navigator.share) navigator.share({ title: e.title, text: t }).catch(() => {}); else { navigator.clipboard?.writeText(t); toast('Copied'); } });
+      el.querySelector('#share')?.addEventListener('click', async () => { const { event: e } = await api.event(id); const t = `${e.title} · ${when(e.startsAt)} · ${e.venue}. Register on Buja: ${location.origin}/#/meetup/${e.id}`; if (window.bujaShare) window.bujaShare({ title: e.title, text: t }).catch(() => {}); else { navigator.clipboard?.writeText(t); toast('Copied'); } });
     }
   });
 
@@ -210,6 +210,7 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
       <div class="small muted" style="margin-top:-6px">Calls and messages go through Buja, so your number stays private.</div>
       ${a.about ? `<div><div class="section">ABOUT</div><p style="margin:8px 0 0;font-size:15px;line-height:1.6;color:var(--ink-2);white-space:pre-line">${h(a.about)}</p></div>` : ''}
       ${a.lat ? `<a class="btn btn-outline" href="${h(placeHref({ lat: a.lat, lng: a.lng, name: a.name, sub: [a.tradeLabel, a.district].filter(Boolean).join(' · '), icon: TRADEICON[a.trade] || 'screwdriver-wrench', color: '#1F5FBF', photo: a.photo || '' }))}">${icon('location-dot')} Where the shop is</a>` : ''}
+      <a class="card guar row" href="#/people/${a.id}" style="padding:12px 14px;gap:12px;text-decoration:none;color:inherit"><span style="color:var(--green-dark);font-size:22px;display:inline-flex">${icon('shield-halved')}</span><span class="grow"><strong style="display:block">Buja Guarantee</strong><span class="small muted">Watch them come live, agree the price in the app, and pay into Buja's hold. Full refund if they never turn up.</span></span>${icon('chevron-right')}</a>
       <div class="card stack" style="padding:14px;gap:6px"><div class="h-sm">Before you pay</div><div class="small muted" style="line-height:1.55">${a.orderable ? 'Menu prices are set by the business and checked by Buja when you order. Pay when your order reaches you. ' : 'Agree the price before work starts. Pay when the job is done. '}If something goes wrong, rate them here so the next person knows. ${a.rating.count ? '' : 'Nobody has rated them on Buja yet.'}</div></div>
       <div class="small muted">${a.jobs} people have contacted them through Buja.</div>
     </main>
@@ -248,7 +249,7 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
       ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
       let pos = null;
       const protect = (t) => Math.max(100, Math.min(2500, Math.round(t * 0.025)));
-      let pay = 'delivery'; try { pay = localStorage.getItem('buja_pay_pref') === 'online' ? 'online' : 'delivery'; } catch {}
+      let pay = 'delivery'; try { const p = localStorage.getItem('buja_pay_pref'); pay = p === 'online' || p === 'transfer' ? p : 'delivery'; } catch {}
       if (q().get('paid') === '0') toast('The payment was not completed, so the order was not sent. Try again, or pay on delivery.', 6000);
       const checkout = (free) => {
         const lines = Object.entries(cart).map(([k, n]) => [byId.get(k), n]).filter(([m]) => m);
@@ -265,9 +266,10 @@ export function registerCityServices({ route, go, state, api, ui, DISTRICTS, fai
           ${free ? '' : `<div class="field" style="margin:0"><label for="onote">Note for the kitchen (optional)</label><input class="input" id="onote" maxlength="160" placeholder="Extra pepper, no onions"></div>
           <div class="field" style="margin:0"><label>How will you pay?</label><div class="stack" style="gap:8px" id="paypick">
             <label class="pay-opt ${pay === 'online' ? 'on' : ''}"><input type="radio" name="pay" value="online" ${pay === 'online' ? 'checked' : ''}><span class="grow"><span style="display:block;font-weight:750">Pay now in the app · ${nn(s + fee + protect(s + fee))}</span><span class="small muted">Card, bank transfer or USSD. Buja holds it until you have your order, and refunds you in full if they cannot take it. Includes ${nn(protect(s + fee))} buyer protection.</span></span></label>
+            <label class="pay-opt ${pay === 'transfer' ? 'on' : ''}"><input type="radio" name="pay" value="transfer" ${pay === 'transfer' ? 'checked' : ''}><span class="grow"><span style="display:block;font-weight:750">Pay by bank transfer · ${nn(s + fee + protect(s + fee))}</span><span class="small muted">No card needed. You get an account number just for this order; send from any bank app. Held by Buja the same way.</span></span></label>
             <label class="pay-opt ${pay === 'delivery' ? 'on' : ''}"><input type="radio" name="pay" value="delivery" ${pay === 'delivery' ? 'checked' : ''}><span class="grow"><span style="display:block;font-weight:750">Pay on delivery · ${nn(s + fee)}</span><span class="small muted">Cash or transfer to them when it arrives.</span></span></label></div></div>`}
           <div class="small muted" style="line-height:1.5">${free ? 'They accept, send you a price to agree in the app, then you watch the delivery come to you on the map.' : 'They accept, tell you when it will be ready, then you watch the rider come to you on the map.'}</div>
-          <button class="btn btn-primary" id="oplace" ${short ? 'disabled' : ''}>${icon('bag-shopping')} ${free ? 'Send order' : pay === 'online' ? 'Pay ' + nn(s + fee + protect(s + fee)) + ' and order' : 'Place order · ' + nn(s + fee)}</button>`;
+          <button class="btn btn-primary" id="oplace" ${short ? 'disabled' : ''}>${icon('bag-shopping')} ${free ? 'Send order' : pay === 'online' ? 'Pay ' + nn(s + fee + protect(s + fee)) + ' and order' : pay === 'transfer' ? 'Get the account number · ' + nn(s + fee + protect(s + fee)) : 'Place order · ' + nn(s + fee)}</button>`;
         ov.hidden = false; document.body.style.overflow = 'hidden';
         sh.querySelector('#oclose').addEventListener('click', close);
         sh.querySelectorAll('input[name=pay]').forEach((r) => r.addEventListener('change', () => { pay = r.value; try { localStorage.setItem('buja_pay_pref', pay); } catch {} const keep = { lm: sh.querySelector('#olm').value, note: sh.querySelector('#onote')?.value }; checkout(free); sh.querySelector('#olm').value = keep.lm; if (sh.querySelector('#onote')) sh.querySelector('#onote').value = keep.note || ''; }));

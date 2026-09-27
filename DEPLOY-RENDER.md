@@ -89,6 +89,27 @@ Do the parts in order. Each part ends with a "you should now see" check.
 - Google sign-in needs Part 6 of `DEPLOY.md` (a Google client ID) plus the Render address added as an authorised origin. Do it after everything else works.
 - Every time I give you a new phase, you upload the new files to GitHub the same way (drag onto the repository page, commit) and Render rebuilds by itself.
 
+---
+
+## Part 7: Before launch (phase 53 onwards)
+
+All of these are optional switches. Buja runs without them, and Admin, System (in the app) shows which ones are on. Keys go into Render only, **never into a chat**: Render, the **buja** service, **Environment**, **Add Environment Variable**, then **Save Changes**.
+
+**Photo storage.** Without a bucket every photo sits inside the database and the free TiDB plan fills up.
+- Cloudflare R2 (10 GB free): Cloudflare dashboard, **R2**, **Create bucket** (name it `buja-media`). Then **Manage R2 API Tokens**, **Create API token**, permission **Object Read & Write**. Set `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`.
+- Backblaze B2 works the same way: create a private bucket and an application key, then set `R2_BUCKET`, `R2_ACCESS_KEY` (the keyID), `R2_SECRET_KEY` (the applicationKey), `R2_ENDPOINT` (for example `https://s3.eu-central-003.backblazeb2.com`) and `R2_REGION` (for example `eu-central-003`).
+- Then in the app: Admin, System, **Move photos to the bucket**. It keeps going until it says 0 left.
+
+**Phone sign-in and SOS texts (Termii).** termii.com, sign up, **Sender ID**, request one (for example `Buja`) and wait for approval; ask Termii to switch on the **DND route** for it so codes reach every number. Set `TERMII_API_KEY`, `TERMII_SENDER`, and `TERMII_BASE_URL` (shown on your Termii dashboard). The "Continue with phone number" button appears by itself once these are set. Admin, System, **Send a test text** checks it.
+
+**Error alerts.** Set `ADMIN_EMAIL` to the address that should get an email when a new error appears (it needs `BREVO_API_KEY` working). Admin, System lists every error with how often it happened.
+
+**Real payments.** Set `PAYSTACK_SECRET` to your live key and delete `PAYSTACK_MOCK`. Pay by bank transfer needs nothing extra: Paystack gives each payment its own account number.
+
+**Backups.** Admin, System, **Download backup**, once a week, into Google Drive.
+
+**Smoke tests.** After a deploy anyone can run `python3 tests/smoke.py https://buja.onrender.com --live` for ten read-only checks.
+
 ## If you get stuck
 
 Send me a screenshot of the screen you are on and the exact address in the browser. Do not send passwords. I will tell you which step to redo.

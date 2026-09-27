@@ -35,6 +35,25 @@ final class RatingController
         return ['count' => $n, 'stars' => (float) $agg['avg'], 'top' => array_slice(array_keys($tally), 0, 3)];
     }
 
+    /** Up to three photos with a review: the customer's own uploaded images only. */
+    public static function attachPhotos(int $ratingId, int $userId, array $ids): void
+    {
+        $ids = array_slice(array_values(array_unique(array_filter(array_map('intval', $ids)))), 0, 3);
+        try {
+            Db::run('DELETE FROM rating_photos WHERE rating_id = ?', [$ratingId]);
+            foreach ($ids as $up) if (Db::one("SELECT id FROM uploads WHERE id = ? AND user_id = ? AND kind = 'image'", [$up, $userId])) Db::run('INSERT INTO rating_photos (rating_id, upload_id, created_at) VALUES (?,?,?)', [$ratingId, $up, Db::now()]);
+        } catch (Throwable $e) { /* migration 045 not run yet: the review still saves, just without photos */ }
+    }
+    /** Photo URLs for a set of ratings, keyed by rating id. */
+    public static function photosFor(array $ratingIds): array
+    {
+        if (!$ratingIds) return [];
+        try { $st = Db::pdo()->prepare('SELECT rating_id, upload_id FROM rating_photos WHERE rating_id IN (' . implode(',', array_fill(0, count($ratingIds), '?')) . ') ORDER BY id'); $st->execute(array_values($ratingIds)); }
+        catch (Throwable $e) { return []; }
+        $out = []; foreach ($st->fetchAll() as $r) $out[(int) $r['rating_id']][] = '/api/uploads/' . (int) $r['upload_id'];
+        return $out;
+    }
+
     /** GET /users/{id}/ratings */
     public function show(int $id): void
     {
@@ -42,9 +61,10 @@ final class RatingController
         $st = Db::pdo()->prepare('SELECT r.*, u.name FROM user_ratings r JOIN users u ON u.id = r.rater WHERE r.rated = ? AND r.hidden_at IS NULL ORDER BY r.id DESC LIMIT 30');
         $st->execute([$id]);
         $who = Db::one('SELECT name FROM users WHERE id = ?', [$id]);
+        $rows = $st->fetchAll(); $pics = self::photosFor(array_map(fn($r) => (int) $r['id'], $rows));
         Http::json(['summary' => self::summary($id), 'name' => explode(' ', trim((string) ($who['name'] ?? 'Someone')))[0],
-            'ratings' => array_map(fn($r) => ['stars' => (int) $r['stars'], 'tags' => json_decode($r['tags'] ?? '[]', true) ?: [], 'comment' => $r['comment'],
-                'by' => explode(' ', trim((string) $r['name']))[0], 'module' => $r['module'], 'at' => substr((string) $r['created_at'], 0, 10)], $st->fetchAll())]);
+            'ratings' => array_map(fn($r) => ['photos' => $pics[(int) $r['id']] ?? [], 'stars' => (int) $r['stars'], 'tags' => json_decode($r['tags'] ?? '[]', true) ?: [], 'comment' => $r['comment'],
+                'by' => explode(' ', trim((string) $r['name']))[0], 'module' => $r['module'], 'at' => substr((string) $r['created_at'], 0, 10)], $rows)]);
     }
 
     /** GET /threads/{id}/rating : can I rate this person, and have I already? */

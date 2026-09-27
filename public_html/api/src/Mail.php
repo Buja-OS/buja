@@ -6,6 +6,7 @@ final class Mail
 {
     public static function send(string $to, string $toName, string $subject, string $html): bool
     {
+        if (Auth::placeholderEmail($to)) return false;   // a phone-only account: there is no inbox
         $key = (string) Http::config('brevo_api_key', '');
         if ($key === '') { error_log('[buja mail] skipped, no BREVO_API_KEY: ' . $subject . ' to ' . $to); return false; }
         $from = (string) Http::config('mail_from', 'hello@buja.ng');

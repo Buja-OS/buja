@@ -74,7 +74,17 @@ export function registerDeclutter({ route, go, state, api, ui, DISTRICTS, failed
     mount(el) {
       /* Buy safely: if the seller delivers, the buyer chooses delivery and drops a pin, so they can watch it come */
       const here = (ms = 8000) => new Promise((res) => { if (!navigator.geolocation) return res(null); let d = false; const f = (v) => { if (!d) { d = true; res(v); } }; setTimeout(() => f(null), ms); navigator.geolocation.getCurrentPosition((p) => f({ lat: p.coords.latitude, lng: p.coords.longitude }), () => f(null), { enableHighAccuracy: true, timeout: ms, maximumAge: 60000 }); });
-      const pay = async (b, body) => { busy(b, true); try { const r = await api.escrowBuy(el.dataset.lid || location.hash.split('/')[2].split('?')[0], body); if (!confirm(`Pay ₦${Number(r.total).toLocaleString('en-NG')}? That is ₦${Number(r.price).toLocaleString('en-NG')} for the item plus ₦${Number(r.fee).toLocaleString('en-NG')} buyer protection. Buja holds it until you confirm the item arrived.`)) { busy(b, false); return; } location.href = r.url; } catch (err) { busy(b, false); failed(el, err); } };
+      /** Card or bank transfer: someone without a card gets an account number just for this payment. */
+      const howPay = () => new Promise((res) => {
+        const ov = document.createElement('div'); ov.className = 'ord-ov';
+        ov.innerHTML = `<div class="ord-sheet"><div class="ord-grab"></div><div class="h-md">How will you pay?</div>
+          <button class="pay-opt" data-m="online" style="text-align:left;border:1.5px solid var(--line);background:var(--card);color:inherit;border-radius:14px;padding:12px 14px">${icon('credit-card')} <strong>Card, bank app or USSD</strong><div class="small muted">Paystack's secure page</div></button>
+          <button class="pay-opt" data-m="transfer" style="text-align:left;border:1.5px solid var(--line);background:var(--card);color:inherit;border-radius:14px;padding:12px 14px">${icon('building-columns')} <strong>Bank transfer, no card needed</strong><div class="small muted">You get an account number for this payment only. Send from any bank app; it confirms in a minute or two.</div></button>
+          <button class="btn btn-ghost" data-m="">Cancel</button></div>`;
+        ov.addEventListener('click', (e) => { const m = e.target.closest('[data-m]'); if (!m && e.target !== ov) return; ov.remove(); res(m ? m.dataset.m || null : null); });
+        document.body.appendChild(ov);
+      });
+      const pay = async (b, body) => { const m = await howPay(); if (!m) return; body = { ...body, pay: m }; busy(b, true); try { const r = await api.escrowBuy(el.dataset.lid || location.hash.split('/')[2].split('?')[0], body); if (!confirm(`Pay ₦${Number(r.total).toLocaleString('en-NG')}? That is ₦${Number(r.price).toLocaleString('en-NG')} for the item plus ₦${Number(r.fee).toLocaleString('en-NG')} buyer protection. Buja holds it until you confirm the item arrived.`)) { busy(b, false); return; } location.href = r.url; } catch (err) { busy(b, false); failed(el, err); } };
       el.querySelector('#buysafe')?.addEventListener('click', async (e) => {
         const b = e.currentTarget; const dl = b.dataset.delivery;
         if (dl === 'pickup') return pay(b, { handover: 'pickup' });

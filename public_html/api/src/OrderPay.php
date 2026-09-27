@@ -22,17 +22,39 @@ final class OrderPay
     public static function fee(int $total): int { return EscrowController::fee($total); }
 
     /** Starts a payment for a checked order. Nothing is sent to the business yet. */
-    public static function start(array $u, array $o): array
+    public static function start(array $u, array $o, bool $transferOnly = false): array
     {
         if ((string) Http::config('paystack_secret', '') === '') Http::json(['error' => 'unavailable', 'message' => 'Paying in the app is not switched on yet. Choose pay on delivery.'], 409);
-        if (empty($u['email'])) Http::json(['error' => 'validation', 'message' => 'Add an email to your account first; Paystack sends the receipt there. Or choose pay on delivery.'], 422);
         $sub = (int) $o['subtotal']; $del = (int) ($o['deliveryFee'] ?? 0); $fee = self::fee($sub + $del); $total = $sub + $del + $fee;
         $ref = self::PREFIX . $o['artisanId'] . '-' . bin2hex(random_bytes(5));
         Db::run('INSERT INTO job_payments (reference, customer_id, artisan_id, subtotal, delivery_fee, fee, total, draft_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
             [$ref, $u['id'], $o['artisanId'], $sub, $del, $fee, $total, json_encode($o, JSON_UNESCAPED_UNICODE), Db::now(), Db::now()]);
-        try { $p = Paystack::initialize($u['email'], $total, $ref, ['purpose' => 'order', 'artisan_id' => $o['artisanId']]); }
+        try { $p = Paystack::initialize(Paystack::payerEmail($u), $total, $ref, ['purpose' => 'order', 'artisan_id' => $o['artisanId']], $transferOnly); }
         catch (Throwable $e) { Db::run("UPDATE job_payments SET status = 'cancelled', updated_at = ? WHERE reference = ?", [Db::now(), $ref]); Http::json(['error' => 'unavailable', 'message' => 'Payments are not available right now. Choose pay on delivery, or try again shortly.'], 503); }
         Track::hit($u, 'artisan', 'orderpay_start');
+        return ['url' => $p['url'], 'reference' => $ref, 'total' => $total, 'fee' => $fee];
+    }
+
+    /**
+     * Paying an agreed price for a call-out (a mechanic, a plumber) through Buja. The job already exists, so the
+     * payment row points at it from the start; the money is held exactly like an order and released when the
+     * customer says the work is done, or refunded if the artisan never comes.
+     */
+    public static function startForJob(array $u, array $j, bool $transferOnly = false): array
+    {
+        if ((string) Http::config('paystack_secret', '') === '') Http::json(['error' => 'unavailable', 'message' => 'Paying in the app is not switched on yet. Pay them when the work is done.'], 409);
+        if ((int) $j['customer_id'] !== (int) $u['id']) Http::json(['error' => 'forbidden'], 403);
+        if (($j['quote_status'] ?? '') !== 'accepted' || (int) ($j['quote_amount'] ?? 0) < 500) Http::json(['error' => 'validation', 'message' => 'Agree a price first. Then you can pay it into Buja\'s safe hold.'], 422);
+        if (!in_array($j['status'], ['accepted', 'enroute', 'arrived'], true)) Http::json(['error' => 'validation', 'message' => 'This job is not open for payment.'], 422);
+        $held = Db::one("SELECT id FROM job_payments WHERE job_id = ? AND status IN ('paid','disputed','released')", [$j['id']]);
+        if ($held) Http::json(['error' => 'validation', 'message' => 'You have already paid for this job.'], 409);
+        $sub = (int) $j['quote_amount']; $fee = self::fee($sub); $total = $sub + $fee;
+        $ref = self::PREFIX . $j['artisan_id'] . '-' . bin2hex(random_bytes(5));
+        Db::run('INSERT INTO job_payments (reference, customer_id, artisan_id, job_id, subtotal, delivery_fee, fee, total, draft_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+            [$ref, $u['id'], $j['artisan_id'], $j['id'], $sub, 0, $fee, $total, '{}', Db::now(), Db::now()]);
+        try { $p = Paystack::initialize(Paystack::payerEmail($u), $total, $ref, ['purpose' => 'job', 'job_id' => (int) $j['id']], $transferOnly); }
+        catch (Throwable $e) { Db::run("UPDATE job_payments SET status = 'cancelled', updated_at = ? WHERE reference = ?", [Db::now(), $ref]); Http::json(['error' => 'unavailable', 'message' => 'Payments are not available right now. Try again shortly.'], 503); }
+        Track::hit($u, 'artisan', 'jobpay_start');
         return ['url' => $p['url'], 'reference' => $ref, 'total' => $total, 'fee' => $fee];
     }
 
@@ -45,6 +67,14 @@ final class OrderPay
         if ($paid === null || $paid < (int) $p['total']) return $p;
         $st = Db::pdo()->prepare("UPDATE job_payments SET status = 'paid', paid_at = ?, updated_at = ? WHERE id = ? AND status = 'pending'"); $st->execute([Db::now(), Db::now(), $p['id']]);
         if ($st->rowCount() !== 1) return Db::one('SELECT * FROM job_payments WHERE id = ?', [$p['id']]);
+        if (!empty($p['job_id'])) {
+            // a call-out paid after the price was agreed: the job exists already
+            $jid = (int) $p['job_id'];
+            Db::run("UPDATE service_jobs SET pay_mode = 'online' WHERE id = ?", [$jid]);
+            Notify::user((int) $p['artisan_id'], 'work', 'Paid and held: ₦' . number_format((int) $p['subtotal']), 'Your customer paid through Buja. You get it as soon as they confirm the work is done. Do not collect cash as well.', '/#/jobs/' . $jid, true);
+            Notify::user((int) $p['customer_id'], 'work', 'Paid: ₦' . number_format((int) $p['total']), 'Buja holds it until the work is done. If they never come, you get it all back.', '/#/jobs/' . $jid);
+            return Db::one('SELECT * FROM job_payments WHERE id = ?', [$p['id']]);
+        }
         // Paid: now the order goes to the business, exactly as it was checked when the customer paid.
         $u = Db::one('SELECT * FROM users WHERE id = ?', [$p['customer_id']]);
         $o = json_decode((string) $p['draft_json'], true);
@@ -74,7 +104,8 @@ final class OrderPay
         if (!$p || $p['status'] !== 'paid') return;
         $j = Db::one('SELECT status, cancelled_by, customer_id FROM service_jobs WHERE id = ?', [$jobId]); if (!$j) return;
         if (in_array($j['status'], ['declined', 'expired'], true)) { self::refund($p, $j['status'] === 'declined' ? 'The business could not take this order.' : 'The business did not answer in time.'); return; }
-        if ($j['status'] === 'cancelled') { self::refund($p, (int) $j['cancelled_by'] === (int) $j['customer_id'] ? 'You cancelled the order.' : 'The business cancelled the order.'); return; }
+        if ($j['status'] === 'cancelled') { $ns = false; try { $ns = !empty(Db::one('SELECT no_show FROM service_jobs WHERE id = ?', [$jobId])['no_show']); } catch (Throwable $e) {}
+            self::refund($p, $ns ? 'They did not turn up. Buja Guarantee: your money comes back in full.' : ((int) $j['cancelled_by'] === (int) $j['customer_id'] ? 'You cancelled the order.' : 'The business cancelled the order.')); return; }
         if ($j['status'] === 'done') {
             if ($customerConfirmed) { self::release($p, 'The customer confirmed they have the order.'); return; }
             if (empty($p['release_at'])) Db::run('UPDATE job_payments SET release_at = ?, updated_at = ? WHERE id = ?', [gmdate('Y-m-d H:i:s', time() + self::RELEASE_HOURS * 3600), Db::now(), $p['id']]);
@@ -166,7 +197,7 @@ final class OrderPay
         else Http::json(['error' => 'not_found'], 404);
     }
 
-    private static function tellAdmins(string $title, string $body, string $url): void
+    public static function tellAdmins(string $title, string $body, string $url): void
     {
         $st = Db::pdo()->prepare("SELECT id FROM users WHERE (role = 'admin' OR is_admin = 1) AND deleted_at IS NULL"); $st->execute();
         foreach ($st->fetchAll() as $a) Notify::user((int) $a['id'], 'offers', $title, $body, $url, true);

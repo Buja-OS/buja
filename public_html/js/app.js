@@ -11,6 +11,7 @@ import { registerAdminShell } from './adminshell.js';
 import { afterScreen, appOpen, hideBanner } from './ads.js';
 import { passkeyAvailable, passkeySupported, registerPasskey, loginWithPasskey } from './passkey.js';
 import { registerRtc, watchIncoming } from './rtc.js';
+import { startI18n, setLang, LANGS, currentLang } from './i18n.js';
 
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__bujaInstall = e; });
 
@@ -136,12 +137,16 @@ route('/welcome', { guest: true }, async () => `
     <button class="btn btn-outline" data-google>
       <span class="gmark">G</span>Continue with Google
     </button>
-    <a class="btn btn-ink" href="#/signup">${icon('user')} Create an account</a>
+    <a class="btn btn-ink" href="#/phone" id="phonebtn" style="${serverInfo.phoneLogin ? '' : 'display:none'}">${icon('phone')} Continue with phone number</a>
+    <a class="btn ${serverInfo.phoneLogin ? 'btn-outline' : 'btn-ink'}" href="#/signup">${icon('user')} Create an account</a>
     <a class="btn btn-ghost" href="#/signin">I already have an account</a>
     <button class="btn btn-ghost" id="pkwelcome2" type="button" style="display:none">${icon('fingerprint')} Sign in with fingerprint</button>
     <a class="small center" href="/p/" style="display:block;color:var(--ink-2);text-decoration:underline">Look around first: jobs, homes, places and courses, no account needed</a>
     <p class="small muted center" style="margin:0;line-height:1.5">By continuing you agree to Buja's Terms and Privacy Policy. Buja is for residents of Abuja and the FCT.</p>
-  </div>`, { mount(el) { mountGoogle(el); mountFingerprint(el); } });
+    <div class="row" data-noi18n style="gap:6px;justify-content:center;flex-wrap:wrap">${LANGS.map(([k, en, own]) => `<button class="chip ${currentLang() === k ? 'on' : ''}" data-wl="${k}">${own}</button>`).join('')}</div>
+  </div>`, { mount(el) { mountGoogle(el); mountFingerprint(el);
+    el.querySelectorAll('[data-wl]').forEach((b) => b.addEventListener('click', async () => { el.querySelectorAll('[data-wl]').forEach((x) => x.classList.toggle('on', x === b)); await setLang(b.dataset.wl); }));
+  } });
 
 route('/signin', { guest: true }, async () => `
   ${topbar('', '/welcome')}
@@ -159,6 +164,7 @@ route('/signin', { guest: true }, async () => `
       </div>
       <button class="btn btn-primary" type="submit">Sign in</button>
     </form>
+    ${serverInfo.phoneLogin ? `<a class="btn btn-outline" href="#/phone">${icon('phone')} Sign in with a code by text instead</a>` : ''}
     <div class="center small muted">New to Buja? <a href="#/signup" style="color:var(--orange-dark);font-weight:600">Create an account</a></div>
   </main>`, {
   mount(el) {
@@ -170,6 +176,62 @@ route('/signin', { guest: true }, async () => `
       showErrors(el, {}); busy(btn, true);
       try {
         const r = await api.login({ identifier: val(f, 'identifier'), password: val(f, 'password') });
+        await signedIn(r);
+      } catch (err) { busy(btn, false); failed(el, err); }
+    });
+  }
+});
+
+/* Phone number sign-in: a code by text, no password. Creates the account when the number is new. */
+route('/phone', { guest: true }, async () => `
+  ${topbar('', '/welcome')}
+  <main class="pad stack" style="gap:18px;padding-top:8px">
+    <div>${markAuto(40)}<div class="h-xl" style="margin-top:16px">Sign in with your phone</div><div class="muted" style="margin-top:4px;line-height:1.5">We text you a 6-digit code. No password to remember.</div></div>
+    <form id="f1" class="stack" style="gap:14px" novalidate>
+      <div class="field" data-field="phone"><label for="phone">Phone number</label><div class="row" style="gap:10px"><span class="prefix">+234</span><input class="input" id="phone" name="phone" type="tel" inputmode="tel" placeholder="803 000 0000" autocomplete="tel-national"></div><div class="error" data-error="phone"></div></div>
+      <button class="btn btn-primary" type="submit">Send code</button>
+    </form>
+    <form id="f2" class="stack" style="gap:14px;display:none" novalidate>
+      <div class="small muted" id="sentto"></div>
+      <div class="field" data-field="code"><label for="code">The code from the text</label><input class="input" id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="font-size:24px;letter-spacing:8px;text-align:center"><div class="error" data-error="code"></div></div>
+      <div id="newacct" class="stack" style="gap:14px;display:none">
+        <div class="card" style="padding:12px 14px;background:var(--green-tint);border:none"><div class="small" style="line-height:1.5"><strong>Welcome to Buja.</strong> This number is new here, so we will make your account now.</div></div>
+        ${field({ id: 'name', label: 'Your full name', placeholder: 'Tunde Bello', autocomplete: 'name' })}
+        <label class="check"><input type="checkbox" id="agree"><span>I agree to the Terms of Use and Privacy Policy, and confirm I am 18 or older and live in Abuja or the FCT.</span></label>
+        <div class="error" data-error="agree"></div>
+      </div>
+      <button class="btn btn-primary" type="submit" id="vbtn">Continue</button>
+      <button class="btn btn-ghost" type="button" id="resend" disabled>Resend code</button>
+    </form>
+    <div class="center small muted">Prefer email? <a href="#/signin" style="color:var(--orange-dark);font-weight:600">Sign in with email</a></div>
+  </main>`, {
+  mount(el) {
+    clearOnInput(el);
+    const f1 = el.querySelector('#f1'), f2 = el.querySelector('#f2'); let phone = '', wait = null;
+    const countdown = () => { const b = el.querySelector('#resend'); let n = 45; b.disabled = true; clearInterval(wait); wait = setInterval(() => { n--; b.textContent = n > 0 ? 'Resend code in ' + n + 's' : 'Resend code'; if (n <= 0) { clearInterval(wait); b.disabled = false; } }, 1000); };
+    const send = async (btn) => {
+      showErrors(el, {}); busy(btn, true);
+      try {
+        const r = await api.otpRequest(phone || val(f1, 'phone')); phone = r.phone;
+        f1.style.display = 'none'; f2.style.display = ''; el.querySelector('#sentto').textContent = 'We sent a code to ' + r.phone + '. It lasts 10 minutes.';
+        if (r.devCode) toast('Test mode code: ' + r.devCode, 8000);
+        el.querySelector('#code').focus(); countdown();
+        // Android Chrome can read the code straight from the text
+        if ('OTPCredential' in window) navigator.credentials.get({ otp: { transport: ['sms'] } }).then((o) => { if (o && o.code) { el.querySelector('#code').value = o.code; f2.requestSubmit(); } }).catch(() => {});
+      } catch (err) { failed(el, err); }
+      busy(btn, false);
+    };
+    f1.addEventListener('submit', (e) => { e.preventDefault(); send(f1.querySelector('[type=submit]')); });
+    el.querySelector('#resend').addEventListener('click', (e) => send(e.currentTarget));
+    el.querySelector('#code').addEventListener('input', (e) => { if (e.target.value.replace(/\D/g, '').length === 6 && el.querySelector('#newacct').style.display === 'none') f2.requestSubmit(); });
+    f2.addEventListener('submit', async (e) => {
+      e.preventDefault(); const btn = el.querySelector('#vbtn'); showErrors(el, {}); busy(btn, true);
+      const body = { phone, code: val(f2, 'code') };
+      if (el.querySelector('#newacct').style.display !== 'none') { body.name = val(f2, 'name'); body.agree = el.querySelector('#agree').checked; }
+      try { const ref = sessionStorage.getItem('buja_ref'); if (ref) body.ref = ref; } catch {}
+      try {
+        const r = await api.otpVerify(body);
+        if (r.needName) { busy(btn, false); el.querySelector('#newacct').style.display = ''; btn.textContent = 'Create my account'; el.querySelector('#name').focus(); return; }
         await signedIn(r);
       } catch (err) { busy(btn, false); failed(el, err); }
     });
@@ -277,9 +339,19 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/kart', 'gamepad', '#FFF1E6', '#E8660A', 'Buja Kart', 'Race round Eagle Square and Aso Rock'],
     ['/friends', 'users', '#EEF0FF', '#4B4FC4', 'Friends', 'People you know, and people to meet'],
   ];
+  // Focus: the four things most people come for, big. Everything else waits under "More" (or all of it, if they chose that in Settings).
+  const CORE = ['/artisans/map?trade=mechanic', '/ask', '/work', '/waka'];
+  const showAll = (() => { try { return localStorage.getItem('buja_home_all') === '1'; } catch { return false; } })();
+  const moreOpen = (() => { try { return localStorage.getItem('buja_home_more') === '1'; } catch { return false; } })();
+  const core = CORE.map((c) => modules.find((m) => m[0] === c)).filter(Boolean);
+  core[1] = ['/ask', 'wand-magic-sparkles', 'var(--orange-tint)', 'var(--orange-dark)', 'Ask and places', 'Where to eat, go out, fix things'];
+  const rest = modules.filter((m) => !CORE.includes(m[0]));
+  const tile = ([href, ic, bg, fg, t, sub, dark]) => `<a class="card mod ${dark ? 'dark' : ''}" href="#${href}"><div class="mi" style="background:${bg};color:${fg}">${icon(ic)}</div><div><div class="t">${t}</div><div class="s">${sub}</div></div></a>`;
+  const mini = ([href, ic, bg, fg, t]) => `<a class="modmini" href="#${href}"><span class="mi" style="background:${bg};color:${fg}">${icon(ic)}</span><span class="t">${t}</span></a>`;
   return `
   <header class="topbar" style="padding-top:8px">
     ${markAuto(30)}<h1 style="letter-spacing:1px;font-size:22px">Buja</h1>
+    <a class="sosbtn" href="#/sos" aria-label="SOS">SOS</a>
     <a class="iconbtn" href="#/settings" aria-label="Settings">${icon('gear')}</a>
     <a class="iconbtn" href="#/search" aria-label="Search Buja">${icon('magnifying-glass')}</a>
     <a class="iconbtn" href="#/notifications" aria-label="Notifications" style="position:relative">${icon('regular/bell')}<span class="dot" id="belldot" style="display:none"></span></a>
@@ -288,11 +360,17 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     <div><div class="h-lg">${greet}, ${h(u.name.split(' ')[0])}</div><div class="muted small" style="margin-top:3px;display:flex;align-items:center;gap:6px">${icon('location-dot')} ${h(u.district || 'Abuja')}${api.isMock() ? ' · preview mode' : ''}</div></div>
     <div id="weather"></div>
     <form class="card askbar" id="homeask" style="padding-right:8px">${icon('wand-magic-sparkles')}<label for="hq" style="position:absolute;left:-9999px">Ask Buja</label><input id="hq" placeholder="Ask Buja anything about Abuja" autocomplete="off" style="flex:1;border:none;background:transparent;outline:none;font-size:14px;color:var(--ink)"><button class="iconbtn" type="submit" aria-label="Ask" style="width:36px;height:36px;border:none;background:var(--orange);color:#fff;font-size:14px">${icon('paper-plane')}</button></form>
-    <div class="grid2">${modules.map(([href, ic, bg, fg, t, s, dark]) => `<a class="card mod ${dark ? 'dark' : ''}" href="#${href}"><div class="mi" style="background:${bg};color:${fg}">${icon(ic)}</div><div><div class="t">${t}</div><div class="s">${s}</div></div></a>`).join('')}</div>
+    ${showAll ? `<div class="grid2">${modules.map(tile).join('')}</div>` : `<div class="grid2 core4">${core.map(tile).join('')}</div>
+    <div class="card" id="moremods" style="padding:0;overflow:hidden">
+      <button class="row" id="moretoggle" aria-expanded="${moreOpen}" style="width:100%;padding:14px 16px;border:none;background:none;color:inherit;gap:10px;text-align:left;cursor:pointer"><span class="grow"><span style="display:block;font-size:15px;font-weight:700">More on Buja</span><span class="small muted">Homes, Match, Declutter, News, Fuel, Kart and ${rest.length - 6} more</span></span><span id="morechev" style="display:inline-flex;transition:transform .2s;${moreOpen ? 'transform:rotate(180deg)' : ''}">${icon('chevron-down')}</span></button>
+      <div class="modgrid" id="moregrid" ${moreOpen ? '' : 'hidden'}>${rest.map(mini).join('')}</div>
+    </div>`}
     <div class="section">TODAY</div>
     <div id="today" class="stack" style="gap:10px"><div class="card" style="padding:14px 16px"><div class="row">${icon('circle-info')}<div class="grow"><div style="font-size:14px;font-weight:600">Nothing yet</div><div class="small muted">Interviews, inspections and fare changes will show up here.</div></div></div></div></div>
   </main>`;
 }, { async mount(el) {
+  el.querySelector('#moretoggle')?.addEventListener('click', (e) => { const g = el.querySelector('#moregrid'); const open = g.hidden; g.hidden = !open; e.currentTarget.setAttribute('aria-expanded', open); el.querySelector('#morechev').style.transform = open ? 'rotate(180deg)' : ''; try { localStorage.setItem('buja_home_more', open ? '1' : '0'); } catch {} });
+  firstRunGuide();
   el.querySelector('#homeask')?.addEventListener('submit', (e) => { e.preventDefault(); const v = el.querySelector('#hq').value.trim(); go('/ask' + (v ? '?q=' + encodeURIComponent(v) : '')); });
   api.matchSuggest?.().catch(() => {});
   offerPasskey();
@@ -331,7 +409,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
     ${u.admin || u.role === 'moderator' ? `<a class="card row" href="#/admin" style="padding:12px 14px;border-color:var(--orange)">${icon('shield-halved')}<div class="grow"><div style="font-size:14px;font-weight:600">${u.admin ? 'Buja admin' : 'Moderation'}</div><div class="small muted">${u.admin ? 'Users, analytics, verifications, reports' : 'Verifications, reports, places'}</div></div>${icon('chevron-right')}</a>` : ''}
     ${state.user.verified ? '' : `<div class="card row" style="padding:12px 14px;border-color:var(--orange)">${icon('triangle-exclamation')}<div class="grow"><div style="font-size:14px;font-weight:600">Confirm your email</div><div class="small muted">Check your inbox for the link from Buja.</div></div><button class="btn btn-sm btn-outline" data-resend>Resend</button></div>`}
     <div class="card list">
-      <div class="item"><div class="mi">${icon('user')}</div><div class="grow"><div class="t">Account</div><div class="s">${h(u.email)}${u.phone ? ' · ' + h(u.phone) : ''}</div></div></div>
+      <div class="item"><div class="mi">${icon('user')}</div><div class="grow"><div class="t">Account</div><div class="s">${u.email ? h(u.email) : 'Signed in with your phone'}${u.phone ? ' · ' + h(u.phone) : ''}</div></div>${u.email ? '' : `<button class="btn btn-sm btn-outline" id="addemail" style="width:auto">Add email</button>`}</div>
       ${u.kind === 'company' ? '' : `<a class="item" href="#/match/edit"><div class="mi">${icon('heart')}</div><div class="grow"><div class="t">My Match profile</div><div class="s">Photos, bio, who you see</div></div>${icon('chevron-right')}</a>`}
       <a class="item" href="#${u.kind === 'landlord' ? '/homes/landlord' : '/homes/saved'}"><div class="mi">${icon('house-chimney')}</div><div class="grow"><div class="t">${u.kind === 'landlord' ? 'My properties' : 'Saved homes'}</div><div class="s">Homes</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/declutter/mine"><div class="mi">${icon('tags')}</div><div class="grow"><div class="t">My listings</div><div class="s">Declutter</div></div>${icon('chevron-right')}</a>
@@ -346,6 +424,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
       <a class="item" href="#/alerts"><div class="mi">${icon('bell')}</div><div class="grow"><div class="t">Saved searches</div><div class="s">Be told when a job, home or item matches</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/invite"><div class="mi">${icon('paper-plane')}</div><div class="grow"><div class="t">Invite friends</div><div class="s">Buja works better with your people on it</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/install"><div class="mi">${icon('plus')}</div><div class="grow"><div class="t">Install Buja</div><div class="s">Put it on your home screen</div></div>${icon('chevron-right')}</a>
+      <a class="item" href="#/sos"><div class="mi" style="background:#FDECEA;color:#D92D20;font-weight:900;font-size:12px">SOS</div><div class="grow"><div class="t">SOS</div><div class="s">One tap sends your live location to the people you trust</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/safety"><div class="mi">${icon('location-dot')}</div><div class="grow"><div class="t">Trip Share</div><div class="s">Tell a friend where you are when you go out</div></div>${icon('chevron-right')}</a>
       <a class="item" href="#/verify"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">Verification</div><div class="s">${u.selfieVerified ? 'Selfie verified' : 'Get the verified badge'}</div></div>${icon('chevron-right')}</a>
       ${u.kind === 'company' || (window.BUJA_ANDROID && !u.plus) ? '' : `<a class="item" href="#/plus"><div class="mi">${icon('bolt')}</div><div class="grow"><div class="t">Buja Plus</div><div class="s">${u.plus ? 'Active' : 'See who liked you, five super likes a day'}</div></div>${icon('chevron-right')}</a>`}
@@ -354,6 +433,7 @@ route('/me', { auth: true, tabs: 'Me' }, async () => {
     </div>
   </main>`;
 }, { mount(el) {
+  el.querySelector('#addemail')?.addEventListener('click', async (e) => { const v = prompt('Your email address, for receipts and to sign in on a computer:'); if (!v) return; const b = e.currentTarget; busy(b, true); try { const r = await api.updateMe({ email: v.trim() }); setState({ user: r.user }); toast('Email added'); } catch (err) { busy(b, false); toast((err && err.fields && err.fields.email) || (err && err.message) || 'Could not add that email'); } });
   el.querySelector('[data-logout]').addEventListener('click', async () => { await api.logout(); setState({ user: null }); toast('Signed out'); go('/welcome'); });
   el.querySelector('#avatarpick')?.addEventListener('change', async (e) => { const f = e.target.files[0]; if (!f) return; try { const bmp = await createImageBitmap(f); const s = 320; const c = document.createElement('canvas'); c.width = s; c.height = s; const m = Math.min(bmp.width, bmp.height); c.getContext('2d').drawImage(bmp, (bmp.width - m) / 2, (bmp.height - m) / 2, m, m, 0, 0, s, s); const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85)); const r = await api.uploadAvatar(new File([blob], 'avatar.jpg', { type: 'image/jpeg' })); setState({ user: r.user }); toast('Photo updated'); } catch (err) { failed(el, err); } });
   el.querySelector('[data-resend]')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { const r = await api.resendVerify(); toast(r.configured ? 'Confirmation email sent' : 'Email is not set up on this server yet'); } catch (err) { failed(el, err); } busy(e.currentTarget, false); });
@@ -372,13 +452,16 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
         <div class="small muted" style="line-height:1.5">System follows your phone. Waka's map stays dark in both modes so vehicles read clearly.</div>
       </div>
     </div>
-    <div class="stack" style="gap:10px"><div class="section">FINGERPRINT SIGN-IN</div>
-      <div class="card list" id="pklist"><div class="item"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">Checking this phone…</div></div></div></div>
+    <div class="stack" style="gap:10px"><div class="section">LANGUAGE</div>
+      <div class="card stack" style="padding:16px;gap:12px">
+        <div class="seg" id="langseg" data-noi18n>${LANGS.map(([k, en, own]) => `<button data-lang="${k}" class="${currentLang() === k ? 'on' : ''}">${own}</button>`).join('')}</div>
+        <div class="small muted" style="line-height:1.5">Buja's buttons and menus change language. Posts, names and messages stay as people wrote them. Ask Buja understands all four whichever you pick.</div>
+      </div>
     </div>
-    <div class="stack" style="gap:10px"><div class="section">ABOUT</div>
+    <div class="stack" style="gap:10px"><div class="section">HOME SCREEN</div>
       <div class="card list">
-        <a class="item" href="#/terms"><div class="mi">${icon('file-arrow-up')}</div><div class="grow"><div class="t">Terms of use</div></div>${icon('chevron-right')}</a>
-        <a class="item" href="#/privacy"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">Privacy</div><div class="s">What Buja keeps and what others see</div></div>${icon('chevron-right')}</a>
+        <div class="item"><div class="mi">${icon('list')}</div><div class="grow"><div class="t">Show everything on Home</div><div class="s">Off: the four main things up top, the rest under More</div></div>${(() => { let on = false; try { on = localStorage.getItem('buja_home_all') === '1'; } catch {} return `<button class="switch ${on ? 'on' : ''}" id="homeall" role="switch" aria-checked="${on}" aria-label="Show everything on Home"><span></span></button>`; })()}</div>
+        <button class="item" id="guideagain" style="width:100%;text-align:left"><div class="mi">${icon('circle-info')}</div><div class="grow"><div class="t">Show the welcome guide again</div></div>${icon('chevron-right')}</button>
       </div>
     </div>
     <div class="stack" style="gap:10px"><div class="section">NOTIFICATIONS</div>
@@ -392,7 +475,10 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
       <div class="card list" id="pklist"><div class="item"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">Checking this phone…</div></div></div></div>
     </div>
     <div class="stack" style="gap:10px"><div class="section">ABOUT</div>
-      <div class="card list"><div class="item"><div class="mi">${icon('circle-info')}</div><div class="grow"><div class="t">Buja</div><div class="s">Phase 1 · ${api.isMock() ? 'preview mode, data stays on this device' : 'connected to your API'}</div></div></div></div>
+      <div class="card list">
+        <a class="item" href="#/terms"><div class="mi">${icon('file-arrow-up')}</div><div class="grow"><div class="t">Terms of use</div></div>${icon('chevron-right')}</a>
+        <a class="item" href="#/privacy"><div class="mi">${icon('shield-halved')}</div><div class="grow"><div class="t">Privacy</div><div class="s">What Buja keeps and what others see</div></div>${icon('chevron-right')}</a>
+      </div>
     </div>
   <div class="card stack" style="padding:14px;gap:8px;border-color:#F3B2AC;margin-top:10px"><div class="h-sm" style="color:#D92D20">Delete my account</div><div class="small muted" style="line-height:1.5">Removes your name, contacts and photo, takes down your listings and artisan profile, and signs you out everywhere. This cannot be undone. <a href="/p/delete-account" target="_blank" rel="noopener">What is deleted</a></div><button class="btn btn-sm btn-outline" id="delacct" style="color:#D92D20;border-color:#F3B2AC">Delete my account</button></div>
     </main>`, {
@@ -404,6 +490,12 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
       const b = e.currentTarget; busy(b, true);
       try { await api.deleteMe(typed); setState({ user: null }); toast('Your account has been deleted'); go('/welcome'); } catch (err) { busy(b, false); failed(el, err); }
     });
+    el.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', async () => {
+      el.querySelectorAll('[data-lang]').forEach((x) => x.classList.toggle('on', x === b));
+      await setLang(b.dataset.lang); api.updateMe({ lang: b.dataset.lang }).catch(() => {});
+    }));
+    el.querySelector('#homeall')?.addEventListener('click', (e) => { const on = !e.currentTarget.classList.contains('on'); e.currentTarget.classList.toggle('on', on); e.currentTarget.setAttribute('aria-checked', String(on)); try { localStorage.setItem('buja_home_all', on ? '1' : '0'); } catch {} toast(on ? 'Home shows everything' : 'Home shows the main four, the rest under More'); });
+    el.querySelector('#guideagain')?.addEventListener('click', () => { try { localStorage.removeItem('buja_guide_done'); } catch {} go('/home'); });
     el.querySelectorAll('#theme button').forEach((b) => b.addEventListener('click', () => { applyTheme(b.dataset.theme); el.querySelectorAll('#theme button').forEach((x) => x.classList.toggle('on', x === b)); }));
     (async () => {
       let prefs = { work: true, match: true, waka: true, offers: false, news: true, social: true, digest: true }; let pushed = false;
@@ -466,6 +558,7 @@ const MODULES = {
   tags:        () => import('./tags.js').then((m) => m.registerTags(BASE)),
   place:       () => import('./place.js').then((m) => m.registerPlace(BASE)),
   status:      () => import('./status.js').then((m) => m.registerStatus(BASE)),
+  sos:         () => import('./sos.js').then((m) => m.registerSos(BASE)),
 };
 /** First path segment → the modules that own screens under it. Several share /admin and /report. */
 const LAZY = {
@@ -476,7 +569,7 @@ const LAZY = {
   artisans: ['services', 'jobs'], jobs: ['jobs'], breakdown: ['jobs'], meetup: ['services'], tickets: ['services'],
   blood: ['citysignals'], fuel: ['citysignals'], light: ['citysignals'], lostfound: ['citysignals'], plates: ['citysignals'], prices: ['citysignals'],
   cert: ['learn'], learn: ['learn'], queues: ['citymore'], 'rent-index': ['citymore'], rides: ['citymore'],
-  kart: ['kart'], tag: ['tags'], t: ['tags'], find: ['tags'], friends: ['tags'], place: ['place'], status: ['status'],
+  kart: ['kart'], tag: ['tags'], t: ['tags'], find: ['tags'], friends: ['tags'], place: ['place'], status: ['status'], sos: ['sos'],
 };
 const loaded = {};
 function need(name) { if (!loaded[name]) loaded[name] = MODULES[name]().catch((e) => { delete loaded[name]; throw e; }); return loaded[name]; }
@@ -513,7 +606,7 @@ function kindLabel(k) { return k === 'company' ? 'Hiring' : k === 'landlord' ? '
 
 /** Where to go after signing in or finishing onboarding: back to what sent you here (a flyer, a shared link), else Home. */
 function takeNext() { let n = null; try { n = sessionStorage.getItem('buja_next'); sessionStorage.removeItem('buja_next'); } catch {} return n && n.startsWith('/') && !/^\/(welcome|signin|signup|onboarding)/.test(n) ? n : null; }
-async function signedIn(r) { try { localStorage.setItem('buja_returning', '1'); } catch {} setState({ user: r.user }); if (r.next === 'onboarding') { sessionStorage.setItem('buja_offer_pk', '1'); go('/onboarding'); return; } go(takeNext() || '/home'); }
+async function signedIn(r) { try { localStorage.setItem('buja_returning', '1'); } catch {} if (r.user && r.user.lang && r.user.lang !== currentLang()) setLang(r.user.lang).catch(() => {}); else if (r.user && !r.user.lang && currentLang() !== 'en') api.updateMe({ lang: currentLang() }).catch(() => {}); setState({ user: r.user }); if (r.next === 'onboarding') { sessionStorage.setItem('buja_offer_pk', '1'); go('/onboarding'); return; } go(takeNext() || '/home'); }
 
 /** The Welcome screen's fingerprint button: first and large for someone who has used Buja on this phone before. */
 function mountFingerprint(el) {
@@ -539,6 +632,55 @@ function lightPrompt() {
   slot.after(box.firstElementChild);
   document.querySelectorAll('[data-lw]').forEach((b) => b.addEventListener('click', async () => { localStorage.setItem(key, '1'); const v = b.dataset.lw; b.closest('.card').remove(); if (v === 'x') return; try { await api.lightReport({ state: v === '1', source: 'tap' }); toast('Thank you. Your neighbours can see it.'); } catch {} }));
 }
+
+/**
+ * The first time someone reaches Home: three short cards. Their language, the four things to start with,
+ * and the safety button. Shown once per phone; Settings can bring it back.
+ */
+function firstRunGuide() {
+  try { if (localStorage.getItem('buja_guide_done') || document.getElementById('guide')) return; } catch { return; }
+  if (!state.user) return;
+  const ov = document.createElement('div'); ov.className = 'guide-ov'; ov.id = 'guide';
+  let step = 0;
+  const steps = [
+    () => `<div class="h-lg">Welcome to Buja${state.user.name ? ', ' + h(state.user.name.split(' ')[0]) : ''}</div>
+      <div class="muted" style="line-height:1.5">Which language do you want Buja in?</div>
+      <div class="lang-pick" data-noi18n>${LANGS.map(([k, en, own]) => `<button data-gl="${k}" class="${currentLang() === k ? 'on' : ''}">${own}</button>`).join('')}</div>
+      <div class="small muted">You can change it any time in Settings.</div>`,
+    () => `<div class="h-lg">Start with these four</div>
+      <div class="card list" style="margin:0">
+        <div class="item"><div class="mi" style="background:#FDECEA;color:#D92D20">${icon('wrench')}</div><div class="grow"><div class="t">Mechanic near me</div><div class="s">Car broke down? The nearest one comes to you, and you watch them on the map.</div></div></div>
+        <div class="item"><div class="mi" style="background:var(--orange-tint);color:var(--orange-dark)">${icon('wand-magic-sparkles')}</div><div class="grow"><div class="t">Ask and places</div><div class="s">Ask anything about Abuja, in English, Pidgin, Hausa or Yoruba.</div></div></div>
+        <div class="item"><div class="mi" style="background:var(--green-tint);color:var(--green-dark)">${icon('briefcase')}</div><div class="grow"><div class="t">Work</div><div class="s">Jobs across Abuja. Apply with one tap.</div></div></div>
+        <div class="item"><div class="mi" style="background:rgba(126,217,87,.14);color:#2E7D1E">${icon('route')}</div><div class="grow"><div class="t">Waka</div><div class="s">Routes and fares, and who is going your way.</div></div></div>
+      </div>
+      <div class="small muted">Everything else is under More on Home.</div>`,
+    () => `<div class="h-lg">If you ever feel unsafe</div>
+      <div class="row" style="gap:14px;align-items:center"><span class="sosbtn" style="margin:0;height:44px;padding:0 18px;font-size:16px">SOS</span><div class="small" style="line-height:1.5">The red SOS button on Home sends your live location to the people you trust, by text and WhatsApp, in one tap.</div></div>
+      <div class="small muted" style="line-height:1.5">Add one or two trusted contacts now, so SOS knows who to tell.</div>`,
+  ];
+  const paint = () => {
+    ov.innerHTML = `<div class="guide-card">${steps[step]()}
+      <div class="guide-dots">${steps.map((_, i) => `<span class="${i === step ? 'on' : ''}"></span>`).join('')}</div>
+      ${step < steps.length - 1 ? `<button class="btn btn-primary" data-gnext>Next</button><button class="btn btn-ghost" data-gskip>Skip</button>`
+        : `<a class="btn btn-primary" href="#/safety" data-gdone>Add trusted contacts</a><button class="btn btn-ghost" data-gdone>Later</button>`}</div>`;
+    ov.querySelectorAll('[data-gl]').forEach((b) => b.addEventListener('click', async () => { ov.querySelectorAll('[data-gl]').forEach((x) => x.classList.toggle('on', x === b)); await setLang(b.dataset.gl); api.updateMe({ lang: b.dataset.gl }).catch(() => {}); }));
+    ov.querySelector('[data-gnext]')?.addEventListener('click', () => { step++; paint(); });
+    ov.querySelectorAll('[data-gskip],[data-gdone]').forEach((b) => b.addEventListener('click', () => { try { localStorage.setItem('buja_guide_done', '1'); } catch {} ov.remove(); }));
+  };
+  paint(); document.body.appendChild(ov);
+}
+
+/* Errors on people's phones reach Admin, System: a few per visit at most, never the same one twice. */
+(() => {
+  const seen = new Set(); let sent = 0;
+  const report = (message, where, stack) => {
+    const k = message + '|' + where; if (seen.has(k) || sent >= 5 || api.isMock()) return; seen.add(k); sent++;
+    api.reportError({ message: String(message).slice(0, 400), where: String(where || '').slice(0, 250), stack: String(stack || '').slice(0, 2000), path: current() }).catch(() => {});
+  };
+  window.addEventListener('error', (e) => { if (!e.message) return; report(e.message, (e.filename || '').replace(location.origin, '') + ':' + e.lineno + ':' + e.colno, e.error && e.error.stack); });
+  window.addEventListener('unhandledrejection', (e) => { const r = e.reason; if (!r || (r && (r.error || r.name === 'AbortError'))) return; report('Unhandled: ' + (r.message || String(r)), (r.stack || '').split('\n')[1] || '', r.stack); });
+})();
 
 /** After sign-up: one friendly offer to use the fingerprint next time. Never nags. */
 async function offerPasskey() {
@@ -681,6 +823,8 @@ function friendlyError(err) {
   const mode = await detectApi();
   if (mode === 'mock') toast('Preview mode: no server, data stays on this phone', 3200);
   try { const r = await api.me(); state.user = r.user; } catch { state.user = null; }
+  // their language: this phone's choice, or the one saved on their account from another phone
+  try { if (state.user && state.user.lang && !localStorage.getItem('buja_lang')) await setLang(state.user.lang); else await startI18n(); } catch {}
   setState({ booted: true });
   if (!location.hash) go(state.user ? '/home' : '/welcome');
   await render();

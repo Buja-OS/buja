@@ -82,8 +82,33 @@ final class ServiceJobController
             'live' => $live, 'route' => ($live && $j['route_json']) ? json_decode($j['route_json'], true) : null,
             'threadId' => $j['thread_id'] ? (int) $j['thread_id'] : null, 'rated' => (bool) $j['rated'],
             'times' => ['created' => $j['created_at'], 'accepted' => $j['accepted_at'], 'started' => $j['started_at'], 'arrived' => $j['arrived_at'], 'done' => $j['done_at']],
+            'guarantee' => self::guarantee($j, $isCustomer),
             'km' => (function () use ($j) { $from = $j['a_lat'] !== null ? ['lat' => $j['a_lat'], 'lng' => $j['a_lng']] : Db::one('SELECT lat, lng FROM artisans WHERE user_id = ?', [$j['artisan_id']]); return ($from && $from['lat'] !== null) ? round(WakaRules::km((float) $j['lat'], (float) $j['lng'], (float) $from['lat'], (float) $from['lng']), 1) : null; })(),
         ];
+    }
+
+    /** Buja Guarantee: after this long without them arriving, the customer may say they never came. */
+    public const NOSHOW_MIN = 45;
+
+    /**
+     * The Buja Guarantee, as the job screen shows it: live arrival tracking, the price agreed in writing, the money
+     * held by Buja, and a full refund when the artisan never turns up.
+     */
+    private static function guarantee(array $j, bool $isCustomer): array
+    {
+        $paid = false; try { $paid = (bool) Db::one("SELECT id FROM job_payments WHERE job_id = ? AND status IN ('paid','disputed')", [$j['id']]); } catch (Throwable $e) {}
+        $since = $j['accepted_at'] ? (int) floor((time() - strtotime($j['accepted_at'] . ' UTC')) / 60) : 0;
+        $can = $isCustomer && in_array($j['status'], ['accepted', 'enroute'], true) && $since >= self::NOSHOW_MIN;
+        return ['held' => $paid, 'canNoShow' => $can, 'noShowInMin' => $isCustomer && in_array($j['status'], ['accepted', 'enroute'], true) && !$can ? max(1, self::NOSHOW_MIN - $since) : null,
+            'noShow' => !empty($j['no_show']), 'canPay' => $isCustomer && empty($j['items_json']) && ($j['quote_status'] ?? '') === 'accepted' && !$paid && ($j['pay_mode'] ?? '') !== 'online' && in_array($j['status'], ['accepted', 'enroute', 'arrived'], true)];
+    }
+
+    /** POST /service-jobs/{id}/pay { pay: online | transfer } : pay the agreed price into Buja's hold */
+    public function pay(int $id): void
+    {
+        $u = Auth::require(); RateLimit::hit('jobpay', 10, 3600); $j = $this->job($id, $u);
+        $r = OrderPay::startForJob($u, $j, (Http::body()['pay'] ?? '') === 'transfer');
+        Http::json(['payUrl' => $r['url'], 'total' => $r['total'], 'fee' => $r['fee']], 201);
     }
 
     /** GET /service-jobs : mine, open first, as customer and as artisan */
@@ -165,9 +190,9 @@ final class ServiceJobController
     {
         $u = Auth::require(); RateLimit::hit('servicejob', 8, 3600); $b = Http::body();
         $o = self::prepare($u, $b);
-        if (($b['pay'] ?? '') === 'online') {
+        if (in_array($b['pay'] ?? '', ['online', 'transfer'], true)) {
             if (!$o['items']) Http::json(['error' => 'validation', 'message' => 'Paying in the app works for orders from a menu. For anything else, agree the price with them first.'], 422);
-            $r = OrderPay::start($u, $o);
+            $r = OrderPay::start($u, $o, ($b['pay'] ?? '') === 'transfer');
             Http::json(['payUrl' => $r['url'], 'reference' => $r['reference'], 'total' => $r['total'], 'fee' => $r['fee']], 201);
         }
         Http::json(['id' => self::insert($u, $o, $o['items'] ? 'delivery' : null)], 201);
@@ -249,6 +274,16 @@ final class ServiceJobController
             case 'problem':
                 if ($isArtisan) $bad();
                 OrderPay::dispute($id, $u, (string) (Http::body()['note'] ?? ''));
+                break;
+            case 'noshow':
+                // Buja Guarantee: they accepted, then never came. The job closes, any payment goes back in full,
+                // and it counts against the artisan's reliability exactly like a cancellation.
+                if ($isArtisan || !in_array($j['status'], ['accepted', 'enroute'], true)) $bad();
+                if (!$j['accepted_at'] || time() - strtotime($j['accepted_at'] . ' UTC') < self::NOSHOW_MIN * 60) Http::json(['error' => 'validation', 'message' => 'Give them a little longer. You can report a no-show ' . self::NOSHOW_MIN . ' minutes after they accepted.'], 422);
+                Db::run("UPDATE service_jobs SET status = 'cancelled', cancelled_by = ? WHERE id = ?", [$j['artisan_id'], $id]);
+                try { Db::run('UPDATE service_jobs SET no_show = 1 WHERE id = ?', [$id]); } catch (Throwable $e) {}
+                Db::run('DELETE FROM service_trail WHERE job_id = ?', [$id]);
+                Notify::user($to, 'work', 'Marked as a no-show', 'Your customer says you did not come. If that is wrong, message Buja support from the job.', $url, true);
                 break;
             case 'cancel':
                 if (!in_array($j['status'], ['requested', 'accepted', 'enroute'], true)) $bad();
@@ -515,7 +550,7 @@ final class ServiceJobController
         return $to > $from ? ($h >= $from && $h < $to) : ($h >= $from || $h < $to); // overnight shifts
     }
 
-    /** POST /service-jobs/{id}/rate { stars, tags, comment } : the customer, once, after the job */
+    /** POST /service-jobs/{id}/rate { stars, tags, comment, photos: [uploadId] } : the customer, once, after the job */
     public function rate(int $id): void
     {
         $u = Auth::require(); $j = $this->job($id, $u);
@@ -530,6 +565,8 @@ final class ServiceJobController
         $prev = $j['thread_id'] ? Db::one('SELECT id FROM user_ratings WHERE thread_id = ? AND rater = ?', [$j['thread_id'], $u['id']]) : null;
         if ($prev) Db::run('UPDATE user_ratings SET stars = ?, tags = ?, comment = ?, module = ?, hidden_at = NULL, created_at = ? WHERE id = ?', [$stars, json_encode($tags), $comment, 'artisan', Db::now(), $prev['id']]);
         else Db::run('INSERT INTO user_ratings (rater, rated, thread_id, module, stars, tags, comment, created_at) VALUES (?,?,?,?,?,?,?,?)', [$u['id'], $j['artisan_id'], $j['thread_id'], 'artisan', $stars, json_encode($tags), $comment, Db::now()]);
+        $rid = $prev ? (int) $prev['id'] : (int) Db::lastId();
+        RatingController::attachPhotos($rid, (int) $u['id'], (array) ($b['photos'] ?? []));
         Db::run('UPDATE service_jobs SET rated = 1 WHERE id = ?', [$id]);
         OrderPay::sync($id, true);   // rating it means they have it
         if ($stars >= 4) Notify::user((int) $j['artisan_id'], 'work', 'You got ' . $stars . ' stars', explode(' ', trim((string) $u['name']))[0] . ' rated your work.', '/#/people/' . (int) $j['artisan_id']);

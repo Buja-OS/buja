@@ -26,7 +26,14 @@ $config = require $configFile;
 
 set_exception_handler(function (Throwable $e) use ($config): void {
     error_log('[buja] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+    ErrorLog::php($e);   // grouped in Admin, System, with one email to the admin when it is new
     Http::json(['error' => 'server_error', 'message' => 'Something went wrong on our side. Please try again.'], 500);
+});
+
+// Fatal errors (out of memory, a missing class) skip the exception handler: catch them on the way out.
+register_shutdown_function(function (): void {
+    $e = error_get_last();
+    if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) ErrorLog::record('php', 'Fatal: ' . $e['message'], basename((string) $e['file']) . ':' . $e['line']);
 });
 
 Http::init($config);

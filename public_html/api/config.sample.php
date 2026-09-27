@@ -84,6 +84,18 @@ return [
     'r2_endpoint'   => $env('R2_ENDPOINT', ''),
     'r2_region'     => $env('R2_REGION', 'auto'),
 
+    // Text messages through Termii (termii.com): phone-number sign-in codes and SOS alerts to trusted contacts.
+    // TERMII_BASE_URL is shown on your Termii dashboard. Use the "dnd" channel so codes reach DND numbers
+    // (Termii activates it once your sender ID is approved). Leave the key empty and phone sign-in stays hidden.
+    'termii_api_key'  => $env('TERMII_API_KEY', ''),
+    'termii_sender'   => $env('TERMII_SENDER', ''),
+    'termii_base_url' => $env('TERMII_BASE_URL', 'https://v3.api.termii.com'),
+    'termii_channel'  => $env('TERMII_CHANNEL', 'dnd'),
+    // Testing only: codes are written to the server log instead of being texted, and shown on screen.
+    'sms_mock'        => filter_var($env('SMS_MOCK', 'false'), FILTER_VALIDATE_BOOL),
+    // Where error alerts are emailed. Empty means the first admin account.
+    'admin_email'     => $env('ADMIN_EMAIL', ''),
+
     // Only true when testing on http://localhost.
     'insecure_cookies' => filter_var($env('INSECURE_COOKIES', 'false'), FILTER_VALIDATE_BOOL),
 ];

@@ -3,6 +3,10 @@ declare(strict_types=1);
 
 final class Auth
 {
+    /** Accounts made with a phone number get a placeholder address on this domain (users.email cannot be empty). Mail never goes there. */
+    public const PHONE_MAIL_DOMAIN = 'phone.buja.ng';
+    public static function placeholderEmail(?string $email): bool { return $email === null || $email === '' || str_ends_with($email, '@' . self::PHONE_MAIL_DOMAIN); }
+
     /** Returns the signed-in user row or null. Checks the cookie, the JWT and that the session is not revoked. */
     public static function user(): ?array
     {
@@ -54,16 +58,19 @@ final class Auth
 
     public static function publicUser(array $u): array
     {
+        $x = null; try { $x = Db::one('SELECT phone_verified_at, lang FROM users WHERE id = ?', [$u['id']]); } catch (Throwable $e) { /* before migration 045 */ }
         return [
             'id'       => (int) $u['id'],
             'kind'     => $u['kind'],
             'name'     => $u['name'],
-            'email'    => $u['email'],
+            'email'    => self::placeholderEmail($u['email'] ?? null) ? null : $u['email'],
+            'phoneVerified' => !empty($x['phone_verified_at']),
+            'lang'     => $x['lang'] ?? null,
             'phone'    => $u['phone'],
             'district' => $u['district'],
             'tag' => !empty($u['tag']) ? $u['tag'] : Tag::ensure((int) $u['id']),
             'avatar'   => $u['avatar_url'],
-            'verified' => $u['email_verified_at'] !== null,
+            'verified' => $u['email_verified_at'] !== null || self::placeholderEmail($u['email'] ?? null),   // nothing to confirm on a phone-only account
             'google'   => $u['google_sub'] !== null,
             'admin'    => !empty($u['is_admin']) || ($u['role'] ?? '') === 'admin',
             'artisan'  => (($ar = Db::one('SELECT available FROM artisans WHERE user_id = ? AND hidden_at IS NULL', [$u['id']])) ? ['available' => (bool) $ar['available']] : null),

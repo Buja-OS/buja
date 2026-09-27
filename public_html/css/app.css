@@ -758,3 +758,34 @@ body.kart-on .kart-stage{width:100vw;height:100vh;height:100dvh}
 .biz-bar { height:8px; border-radius:4px; background:var(--surface); overflow:hidden; }
 .biz-bar i { display:block; height:100%; background:var(--orange); border-radius:4px; }
 .money-row { display:flex; justify-content:space-between; gap:10px; font-size:14px; }
+
+/* Phase 53: focus Home, SOS, share */
+.core4 .mod { min-height: 128px; }
+.core4 .mod .t { font-size: 16px; }
+.modgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 6px; padding: 4px 10px 14px; border-top: 1px solid var(--line); }
+.modgrid[hidden] { display: none; }
+.modmini { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 2px 6px; text-decoration: none; color: inherit; border-radius: 14px; text-align: center; }
+.modmini:active { background: var(--surface); }
+.modmini .mi { width: 44px; height: 44px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+.modmini .t { font-size: 11.5px; font-weight: 600; line-height: 1.25; }
+@media (max-width: 360px) { .modgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.sosbtn { height: 34px; padding: 0 12px; border-radius: 17px; background: #D92D20; color: #fff; font-weight: 900; font-size: 13px; letter-spacing: .5px; display: inline-flex; align-items: center; text-decoration: none; box-shadow: 0 2px 8px rgba(217,45,32,.35); margin-left: auto; }
+.sos-hold { width: 210px; height: 210px; border-radius: 50%; border: none; background: radial-gradient(circle at 50% 40%, #FF5A4A, #C81E12); color: #fff; font-size: 44px; font-weight: 900; letter-spacing: 2px; box-shadow: 0 0 0 14px rgba(217,45,32,.14), 0 0 0 28px rgba(217,45,32,.07), 0 14px 30px rgba(217,45,32,.35); position: relative; touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer; }
+.sos-hold .ring { position: absolute; inset: -8px; border-radius: 50%; }
+.sos-hold small { display: block; font-size: 13px; font-weight: 600; letter-spacing: 0; opacity: .9; margin-top: 4px; }
+.sos-live { background: #D92D20; color: #fff; border: none; }
+.sos-live .small { color: #FFE3E0; }
+@keyframes sosPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(217,45,32,.55); } 50% { box-shadow: 0 0 0 16px rgba(217,45,32,0); } }
+.sos-pulse { animation: sosPulse 1.6s infinite; }
+.guide-ov { position: fixed; inset: 0; background: rgba(10,10,14,.6); z-index: 95; display: flex; align-items: flex-end; justify-content: center; }
+.guide-card { background: var(--card); color: var(--ink); width: 100%; max-width: 520px; border-radius: 24px 24px 0 0; padding: 22px 20px calc(20px + var(--safe-b, 0px)); display: flex; flex-direction: column; gap: 14px; animation: ordUp .22s ease-out; }
+.guide-dots { display: flex; gap: 6px; justify-content: center; }
+.guide-dots span { width: 7px; height: 7px; border-radius: 4px; background: var(--line); }
+.guide-dots span.on { width: 20px; background: var(--orange); }
+.lang-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lang-pick button { height: 56px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); font-size: 16px; font-weight: 700; }
+.lang-pick button.on { border-color: var(--orange); background: var(--orange-tint); }
+.guar { background: linear-gradient(135deg, #E9F8EE, #F4FBF0); border: 1px solid #BFE6C9; }
+[data-theme="dark"] .guar { background: linear-gradient(135deg, #10251A, #152A18); border-color: #24503A; }
+.revpics { display: flex; gap: 6px; flex-wrap: wrap; }
+.revpics img { width: 76px; height: 76px; border-radius: 12px; object-fit: cover; }

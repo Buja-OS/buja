@@ -24,7 +24,7 @@ export function registerTags({ route, go, state, api, ui, failed }) {
     async mount(el) {
       const t = await api.myTag();
       try { await loadQR(); const q = window.qrcode(0, 'M'); q.addData(t.link); q.make(); el.querySelector('#qr').innerHTML = q.createImgTag(6, 0); } catch {}
-      el.querySelector('#share').addEventListener('click', async () => { const text = `Find me on Buja: @${t.tag} ${t.link}`; if (navigator.share) navigator.share({ text }).catch(() => {}); else { try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast(text, 5000); } } });
+      el.querySelector('#share').addEventListener('click', async () => { const text = `Find me on Buja: @${t.tag} ${t.link}`; if (window.bujaShare) window.bujaShare({ text }).catch(() => {}); else { try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast(text, 5000); } } });
       el.querySelector('#copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText('@' + t.tag); toast('Copied @' + t.tag); } catch { toast('@' + t.tag); } });
       const inp = el.querySelector('#newtag'), chk = el.querySelector('#check'), save = el.querySelector('#save'); let timer;
       inp.addEventListener('input', () => { inp.value = inp.value.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 20); save.disabled = true; clearTimeout(timer); const v = inp.value.toLowerCase();
@@ -111,7 +111,7 @@ export function registerTags({ route, go, state, api, ui, failed }) {
     </main>`;
   }, {
     mount(el, { tag }) {
-      el.querySelector('#share')?.addEventListener('click', async () => { const t = `@${tag} on Buja: ${location.origin}/#/@${tag}`; if (navigator.share) navigator.share({ text: t }).catch(() => {}); else { try { await navigator.clipboard.writeText(t); toast('Copied'); } catch {} } });
+      el.querySelector('#share')?.addEventListener('click', async () => { const t = `@${tag} on Buja: ${location.origin}/#/@${tag}`; if (window.bujaShare) window.bujaShare({ text: t }).catch(() => {}); else { try { await navigator.clipboard.writeText(t); toast('Copied'); } catch {} } });
       el.querySelector('#addfriend')?.addEventListener('click', async (e) => { const b = e.currentTarget; busy(b, true); try { const r = await api.friendAdd({ tag }); toast(r.state === 'friends' ? 'You are now friends' : 'Friend request sent'); location.reload(); } catch (err) { busy(b, false); failed(el, err); } });
       const fid = el.querySelector('#fmsg')?.dataset.id;
       const ring = async (b, mode) => { busy(b, true); try { const t = (await api.friendChat(fid)).threadId; const r = await api.startCall(t, mode); go('/rtc/' + r.call.room); } catch (err) { busy(b, false); failed(el, err); } };

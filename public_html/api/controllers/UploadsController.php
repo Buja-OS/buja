@@ -102,6 +102,7 @@ final class UploadsController
                 'SELECT 1 AS x FROM spot_photos WHERE upload_id = ? AND hidden_at IS NULL',
                 'SELECT 1 AS x FROM meetups WHERE cover_upload = ? AND hidden_at IS NULL',
                 "SELECT 1 AS x FROM lost_found WHERE upload_id = ? AND status = 'open'",
+                'SELECT 1 AS x FROM rating_photos p JOIN user_ratings r ON r.id = p.rating_id WHERE p.upload_id = ? AND r.hidden_at IS NULL',
             ];
             foreach ($checks as $q) { try { if (Db::one($q, [$id]) !== null) return true; } catch (Throwable $e) { /* a table not migrated yet */ } }
             return false;

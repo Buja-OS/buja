@@ -78,7 +78,7 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
     const [{ saved }, { routes }] = await Promise.all([api.wakaSaved(), api.wakaRoutes()]);
     const busy_ = routes.slice().sort((a, b) => b.ridersNow - a.ridersNow).slice(0, 6);
     return `
-    ${topbar('Waka', '/home', `<a class="iconbtn" href="#/waka/routes" aria-label="All routes">${icon('route')}</a>`)}
+    ${topbar('Waka', '/home', `<a class="sosbtn" href="#/sos" aria-label="SOS" style="height:30px;padding:0 10px;font-size:12px">SOS</a><a class="iconbtn" href="#/waka/routes" aria-label="All routes">${icon('route')}</a>`)}
     <main class="pad stack" style="gap:16px">
       <div class="card stack" style="padding:16px;gap:10px">
         <button class="row" id="from" style="height:52px;padding:0 14px;background:var(--surface);border:1px solid var(--line);border-radius:14px;width:100%;text-align:left;gap:12px"><span style="width:10px;height:10px;border-radius:5px;background:var(--ink)"></span><span class="grow" id="fromName" style="font-size:15px;color:var(--ink-3)">Where from?</span></button>
@@ -221,7 +221,7 @@ export function registerWaka({ route, go, state, api, ui, failed }) {
           const r = await api.startRide({ plate: sh.querySelector('#bplate').value, mode, routeId, from: from && from.id, to: to && to.id, minutes, contactId: sh.querySelector('#bwho').value || null, lat: pos && pos.lat, lng: pos && pos.lng });
           close();
           const text = `I am on a ${h(mode === 'along' ? 'taxi' : mode || 'vehicle')}${r.trip.plate ? ', plate ' + r.trip.plate : ''}${to ? ', going to ' + to.name : ''}. Follow me: ${r.trip.link}`;
-          if (navigator.share) navigator.share({ title: 'My Buja trip', text }).catch(() => {}); else { try { await navigator.clipboard.writeText(text); toast('Link copied. Send it to someone.'); } catch { toast('Share this link: ' + r.trip.link, 6000); } }
+          if (window.bujaShare) window.bujaShare({ title: 'My Buja trip', text }).catch(() => {}); else { try { await navigator.clipboard.writeText(text); toast('Link copied. Send it to someone.'); } catch { toast('Share this link: ' + r.trip.link, 6000); } }
           go('/safety');
         } catch (err) { busy(b, false); failed(el, err); }
       });

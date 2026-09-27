@@ -128,7 +128,7 @@ export function registerMatch({ route, go, state, api, ui, DISTRICTS, failed }) 
     const g = guardCompany(); if (g) return g;
     return `
     <header class="topbar"><a class="iconbtn" href="#/home" aria-label="Home">${icon('arrow-left')}</a><h1>Match</h1>
-      <a class="iconbtn" href="#/match/likes" aria-label="Who liked you">${icon('regular/heart')}</a><a class="iconbtn" href="#/match/matches" aria-label="Matches">${icon('message')}</a><a class="iconbtn" href="#/match/edit" aria-label="My profile">${icon('user')}</a></header>
+      <a class="sosbtn" href="#/sos" aria-label="SOS" style="height:30px;padding:0 10px;font-size:12px;margin-left:0">SOS</a><a class="iconbtn" href="#/match/likes" aria-label="Who liked you">${icon('regular/heart')}</a><a class="iconbtn" href="#/match/matches" aria-label="Matches">${icon('message')}</a><a class="iconbtn" href="#/match/edit" aria-label="My profile">${icon('user')}</a></header>
     <main class="stack" style="padding:0 16px;gap:14px;flex:1">
       <div id="stack" style="flex:1;display:flex;flex-direction:column"><div class="card" style="flex:1;border-radius:24px;min-height:420px"></div></div>
       <div id="actions" class="row" style="justify-content:center;gap:18px;padding-bottom:6px;display:none">
