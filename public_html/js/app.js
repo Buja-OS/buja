@@ -339,15 +339,6 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     ['/kart', 'gamepad', '#FFF1E6', '#E8660A', 'Buja Kart', 'Race round Eagle Square and Aso Rock'],
     ['/friends', 'users', '#EEF0FF', '#4B4FC4', 'Friends', 'People you know, and people to meet'],
   ];
-  // Focus: the four things most people come for, big. Everything else waits under "More" (or all of it, if they chose that in Settings).
-  const CORE = ['/artisans/map?trade=mechanic', '/ask', '/work', '/waka'];
-  const showAll = (() => { try { return localStorage.getItem('buja_home_all') === '1'; } catch { return false; } })();
-  const moreOpen = (() => { try { return localStorage.getItem('buja_home_more') === '1'; } catch { return false; } })();
-  const core = CORE.map((c) => modules.find((m) => m[0] === c)).filter(Boolean);
-  core[1] = ['/ask', 'wand-magic-sparkles', 'var(--orange-tint)', 'var(--orange-dark)', 'Ask and places', 'Where to eat, go out, fix things'];
-  const rest = modules.filter((m) => !CORE.includes(m[0]));
-  const tile = ([href, ic, bg, fg, t, sub, dark]) => `<a class="card mod ${dark ? 'dark' : ''}" href="#${href}"><div class="mi" style="background:${bg};color:${fg}">${icon(ic)}</div><div><div class="t">${t}</div><div class="s">${sub}</div></div></a>`;
-  const mini = ([href, ic, bg, fg, t]) => `<a class="modmini" href="#${href}"><span class="mi" style="background:${bg};color:${fg}">${icon(ic)}</span><span class="t">${t}</span></a>`;
   return `
   <header class="topbar" style="padding-top:8px">
     ${markAuto(30)}<h1 style="letter-spacing:1px;font-size:22px">Buja</h1>
@@ -360,16 +351,11 @@ route('/home', { auth: true, tabs: 'Home' }, async () => {
     <div><div class="h-lg">${greet}, ${h(u.name.split(' ')[0])}</div><div class="muted small" style="margin-top:3px;display:flex;align-items:center;gap:6px">${icon('location-dot')} ${h(u.district || 'Abuja')}${api.isMock() ? ' · preview mode' : ''}</div></div>
     <div id="weather"></div>
     <form class="card askbar" id="homeask" style="padding-right:8px">${icon('wand-magic-sparkles')}<label for="hq" style="position:absolute;left:-9999px">Ask Buja</label><input id="hq" placeholder="Ask Buja anything about Abuja" autocomplete="off" style="flex:1;border:none;background:transparent;outline:none;font-size:14px;color:var(--ink)"><button class="iconbtn" type="submit" aria-label="Ask" style="width:36px;height:36px;border:none;background:var(--orange);color:#fff;font-size:14px">${icon('paper-plane')}</button></form>
-    ${showAll ? `<div class="grid2">${modules.map(tile).join('')}</div>` : `<div class="grid2 core4">${core.map(tile).join('')}</div>
-    <div class="card" id="moremods" style="padding:0;overflow:hidden">
-      <button class="row" id="moretoggle" aria-expanded="${moreOpen}" style="width:100%;padding:14px 16px;border:none;background:none;color:inherit;gap:10px;text-align:left;cursor:pointer"><span class="grow"><span style="display:block;font-size:15px;font-weight:700">More on Buja</span><span class="small muted">Homes, Match, Declutter, News, Fuel, Kart and ${rest.length - 6} more</span></span><span id="morechev" style="display:inline-flex;transition:transform .2s;${moreOpen ? 'transform:rotate(180deg)' : ''}">${icon('chevron-down')}</span></button>
-      <div class="modgrid" id="moregrid" ${moreOpen ? '' : 'hidden'}>${rest.map(mini).join('')}</div>
-    </div>`}
+    <div class="grid2">${modules.map(([href, ic, bg, fg, t, sub, dark]) => `<a class="card mod ${dark ? 'dark' : ''}" href="#${href}"><div class="mi" style="background:${bg};color:${fg}">${icon(ic)}</div><div><div class="t">${t}</div><div class="s">${sub}</div></div></a>`).join('')}</div>
     <div class="section">TODAY</div>
     <div id="today" class="stack" style="gap:10px"><div class="card" style="padding:14px 16px"><div class="row">${icon('circle-info')}<div class="grow"><div style="font-size:14px;font-weight:600">Nothing yet</div><div class="small muted">Interviews, inspections and fare changes will show up here.</div></div></div></div></div>
   </main>`;
 }, { async mount(el) {
-  el.querySelector('#moretoggle')?.addEventListener('click', (e) => { const g = el.querySelector('#moregrid'); const open = g.hidden; g.hidden = !open; e.currentTarget.setAttribute('aria-expanded', open); el.querySelector('#morechev').style.transform = open ? 'rotate(180deg)' : ''; try { localStorage.setItem('buja_home_more', open ? '1' : '0'); } catch {} });
   firstRunGuide();
   el.querySelector('#homeask')?.addEventListener('submit', (e) => { e.preventDefault(); const v = el.querySelector('#hq').value.trim(); go('/ask' + (v ? '?q=' + encodeURIComponent(v) : '')); });
   api.matchSuggest?.().catch(() => {});
@@ -458,9 +444,8 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
         <div class="small muted" style="line-height:1.5">Buja's buttons and menus change language. Posts, names and messages stay as people wrote them. Ask Buja understands all four whichever you pick.</div>
       </div>
     </div>
-    <div class="stack" style="gap:10px"><div class="section">HOME SCREEN</div>
+    <div class="stack" style="gap:10px"><div class="section">WELCOME GUIDE</div>
       <div class="card list">
-        <div class="item"><div class="mi">${icon('list')}</div><div class="grow"><div class="t">Show everything on Home</div><div class="s">Off: the four main things up top, the rest under More</div></div>${(() => { let on = false; try { on = localStorage.getItem('buja_home_all') === '1'; } catch {} return `<button class="switch ${on ? 'on' : ''}" id="homeall" role="switch" aria-checked="${on}" aria-label="Show everything on Home"><span></span></button>`; })()}</div>
         <button class="item" id="guideagain" style="width:100%;text-align:left"><div class="mi">${icon('circle-info')}</div><div class="grow"><div class="t">Show the welcome guide again</div></div>${icon('chevron-right')}</button>
       </div>
     </div>
@@ -494,7 +479,6 @@ route('/settings', { auth: true, tabs: 'Me' }, async () => `
       el.querySelectorAll('[data-lang]').forEach((x) => x.classList.toggle('on', x === b));
       await setLang(b.dataset.lang); api.updateMe({ lang: b.dataset.lang }).catch(() => {});
     }));
-    el.querySelector('#homeall')?.addEventListener('click', (e) => { const on = !e.currentTarget.classList.contains('on'); e.currentTarget.classList.toggle('on', on); e.currentTarget.setAttribute('aria-checked', String(on)); try { localStorage.setItem('buja_home_all', on ? '1' : '0'); } catch {} toast(on ? 'Home shows everything' : 'Home shows the main four, the rest under More'); });
     el.querySelector('#guideagain')?.addEventListener('click', () => { try { localStorage.removeItem('buja_guide_done'); } catch {} go('/home'); });
     el.querySelectorAll('#theme button').forEach((b) => b.addEventListener('click', () => { applyTheme(b.dataset.theme); el.querySelectorAll('#theme button').forEach((x) => x.classList.toggle('on', x === b)); }));
     (async () => {
@@ -647,14 +631,6 @@ function firstRunGuide() {
       <div class="muted" style="line-height:1.5">Which language do you want Buja in?</div>
       <div class="lang-pick" data-noi18n>${LANGS.map(([k, en, own]) => `<button data-gl="${k}" class="${currentLang() === k ? 'on' : ''}">${own}</button>`).join('')}</div>
       <div class="small muted">You can change it any time in Settings.</div>`,
-    () => `<div class="h-lg">Start with these four</div>
-      <div class="card list" style="margin:0">
-        <div class="item"><div class="mi" style="background:#FDECEA;color:#D92D20">${icon('wrench')}</div><div class="grow"><div class="t">Mechanic near me</div><div class="s">Car broke down? The nearest one comes to you, and you watch them on the map.</div></div></div>
-        <div class="item"><div class="mi" style="background:var(--orange-tint);color:var(--orange-dark)">${icon('wand-magic-sparkles')}</div><div class="grow"><div class="t">Ask and places</div><div class="s">Ask anything about Abuja, in English, Pidgin, Hausa or Yoruba.</div></div></div>
-        <div class="item"><div class="mi" style="background:var(--green-tint);color:var(--green-dark)">${icon('briefcase')}</div><div class="grow"><div class="t">Work</div><div class="s">Jobs across Abuja. Apply with one tap.</div></div></div>
-        <div class="item"><div class="mi" style="background:rgba(126,217,87,.14);color:#2E7D1E">${icon('route')}</div><div class="grow"><div class="t">Waka</div><div class="s">Routes and fares, and who is going your way.</div></div></div>
-      </div>
-      <div class="small muted">Everything else is under More on Home.</div>`,
     () => `<div class="h-lg">If you ever feel unsafe</div>
       <div class="row" style="gap:14px;align-items:center"><span class="sosbtn" style="margin:0;height:44px;padding:0 18px;font-size:16px">SOS</span><div class="small" style="line-height:1.5">The red SOS button on Home sends your live location to the people you trust, by text and WhatsApp, in one tap.</div></div>
       <div class="small muted" style="line-height:1.5">Add one or two trusted contacts now, so SOS knows who to tell.</div>`,
