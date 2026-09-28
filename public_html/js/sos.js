@@ -60,7 +60,7 @@ export function registerSos({ route, go, state, api, ui, failed }) {
           </div>`;
         box.querySelector('#wa').addEventListener('click', () => window.open(waLink(msg), '_blank', 'noopener'));
         box.querySelector('#copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(msg); toast('Copied'); } catch { prompt('Copy this:', msg); } });
-        box.querySelector('#safe').addEventListener('click', async (e) => { if (!confirm('End the SOS and tell your contacts you are safe?')) return; busy(e.currentTarget, true); try { await api.endTrip({ status: 'safe' }); stop(); toast('SOS ended. Your contacts have been told you are safe.'); go('/home'); } catch (err) { busy(e.currentTarget, false); failed(el, err); } });
+        box.querySelector('#safe').addEventListener('click', async (e) => { const __b = e.currentTarget; if (!confirm('End the SOS and tell your contacts you are safe?')) return; busy(__b, true); try { await api.endTrip({ status: 'safe' }); stop(); toast('SOS ended. Your contacts have been told you are safe.'); go('/home'); } catch (err) { busy(__b, false); failed(el, err); } });
       };
       const fire = async () => {
         try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch {}

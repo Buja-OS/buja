@@ -103,7 +103,8 @@ export function registerGrowth({ route, go, state, api, ui, failed }) {
         toast(res.outcome === 'accepted' ? 'Installing. Look for Buja on your home screen.' : 'No problem, you can do it any time.');
       });
       el.querySelector('#diag').addEventListener('click', async (e) => {
-        busy(e.currentTarget, true);
+        const btn = e.currentTarget;   // read it now: after the first await the event no longer has one
+        busy(btn, true);
         const out = el.querySelector('#diagout'); const lines = [];
         const row = (ok, label, detail) => `<div class="row" style="gap:10px;align-items:flex-start"><span style="color:${ok ? 'var(--green-dark)' : '#D92D20'};flex-shrink:0">${icon(ok ? 'circle-check' : 'triangle-exclamation')}</span><span style="font-size:13px;line-height:1.5"><strong>${label}</strong>${detail ? '<br><span class="muted">' + h(detail) + '</span>' : ''}</span></div>`;
         lines.push(row(location.protocol === 'https:', 'Secure connection', location.protocol));
@@ -129,7 +130,7 @@ export function registerGrowth({ route, go, state, api, ui, failed }) {
         const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
         lines.push(row(prompted || standalone, 'Browser offered installation', standalone ? 'already installed' : prompted ? 'yes, the button works' : 'not yet. Chrome sometimes waits until you have used the site a little, or is on an old cached copy. Close Chrome fully, reopen, use it for a minute, then look in the menu again.'));
         out.innerHTML = lines.join('');
-        busy(e.currentTarget, false);
+        busy(btn, false);
       });
     }
   });

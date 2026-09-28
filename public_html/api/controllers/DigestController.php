@@ -20,8 +20,9 @@ final class DigestController
     public function runBatch(int $limit): array
     {
         $st = Db::pdo()->prepare('SELECT * FROM users WHERE deleted_at IS NULL AND notify_digest = 1 AND email_verified_at IS NOT NULL
-                                  AND (digest_sent_at IS NULL OR digest_sent_at < ?) ORDER BY digest_sent_at IS NULL DESC, digest_sent_at ASC LIMIT ?');
-        $st->execute([gmdate('Y-m-d H:i:s', time() - 6 * 86400), $limit]);
+                                  AND (digest_sent_at IS NULL OR digest_sent_at < ?) ORDER BY digest_sent_at IS NULL DESC, digest_sent_at ASC LIMIT ' . max(1, min(100, $limit)));
+        // LIMIT is written in, not bound: with real prepared statements TiDB rejects a LIMIT sent as a string (error 1210)
+        $st->execute([gmdate('Y-m-d H:i:s', time() - 6 * 86400)]);
         $sent = 0; $skipped = 0;
         foreach ($st->fetchAll() as $u) {
             $d = $this->gather($u);

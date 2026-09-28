@@ -61,9 +61,10 @@ export function registerTrustAlerts({ route, go, state, api, ui, failed }) {
       }));
       el.querySelectorAll('#tags [data-t]').forEach((b) => b.addEventListener('click', () => { const t = b.dataset.t; if (chosen.has(t)) { chosen.delete(t); b.classList.remove('on'); } else { chosen.add(t); b.classList.add('on'); } }));
       el.querySelector('#send').addEventListener('click', async (e) => {
-        busy(e.currentTarget, true);
+        const btn = e.currentTarget;
+        busy(btn, true);
         try { await api.rateThread(threadId, { stars: picked, tags: [...chosen], comment: el.querySelector('#comment').value }); toast('Thank you. That helps the next person.'); go('/inbox/' + threadId); }
-        catch (err) { busy(e.currentTarget, false); failed(el, err); }
+        catch (err) { busy(btn, false); failed(el, err); }
       });
     }
   });

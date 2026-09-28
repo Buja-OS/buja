@@ -71,7 +71,7 @@ export function registerCitySignals({ route, go, state, api, ui, DISTRICTS, fail
         let qv = 'none'; const sh = el.querySelector('#sheet');
         sh.querySelectorAll('[data-q]').forEach((c) => c.addEventListener('click', () => { qv = c.dataset.q; sh.querySelectorAll('[data-q]').forEach((x) => x.classList.toggle('on', x === c)); }));
         sh.querySelector('#fx').addEventListener('click', () => { sh.innerHTML = ''; });
-        sh.querySelector('#fs').addEventListener('click', async (e) => { busy(e.currentTarget, true); try { await api.fuelReport(b.dataset.report, { queue: qv, petrol: sh.querySelector('#fp').value, diesel: sh.querySelector('#fd').value }); toast('Posted. Thank you.'); location.reload(); } catch (err) { busy(e.currentTarget, false); failed(el, err); } });
+        sh.querySelector('#fs').addEventListener('click', async (e) => { const __b = e.currentTarget; busy(__b, true); try { await api.fuelReport(b.dataset.report, { queue: qv, petrol: sh.querySelector('#fp').value, diesel: sh.querySelector('#fd').value }); toast('Posted. Thank you.'); location.reload(); } catch (err) { busy(__b, false); failed(el, err); } });
       }));
     }
   });

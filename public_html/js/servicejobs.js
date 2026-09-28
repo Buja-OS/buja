@@ -395,7 +395,7 @@ export function registerJobs({ route, go, state, api, ui, failed }) {
         f.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }));
       el.querySelectorAll('[data-avail]').forEach((b) => b.addEventListener('click', async () => { const on = !b.classList.contains('on'); b.classList.toggle('on', on); b.closest('.mn-row').classList.toggle('mn-off', !on); try { await api.updateMenuItem(b.dataset.avail, { available: on }); toast(on ? 'Back on the menu' : 'Marked finished'); } catch (err) { b.classList.toggle('on', !on); failed(el, err); } }));
-      el.querySelector('#mdel').addEventListener('click', async (e) => { if (!editing || !confirm('Delete this item from your menu?')) return; busy(e.currentTarget, true); try { await api.deleteMenuItem(editing); toast('Deleted'); location.reload(); } catch (err) { busy(e.currentTarget, false); failed(el, err); } });
+      el.querySelector('#mdel').addEventListener('click', async (e) => { const __b = e.currentTarget; if (!editing || !confirm('Delete this item from your menu?')) return; busy(__b, true); try { await api.deleteMenuItem(editing); toast('Deleted'); location.reload(); } catch (err) { busy(__b, false); failed(el, err); } });
       f.addEventListener('submit', async (e) => {
         e.preventDefault(); const b = el.querySelector('#msave'); showErrors(el, {}); busy(b, true);
         const body = { name: f.querySelector('#name').value, price: f.querySelector('#price').value, section: f.querySelector('#section').value, description: f.querySelector('#description').value };

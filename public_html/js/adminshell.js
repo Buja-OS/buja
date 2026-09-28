@@ -81,8 +81,8 @@ export function registerAdminShell({ route, go, state, api, ui, failed }) {
       catch (err) { out.textContent = (err && err.message) || 'The move stopped.'; }
       busy(b, false);
     });
-    el.querySelector('#tmail')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { const r = await api.adminSystemTest({ what: 'email' }); el.querySelector('#testout').textContent = r.message; } catch (err) { failed(el, err); } busy(e.currentTarget, false); });
-    el.querySelector('#tsms')?.addEventListener('click', async (e) => { const ph = prompt('Send a test text to which number?', state.user.phone || ''); if (!ph) return; busy(e.currentTarget, true); try { const r = await api.adminSystemTest({ what: 'sms', phone: ph }); el.querySelector('#testout').textContent = r.message; } catch (err) { failed(el, err); } busy(e.currentTarget, false); });
+    el.querySelector('#tmail')?.addEventListener('click', async (e) => { const __b = e.currentTarget; busy(__b, true); try { const r = await api.adminSystemTest({ what: 'email' }); el.querySelector('#testout').textContent = r.message; } catch (err) { failed(el, err); } busy(__b, false); });
+    el.querySelector('#tsms')?.addEventListener('click', async (e) => { const __b = e.currentTarget; const ph = prompt('Send a test text to which number?', state.user.phone || ''); if (!ph) return; busy(__b, true); try { const r = await api.adminSystemTest({ what: 'sms', phone: ph }); el.querySelector('#testout').textContent = r.message; } catch (err) { failed(el, err); } busy(__b, false); });
   } });
 
   /* ---------------- Social moderation ---------------- */

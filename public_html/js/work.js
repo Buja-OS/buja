@@ -92,7 +92,7 @@ export function registerWork({ route, go, state, setState, api, ui, DISTRICTS, f
   }, {
     mount(el, { id }) {
       bindSaves(el);
-      el.querySelector('[data-thread]')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { const r = await api.openThread(e.currentTarget.dataset.thread); go('/inbox/' + r.threadId); } catch (err) { busy(e.currentTarget, false); failed(el, err); } });
+      el.querySelector('[data-thread]')?.addEventListener('click', async (e) => { const __b = e.currentTarget; busy(__b, true); try { const r = await api.openThread(__b.dataset.thread); go('/inbox/' + r.threadId); } catch (err) { busy(__b, false); failed(el, err); } });
       const f = el.querySelector('#apply'); if (!f) return;
       const boxes = [...f.querySelectorAll('input[name=met]')]; const line = f.querySelector('#matchline');
       const weights = Object.fromEntries(boxes.map((b) => [b.value, +b.closest('label').querySelector('.tag').textContent]));

@@ -62,6 +62,7 @@ export function bindEyes(root) {
 }
 
 export function busy(btn, on) {
+  if (!btn) return;   // the button may have gone (screen changed) by the time an await finishes
   if (on) { btn.dataset.label = btn.innerHTML; btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true; }
   else { btn.innerHTML = btn.dataset.label || btn.innerHTML; btn.disabled = false; }
 }

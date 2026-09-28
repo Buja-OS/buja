@@ -83,7 +83,7 @@ export function registerCity({ route, go, state, api, ui, DISTRICTS, failed, rad
       ${!news.length ? `<div class="placeholder" style="padding:50px 0"><div class="mi card">${icon('newspaper')}</div><div class="h-md">No Abuja stories ${cat === 'all' ? 'yet' : 'in ' + h(cat)}</div><div class="small muted" style="max-width:280px;line-height:1.5">Buja reads the Nigerian papers every half hour and keeps what is about Abuja. Tap refresh to check now.</div></div>` : ''}
       <div class="small muted" style="line-height:1.5;padding-bottom:6px">From Punch, Premium Times, Daily Trust, Vanguard, Guardian, Channels, Leadership and TheCable, filtered to Abuja and the FCT. Only urgent stories send a notification, at most three a day.</div>
     </main>`;
-  }, { mount(el) { el.querySelector('#refresh')?.addEventListener('click', async (e) => { busy(e.currentTarget, true); try { const r = await api.refreshNews(); toast(r.added ? r.added + ' new stor' + (r.added === 1 ? 'y' : 'ies') : 'Nothing new yet'); location.reload(); } catch (err) { busy(e.currentTarget, false); failed(el, err); } }); } });
+  }, { mount(el) { el.querySelector('#refresh')?.addEventListener('click', async (e) => { const __b = e.currentTarget; busy(__b, true); try { const r = await api.refreshNews(); toast(r.added ? r.added + ' new stor' + (r.added === 1 ? 'y' : 'ies') : 'Nothing new yet'); location.reload(); } catch (err) { busy(__b, false); failed(el, err); } }); } });
 
   /* ---------------- Abuja Social ---------------- */
   const BOARDICON = { general: 'message', ask: 'circle-info', traffic: 'route', power: 'bolt', events: 'star', market: 'tags', housing: 'house-chimney', jobs: 'briefcase', banter: 'heart' };
